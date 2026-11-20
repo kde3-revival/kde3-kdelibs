@@ -44,9 +44,6 @@
 #include <ksslall.h>
 #include <ksslcertdlg.h>
 #include <kmessagebox.h>
-#ifndef Q_WS_WIN //temporary
-#include <kresolver.h>
-#endif
 
 #include <klocale.h>
 #include <dcopclient.h>
@@ -760,20 +757,12 @@ int TCPSlaveBase::verifyCertificate()
 
     KSSLCertificate::KSSLValidationList ksvl = pc.validateVerbose(KSSLCertificate::SSLServer);
 
+   // The certificate must be valid for the host that was asked for.
+   // (The canonical name of the host from DNS, which KDE 3.5 tried
+   // next, is no proof: DNS is not authenticated.)
    _IPmatchesCN = d->kssl->peerInfo().certMatchesAddress();
    if (!_IPmatchesCN) {
-#ifndef Q_WS_WIN //temporary
-      KNetwork::KResolverResults res = KNetwork::KResolver::resolve(d->kssl->peerInfo().peerHost(), "80", KNetwork::KResolver::CanonName);
-      if (!res.isEmpty()) {
-         QString old = d->kssl->peerInfo().peerHost();
-         d->kssl->peerInfo().setPeerHost(res[0].canonicalName());
-         _IPmatchesCN = d->kssl->peerInfo().certMatchesAddress();
-         if (!_IPmatchesCN) {
-            d->kssl->peerInfo().setPeerHost(old);
-         }
-      }
-#endif
-      if (!_IPmatchesCN && !d->militantSSL) { // force this if the user wants it
+      if (!d->militantSSL) { // force this if the user wants it
          if (d->cc->getHostList(pc).contains(ourHost)) {
             _IPmatchesCN = true;
          }
