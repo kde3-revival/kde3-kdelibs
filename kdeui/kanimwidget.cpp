@@ -188,7 +188,18 @@ void KAnimWidget::updateIcons()
      d->size = KGlobal::iconLoader()->currentSize(KIcon::MainToolbar);
 
   QString path = KGlobal::iconLoader()->iconPath(d->icon_name, -d->size);
-  QImage img(path);
+  QImage img;
+  const QString ext = path.right(4).lower();
+  if (ext == ".svg" || ext == "svgz")
+  {
+    // QImage cannot read SVG; KIconLoader renders it at size x size, i.e.
+    // as a single frame.
+    img = KGlobal::iconLoader()->loadIcon(path, KIcon::User, d->size,
+                                          KIcon::DefaultState, 0, true)
+                                          .convertToImage();
+  }
+  else
+    img.load(path);
   
   if (img.isNull())
      return;

@@ -1442,14 +1442,21 @@ QPixmap KIconLoader::unknown()
     if ( QPixmapCache::find("unknown", pix) )
             return pix;
 
-    QString path = KGlobal::iconLoader()->iconPath("unknown", KIcon::Small, true);
+    KIconLoader *loader = KGlobal::iconLoader();
+    QString path = loader->iconPath("unknown", KIcon::Small, true);
     if (path.isEmpty())
     {
 	kdDebug(264) << "Warning: Cannot find \"unknown\" icon." << endl;
 	pix.resize(32,32);
     } else
     {
-        pix.load(path);
+        // Not QPixmap::load(): the icon may be an SVG file.
+        QImage *img = loadIconImage(path, loader->currentSize(KIcon::Small));
+        if (img)
+        {
+            pix.convertFromImage(*img);
+            delete img;
+        }
         QPixmapCache::insert("unknown", pix);
     }
 

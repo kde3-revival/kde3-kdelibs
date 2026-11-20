@@ -18,6 +18,9 @@
     Boston, MA 02110-1301, USA.
 */
 
+#include <qmap.h>
+#include <qpixmap.h>
+
 #include <kdebug.h>
 #include <kglobal.h>
 #include <kinstance.h>
@@ -42,6 +45,8 @@ public:
 
   KIconLoader *m_iconLoader;
   KInstance *m_instance;
+  // SVG icons stored as pixmaps: "<context>|<name>" -> "<size>:<path>"
+  QMap<QString, QString> m_svgIcons;
 };
 
 KMimeSourceFactory::KMimeSourceFactory (KIconLoader* loader)
@@ -68,26 +73,42 @@ QString KMimeSourceFactory::makeAbsolute (const QString& absOrRelName, const QSt
 	}
 
   QString result;
+  KIcon::Group group = KIcon::NoGroup;
 
   if (myContext == "desktop")
-	{
-	  result = d->iconLoader()->iconPath (myName, KIcon::Desktop);
-	}
+	group = KIcon::Desktop;
   else if (myContext == "toolbar")
-	{	 
-	  result = d->iconLoader()->iconPath (myName, KIcon::Toolbar);
-	}
+	group = KIcon::Toolbar;
   else if (myContext == "maintoolbar")
-	{
-	  result = d->iconLoader()->iconPath (myName, KIcon::MainToolbar);
-	}
+	group = KIcon::MainToolbar;
   else if (myContext == "small")
-	{
-	  result = d->iconLoader()->iconPath (myName, KIcon::Small);
-	}
+	group = KIcon::Small;
   else if (myContext == "user")
-	{	  
-	  result = d->iconLoader()->iconPath (myName, KIcon::User);
+	group = KIcon::User;
+
+  if (group != KIcon::NoGroup)
+	result = d->iconLoader()->iconPath (myName, group);
+
+  // QMimeSourceFactory reads the file with QImageIO, which cannot read
+  // SVG: store the icon rendered by KIconLoader (at the size of its group,
+  // "user" icons at their own size) under the name asked for instead.
+  const QString ext = result.right (4).lower();
+  if (ext == ".svg" || ext == "svgz")
+	{
+	  const int size = group == KIcon::User ? 0
+		: d->iconLoader()->currentSize (group);
+	  const QString stored = QString::number (size) + ':' + result;
+	  QMap<QString, QString>::ConstIterator it = d->m_svgIcons.find (absOrRelName);
+	  if (it != d->m_svgIcons.end() && it.data() == stored)
+		return absOrRelName;
+	  QPixmap pix = d->iconLoader()->loadIcon (result, KIcon::User, size,
+						   KIcon::DefaultState, 0, true);
+	  if (!pix.isNull())
+		{
+		  const_cast<KMimeSourceFactory *> (this)->setPixmap (absOrRelName, pix);
+		  d->m_svgIcons[absOrRelName] = stored;
+		  return absOrRelName;
+		}
 	}
 
   if (result.isEmpty())
