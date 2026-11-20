@@ -28,11 +28,17 @@
 #include <kconfig.h>
 #include <kstaticdeleter.h>
 #include <qregexp.h>
+#include <qfile.h>
 
 
 #include <stdio.h>
 #include <unistd.h>
 #include "kopenssl.h"
+
+// OPENSSL_SHLIB_VERSION is a plain number (e.g. 3), unlike the old
+// SHLIB_VERSION_NUMBER string
+#define KOSSL_STRINGIFY2(x) #x
+#define KOSSL_STRINGIFY(x) KOSSL_STRINGIFY2(x)
 
 extern "C" {
 #ifdef KSSL_HAVE_SSL
@@ -54,6 +60,8 @@ static void (*K_SSL_CTX_set_verify)(SSL_CTX *, int,
 static int (*K_SSL_use_certificate)(SSL *, X509 *) = 0L;
 static SSL_CIPHER *(*K_SSL_get_current_cipher)(SSL *) = 0L;
 static long (*K_SSL_ctrl)      (SSL *,int, long, char *) = 0L;
+static uint64_t (*K_SSL_set_options)(SSL *, uint64_t) = 0L;
+static int (*K_SSL_session_reused)(SSL *) = 0L;
 static int (*K_RAND_egd)        (const char *) = 0L;
 static const char* (*K_RAND_file_name) (char *, size_t) = 0L;
 static int (*K_RAND_load_file)  (const char *, long) = 0L;
@@ -63,10 +71,10 @@ static SSL_METHOD * (*K_SSLv2_client_method) () = 0L;
 static SSL_METHOD * (*K_SSLv3_client_method) () = 0L;
 static SSL_METHOD * (*K_SSLv23_client_method) () = 0L;
 static X509 * (*K_SSL_get_peer_certificate) (SSL *) = 0L;
-static int (*K_SSL_CIPHER_get_bits) (SSL_CIPHER *,int *) = 0L;
-static char * (*K_SSL_CIPHER_get_version) (SSL_CIPHER *) = 0L;
-static const char * (*K_SSL_CIPHER_get_name) (SSL_CIPHER *) = 0L;
-static char * (*K_SSL_CIPHER_description) (SSL_CIPHER *, char *, int) = 0L;
+static int (*K_SSL_CIPHER_get_bits) (const SSL_CIPHER *,int *) = 0L;
+static char * (*K_SSL_CIPHER_get_version) (const SSL_CIPHER *) = 0L;
+static const char * (*K_SSL_CIPHER_get_name) (const SSL_CIPHER *) = 0L;
+static char * (*K_SSL_CIPHER_description) (const SSL_CIPHER *, char *, int) = 0L;
 static X509 * (*K_d2i_X509) (X509 **,unsigned char **,long) = 0L;
 static int (*K_i2d_X509) (X509 *,unsigned char **) = 0L;
 static int (*K_X509_cmp) (X509 *, X509 *) = 0L;
@@ -84,7 +92,7 @@ static X509_LOOKUP_METHOD *(*K_X509_LOOKUP_file)(void) = 0L;
 static void (*K_X509_LOOKUP_free)(X509_LOOKUP *) = 0L;
 static int (*K_X509_LOOKUP_ctrl)(X509_LOOKUP *, int, const char *, long, char **) = 0L;
 static void (*K_X509_STORE_CTX_init)(X509_STORE_CTX *, X509_STORE *, X509 *, STACK_OF(X509) *) = 0L;
-static void (*K_CRYPTO_free)       (void *) = 0L;
+static void (*K_CRYPTO_free)       (void *, const char *, int) = 0L;
 static X509* (*K_X509_dup)         (X509 *) = 0L;
 static BIO_METHOD *(*K_BIO_s_mem) (void) = 0L;
 static BIO* (*K_BIO_new) (BIO_METHOD *) = 0L;
@@ -96,9 +104,8 @@ static int  (*K_BIO_write) (BIO *b, const void *data, int len) = 0L;
 static int (*K_PEM_ASN1_write_bio) (int (*)(),const char *,BIO *,char *,
                                    const EVP_CIPHER *,unsigned char *,int ,
                                             pem_password_cb *, void *) = 0L;
-static ASN1_METHOD* (*K_X509_asn1_meth) (void) = 0L;
 static int (*K_ASN1_i2d_fp)(int (*)(),FILE *,unsigned char *) = 0L;
-static int (*K_i2d_ASN1_HEADER)(ASN1_HEADER *, unsigned char **) = 0L;
+static int (*K_i2d_ASN1_HEADER)(void *, unsigned char **) = 0L;
 static int (*K_X509_print_fp)  (FILE *, X509*) = 0L;
 static int (*K_i2d_PKCS12)  (PKCS12*, unsigned char**) = 0L;
 static int (*K_i2d_PKCS12_fp)  (FILE *, PKCS12*) = 0L;
@@ -118,16 +125,32 @@ static int (*K_SSL_get_error) (SSL*, int) = 0L;
 static STACK_OF(X509)* (*K_SSL_get_peer_cert_chain) (SSL*) = 0L;
 static void (*K_X509_STORE_CTX_set_chain) (X509_STORE_CTX *, STACK_OF(X509)*) = 0L;
 static void (*K_X509_STORE_CTX_set_purpose) (X509_STORE_CTX *, int) = 0L;
-static void (*K_sk_free) (STACK*) = 0L;
-static int (*K_sk_num) (STACK*) = 0L;
-static char* (*K_sk_pop) (STACK*) = 0L;
-static char* (*K_sk_value) (STACK*, int) = 0L;
-static STACK* (*K_sk_new) (int (*)()) = 0L;
-static int (*K_sk_push) (STACK*, char*) = 0L;
-static STACK* (*K_sk_dup) (STACK *) = 0L;
+static void (*K_X509_STORE_CTX_cleanup) (X509_STORE_CTX *) = 0L;
+static int (*K_X509_STORE_CTX_get_error) (X509_STORE_CTX *) = 0L;
+static void (*K_X509_STORE_CTX_set_error) (X509_STORE_CTX *, int) = 0L;
+static int (*K_X509_STORE_CTX_get_error_depth) (X509_STORE_CTX *) = 0L;
+static X509* (*K_X509_STORE_CTX_get_current_cert) (X509_STORE_CTX *) = 0L;
+static void (*K_X509_STORE_set_verify_cb) (X509_STORE *, int (*)(int, X509_STORE_CTX *)) = 0L;
+static void (*K_sk_free) (OPENSSL_STACK*) = 0L;
+static int (*K_sk_num) (const OPENSSL_STACK*) = 0L;
+static char* (*K_sk_pop) (OPENSSL_STACK*) = 0L;
+static char* (*K_sk_value) (const OPENSSL_STACK*, int) = 0L;
+static OPENSSL_STACK* (*K_sk_new) (OPENSSL_sk_compfunc) = 0L;
+static int (*K_sk_push) (OPENSSL_STACK*, const void*) = 0L;
+static OPENSSL_STACK* (*K_sk_dup) (const OPENSSL_STACK *) = 0L;
 static char * (*K_i2s_ASN1_INTEGER) (X509V3_EXT_METHOD *, ASN1_INTEGER *) =0L;
 static ASN1_INTEGER * (*K_X509_get_serialNumber) (X509 *) = 0L;
 static EVP_PKEY *(*K_X509_get_pubkey)(X509 *) = 0L;
+static ASN1_TIME *(*K_X509_getm_notBefore)(const X509 *) = 0L;
+static ASN1_TIME *(*K_X509_getm_notAfter)(const X509 *) = 0L;
+static int (*K_X509_get_signature_nid)(const X509 *) = 0L;
+static void (*K_X509_get0_signature)(const ASN1_BIT_STRING **, const X509_ALGOR **, const X509 *) = 0L;
+static int (*K_EVP_PKEY_get_id)(const EVP_PKEY *) = 0L;
+static RSA *(*K_EVP_PKEY_get0_RSA)(EVP_PKEY *) = 0L;
+static DSA *(*K_EVP_PKEY_get0_DSA)(EVP_PKEY *) = 0L;
+static void (*K_RSA_get0_key)(const RSA *, const BIGNUM **, const BIGNUM **, const BIGNUM **) = 0L;
+static void (*K_DSA_get0_pqg)(const DSA *, const BIGNUM **, const BIGNUM **, const BIGNUM **) = 0L;
+static void (*K_DSA_get0_key)(const DSA *, const BIGNUM **, const BIGNUM **) = 0L;
 static int (*K_i2d_PublicKey)(EVP_PKEY *, unsigned char **) = 0L;
 static int (*K_X509_check_private_key)(X509 *, EVP_PKEY *) = 0L;
 static char * (*K_BN_bn2hex)(const BIGNUM *) = 0L;
@@ -177,11 +200,12 @@ static PKCS7 *(*K_PKCS7_encrypt)(STACK_OF(X509) *, BIO *, EVP_CIPHER *, int) = 0
 static int (*K_PKCS7_decrypt)(PKCS7 *, EVP_PKEY *, X509 *, BIO *, int) = 0L;
 static SSL_SESSION* (*K_SSL_get1_session)(SSL*) = 0L;
 static void (*K_SSL_SESSION_free)(SSL_SESSION*) = 0L;
+static int (*K_SSL_SESSION_up_ref)(SSL_SESSION*) = 0L;
 static int (*K_SSL_set_session)(SSL*,SSL_SESSION*) = 0L;
 static SSL_SESSION* (*K_d2i_SSL_SESSION)(SSL_SESSION**,unsigned char**, long) = 0L;
 static int (*K_i2d_SSL_SESSION)(SSL_SESSION*,unsigned char**) = 0L;
-static STACK *(*K_X509_get1_email)(X509 *x) = 0L;
-static void (*K_X509_email_free)(STACK *sk) = 0L;
+static OPENSSL_STACK *(*K_X509_get1_email)(X509 *x) = 0L;
+static void (*K_X509_email_free)(OPENSSL_STACK *sk) = 0L;
 static EVP_CIPHER *(*K_EVP_des_ede3_cbc)() = 0L;
 static EVP_CIPHER *(*K_EVP_des_cbc)() = 0L;
 static EVP_CIPHER *(*K_EVP_rc2_cbc)() = 0L;
@@ -195,7 +219,8 @@ static int (*K_X509_REQ_sign)(X509_REQ*, EVP_PKEY*, const EVP_MD*) = 0L;
 static int (*K_X509_NAME_add_entry_by_txt)(X509_NAME*, char*, int, unsigned char*, int, int, int) = 0L;
 static X509_NAME *(*K_X509_NAME_new)() = 0L;
 static int (*K_X509_REQ_set_subject_name)(X509_REQ*,X509_NAME*) = 0L;
-static unsigned char *(*K_ASN1_STRING_data)(ASN1_STRING*) = 0L;
+static const unsigned char *(*K_ASN1_STRING_get0_data)(const ASN1_STRING*) = 0L;
+static int (*K_ASN1_STRING_length)(const ASN1_STRING*) = 0L;
 static STACK_OF(SSL_CIPHER) *(*K_SSL_get_ciphers)(const SSL *ssl) = 0L;
 
 #endif
@@ -326,11 +351,20 @@ KConfig *cfg;
 	     << "libssl.dylib"
 	     << "libssl.0.9.dylib"
              #else
-             #ifdef SHLIB_VERSION_NUMBER
-             << "libssl.so." SHLIB_VERSION_NUMBER
+             // Only versioned names, loaded as pairs: entry i of
+             // libnamess goes with entry i of libnamesc (see below).
+             // The version of the headers first, then 4 and 3.
+             #define KOSSL_LOAD_PAIRS
+             #if defined(OPENSSL_SHLIB_VERSION) && OPENSSL_SHLIB_VERSION != 3 && OPENSSL_SHLIB_VERSION != 4
+             << "libssl.so." KOSSL_STRINGIFY(OPENSSL_SHLIB_VERSION)
              #endif
-             << "libssl.so"
-	     << "libssl.so.0"
+             #if OPENSSL_SHLIB_VERSION == 3
+             << "libssl.so.3"
+             << "libssl.so.4"
+             #else
+             << "libssl.so.4"
+             << "libssl.so.3"
+             #endif
              #endif
 	     ;
 
@@ -343,15 +377,49 @@ KConfig *cfg;
 	     << "libcrypto.dylib"
 	     << "libcrypto.0.9.dylib"
 	     #else
-             #ifdef SHLIB_VERSION_NUMBER
-             << "libcrypto.so." SHLIB_VERSION_NUMBER
+             #if defined(OPENSSL_SHLIB_VERSION) && OPENSSL_SHLIB_VERSION != 3 && OPENSSL_SHLIB_VERSION != 4
+             << "libcrypto.so." KOSSL_STRINGIFY(OPENSSL_SHLIB_VERSION)
              #endif
-             << "libcrypto.so"
-	     << "libcrypto.so.0"
+             #if OPENSSL_SHLIB_VERSION == 3
+             << "libcrypto.so.3"
+             << "libcrypto.so.4"
+             #else
+             << "libcrypto.so.4"
+             << "libcrypto.so.3"
+             #endif
              #endif
 	     ;
 #endif
 
+#ifdef KOSSL_LOAD_PAIRS
+   // libssl and libcrypto of different OpenSSL versions (e.g. libssl.so.4
+   // and libcrypto.so.3 when only one of the two exists in a directory)
+   // must not be mixed: the functions are resolved separately in each.
+   // Take both from the same directory with the same soname version.
+   for (QStringList::Iterator it = libpaths.begin();
+                              it != libpaths.end() && !_sslLib;
+                              ++it) {
+      QString dir = *it;
+      if (!dir.isEmpty() && !dir.endsWith("/"))
+         dir += "/";
+      for (uint i = 0; i < libnamesc.count() && i < libnamess.count(); i++) {
+         QString clib = dir + libnamesc[i];
+         QString slib = dir + libnamess[i];
+         if (access(QFile::encodeName(clib), R_OK) ||
+             access(QFile::encodeName(slib), R_OK))
+            continue;
+         _cryptoLib = ll->globalLibrary(clib.latin1());
+         if (_cryptoLib)
+            _sslLib = ll->globalLibrary(slib.latin1());
+         if (_sslLib)
+            break;
+         if (_cryptoLib) {
+            _cryptoLib->unload();
+            _cryptoLib = 0L;
+         }
+      }
+   }
+#else
    for (QStringList::Iterator it = libpaths.begin();
                               it != libpaths.end();
                               ++it) {
@@ -370,6 +438,7 @@ KConfig *cfg;
       }
       if (_cryptoLib) break;
    }
+#endif
 
    if (_cryptoLib) {
 #ifdef KSSL_HAVE_SSL
@@ -378,7 +447,7 @@ KConfig *cfg;
       K_RAND_load_file = (int (*)(const char *, long)) _cryptoLib->symbol("RAND_load_file");
       K_RAND_file_name = (const char* (*)(char *, size_t)) _cryptoLib->symbol("RAND_file_name");
       K_RAND_write_file = (int (*)(const char *)) _cryptoLib->symbol("RAND_write_file");
-      K_CRYPTO_free = (void (*) (void *)) _cryptoLib->symbol("CRYPTO_free");
+      K_CRYPTO_free = (void (*) (void *, const char *, int)) _cryptoLib->symbol("CRYPTO_free");
       K_d2i_X509 = (X509 * (*)(X509 **,unsigned char **,long)) _cryptoLib->symbol("d2i_X509");
       K_i2d_X509 = (int (*)(X509 *,unsigned char **)) _cryptoLib->symbol("i2d_X509");
       K_X509_cmp = (int (*)(X509 *, X509 *)) _cryptoLib->symbol("X509_cmp");
@@ -404,9 +473,9 @@ KConfig *cfg;
       K_BIO_ctrl = (long (*) (BIO *,int,long,void *)) _cryptoLib->symbol("BIO_ctrl");
       K_BIO_write = (int (*) (BIO *b, const void *data, int len)) _cryptoLib->symbol("BIO_write");
       K_PEM_ASN1_write_bio = (int (*)(int (*)(), const char *,BIO*, char*, const EVP_CIPHER *, unsigned char *, int, pem_password_cb *, void *)) _cryptoLib->symbol("PEM_ASN1_write_bio");
-      K_X509_asn1_meth = (ASN1_METHOD* (*)(void)) _cryptoLib->symbol("X509_asn1_meth");
       K_ASN1_i2d_fp = (int (*)(int (*)(), FILE*, unsigned char *)) _cryptoLib->symbol("ASN1_i2d_fp");
-      K_i2d_ASN1_HEADER = (int (*)(ASN1_HEADER *, unsigned char **)) _cryptoLib->symbol("i2d_ASN1_HEADER");
+      // ASN1_HEADER is gone since OpenSSL 0.9.8; stays NULL with newer libraries
+      K_i2d_ASN1_HEADER = (int (*)(void *, unsigned char **)) _cryptoLib->symbol("i2d_ASN1_HEADER");
       K_X509_print_fp = (int (*)(FILE*, X509*)) _cryptoLib->symbol("X509_print_fp");
       K_i2d_PKCS12 = (int (*)(PKCS12*, unsigned char**)) _cryptoLib->symbol("i2d_PKCS12");
       K_i2d_PKCS12_fp = (int (*)(FILE *, PKCS12*)) _cryptoLib->symbol("i2d_PKCS12_fp");
@@ -420,18 +489,37 @@ KConfig *cfg;
       K_EVP_PKEY_new = (EVP_PKEY* (*)()) _cryptoLib->symbol("EVP_PKEY_new");
       K_X509_REQ_free = (void (*)(X509_REQ*)) _cryptoLib->symbol("X509_REQ_free");
       K_X509_REQ_new = (X509_REQ* (*)()) _cryptoLib->symbol("X509_REQ_new");
-      K_X509_STORE_CTX_set_chain = (void (*)(X509_STORE_CTX *, STACK_OF(X509)*)) _cryptoLib->symbol("X509_STORE_CTX_set_chain");
+      // X509_STORE_CTX_set_chain was renamed in OpenSSL 1.1.0
+      K_X509_STORE_CTX_set_chain = (void (*)(X509_STORE_CTX *, STACK_OF(X509)*)) _cryptoLib->symbol("X509_STORE_CTX_set0_untrusted");
       K_X509_STORE_CTX_set_purpose = (void (*)(X509_STORE_CTX *, int)) _cryptoLib->symbol("X509_STORE_CTX_set_purpose");
-      K_sk_free = (void (*) (STACK *)) _cryptoLib->symbol("sk_free");
-      K_sk_num = (int (*) (STACK *)) _cryptoLib->symbol("sk_num");
-      K_sk_pop = (char* (*) (STACK *)) _cryptoLib->symbol("sk_pop");
-      K_sk_value = (char* (*) (STACK *, int)) _cryptoLib->symbol("sk_value");
-      K_sk_new = (STACK* (*) (int (*)())) _cryptoLib->symbol("sk_new");
-      K_sk_push = (int (*) (STACK*, char*)) _cryptoLib->symbol("sk_push");
-      K_sk_dup = (STACK* (*) (STACK *)) _cryptoLib->symbol("sk_dup");
+      K_X509_STORE_CTX_cleanup = (void (*)(X509_STORE_CTX *)) _cryptoLib->symbol("X509_STORE_CTX_cleanup");
+      K_X509_STORE_CTX_get_error = (int (*)(X509_STORE_CTX *)) _cryptoLib->symbol("X509_STORE_CTX_get_error");
+      K_X509_STORE_CTX_set_error = (void (*)(X509_STORE_CTX *, int)) _cryptoLib->symbol("X509_STORE_CTX_set_error");
+      K_X509_STORE_CTX_get_error_depth = (int (*)(X509_STORE_CTX *)) _cryptoLib->symbol("X509_STORE_CTX_get_error_depth");
+      K_X509_STORE_CTX_get_current_cert = (X509* (*)(X509_STORE_CTX *)) _cryptoLib->symbol("X509_STORE_CTX_get_current_cert");
+      K_X509_STORE_set_verify_cb = (void (*)(X509_STORE *, int (*)(int, X509_STORE_CTX *))) _cryptoLib->symbol("X509_STORE_set_verify_cb");
+      // the sk_* functions were renamed to OPENSSL_sk_* in OpenSSL 1.1.0
+      K_sk_free = (void (*) (OPENSSL_STACK *)) _cryptoLib->symbol("OPENSSL_sk_free");
+      K_sk_num = (int (*) (const OPENSSL_STACK *)) _cryptoLib->symbol("OPENSSL_sk_num");
+      K_sk_pop = (char* (*) (OPENSSL_STACK *)) _cryptoLib->symbol("OPENSSL_sk_pop");
+      K_sk_value = (char* (*) (const OPENSSL_STACK *, int)) _cryptoLib->symbol("OPENSSL_sk_value");
+      K_sk_new = (OPENSSL_STACK* (*) (OPENSSL_sk_compfunc)) _cryptoLib->symbol("OPENSSL_sk_new");
+      K_sk_push = (int (*) (OPENSSL_STACK*, const void*)) _cryptoLib->symbol("OPENSSL_sk_push");
+      K_sk_dup = (OPENSSL_STACK* (*) (const OPENSSL_STACK *)) _cryptoLib->symbol("OPENSSL_sk_dup");
       K_i2s_ASN1_INTEGER = (char *(*) (X509V3_EXT_METHOD *, ASN1_INTEGER *)) _cryptoLib->symbol("i2s_ASN1_INTEGER");
       K_X509_get_serialNumber = (ASN1_INTEGER * (*) (X509 *)) _cryptoLib->symbol("X509_get_serialNumber");
       K_X509_get_pubkey = (EVP_PKEY *(*)(X509 *)) _cryptoLib->symbol("X509_get_pubkey");
+      K_X509_getm_notBefore = (ASN1_TIME *(*)(const X509 *)) _cryptoLib->symbol("X509_getm_notBefore");
+      K_X509_getm_notAfter = (ASN1_TIME *(*)(const X509 *)) _cryptoLib->symbol("X509_getm_notAfter");
+      K_X509_get_signature_nid = (int (*)(const X509 *)) _cryptoLib->symbol("X509_get_signature_nid");
+      K_X509_get0_signature = (void (*)(const ASN1_BIT_STRING **, const X509_ALGOR **, const X509 *)) _cryptoLib->symbol("X509_get0_signature");
+      // EVP_PKEY_id is a macro for EVP_PKEY_get_id since OpenSSL 3.0
+      K_EVP_PKEY_get_id = (int (*)(const EVP_PKEY *)) _cryptoLib->symbol("EVP_PKEY_get_id");
+      K_EVP_PKEY_get0_RSA = (RSA *(*)(EVP_PKEY *)) _cryptoLib->symbol("EVP_PKEY_get0_RSA");
+      K_EVP_PKEY_get0_DSA = (DSA *(*)(EVP_PKEY *)) _cryptoLib->symbol("EVP_PKEY_get0_DSA");
+      K_RSA_get0_key = (void (*)(const RSA *, const BIGNUM **, const BIGNUM **, const BIGNUM **)) _cryptoLib->symbol("RSA_get0_key");
+      K_DSA_get0_pqg = (void (*)(const DSA *, const BIGNUM **, const BIGNUM **, const BIGNUM **)) _cryptoLib->symbol("DSA_get0_pqg");
+      K_DSA_get0_key = (void (*)(const DSA *, const BIGNUM **, const BIGNUM **)) _cryptoLib->symbol("DSA_get0_key");
       K_i2d_PublicKey = (int (*)(EVP_PKEY *, unsigned char **)) _cryptoLib->symbol("i2d_PublicKey");
       K_X509_check_private_key = (int (*)(X509 *, EVP_PKEY *)) _cryptoLib->symbol("X509_check_private_key");
       K_BN_bn2hex = (char *(*)(const BIGNUM *)) _cryptoLib->symbol("BN_bn2hex");
@@ -478,8 +566,8 @@ KConfig *cfg;
       K_ERR_clear_error = (void (*)()) _cryptoLib->symbol("ERR_clear_error");
       K_ERR_get_error = (unsigned long (*)()) _cryptoLib->symbol("ERR_get_error");
       K_ERR_print_errors_fp = (void (*)(FILE*)) _cryptoLib->symbol("ERR_print_errors_fp");
-      K_X509_get1_email = (STACK *(*)(X509 *x)) _cryptoLib->symbol("X509_get1_email");
-      K_X509_email_free = (void (*)(STACK *sk)) _cryptoLib->symbol("X509_email_free");
+      K_X509_get1_email = (OPENSSL_STACK *(*)(X509 *x)) _cryptoLib->symbol("X509_get1_email");
+      K_X509_email_free = (void (*)(OPENSSL_STACK *sk)) _cryptoLib->symbol("X509_email_free");
       K_EVP_des_ede3_cbc = (EVP_CIPHER *(*)()) _cryptoLib->symbol("EVP_des_ede3_cbc");
       K_EVP_des_cbc = (EVP_CIPHER *(*)()) _cryptoLib->symbol("EVP_des_cbc");
       K_EVP_rc2_cbc = (EVP_CIPHER *(*)()) _cryptoLib->symbol("EVP_rc2_cbc");
@@ -493,7 +581,9 @@ KConfig *cfg;
       K_X509_NAME_add_entry_by_txt = (int (*)(X509_NAME*, char*, int, unsigned char*, int, int, int)) _cryptoLib->symbol("X509_NAME_add_entry_by_txt");
       K_X509_NAME_new = (X509_NAME *(*)()) _cryptoLib->symbol("X509_NAME_new");
       K_X509_REQ_set_subject_name = (int (*)(X509_REQ*,X509_NAME*)) _cryptoLib->symbol("X509_REQ_set_subject_name");
-      K_ASN1_STRING_data = (unsigned char *(*)(ASN1_STRING*)) _cryptoLib->symbol("ASN1_STRING_data");
+      // ASN1_STRING_data was replaced by ASN1_STRING_get0_data in OpenSSL 1.1.0
+      K_ASN1_STRING_get0_data = (const unsigned char *(*)(const ASN1_STRING*)) _cryptoLib->symbol("ASN1_STRING_get0_data");
+      K_ASN1_STRING_length = (int (*)(const ASN1_STRING*)) _cryptoLib->symbol("ASN1_STRING_length");
 #endif
    }
 
@@ -503,7 +593,7 @@ KConfig *cfg;
    if (!libname.isNull())
          _sslLib = ll->globalLibrary(libname.latin1());
    }
-#else
+#elif !defined(KOSSL_LOAD_PAIRS)
    for (QStringList::Iterator it = libpaths.begin();
                               it != libpaths.end();
                               ++it) {
@@ -548,15 +638,22 @@ KConfig *cfg;
                                   _sslLib->symbol("SSL_get_current_cipher");
       K_SSL_ctrl = (long (*)(SSL * ,int, long, char *))
                                   _sslLib->symbol("SSL_ctrl");
-      K_TLSv1_client_method = (SSL_METHOD *(*)()) _sslLib->symbol("TLSv1_client_method");
+      K_SSL_set_options = (uint64_t (*)(SSL *, uint64_t)) _sslLib->symbol("SSL_set_options");
+      K_SSL_session_reused = (int (*)(SSL *)) _sslLib->symbol("SSL_session_reused");
+      // OpenSSL >= 1.1.0 has only the version-flexible TLS_client_method
+      // (SSLv23_client_method is a macro for it); the TLS 1.0-only method
+      // was removed in OpenSSL 4, so "TLSv1" means TLS as such now.
+      // There is no SSLv2 and no SSLv3 method any more, these stay NULL.
+      K_TLSv1_client_method = (SSL_METHOD *(*)()) _sslLib->symbol("TLS_client_method");
       K_SSLv2_client_method = (SSL_METHOD *(*)()) _sslLib->symbol("SSLv2_client_method");
       K_SSLv3_client_method = (SSL_METHOD *(*)()) _sslLib->symbol("SSLv3_client_method");
-      K_SSLv23_client_method = (SSL_METHOD *(*)()) _sslLib->symbol("SSLv23_client_method");
-      K_SSL_get_peer_certificate = (X509 *(*)(SSL *)) _sslLib->symbol("SSL_get_peer_certificate");
-      K_SSL_CIPHER_get_bits = (int (*)(SSL_CIPHER *,int *)) _sslLib->symbol("SSL_CIPHER_get_bits");
-      K_SSL_CIPHER_get_version = (char * (*)(SSL_CIPHER *)) _sslLib->symbol("SSL_CIPHER_get_version");
-      K_SSL_CIPHER_get_name = (const char * (*)(SSL_CIPHER *)) _sslLib->symbol("SSL_CIPHER_get_name");
-      K_SSL_CIPHER_description = (char * (*)(SSL_CIPHER *, char *, int)) _sslLib->symbol("SSL_CIPHER_description");
+      K_SSLv23_client_method = (SSL_METHOD *(*)()) _sslLib->symbol("TLS_client_method");
+      // renamed in OpenSSL 3.0, same reference counting
+      K_SSL_get_peer_certificate = (X509 *(*)(SSL *)) _sslLib->symbol("SSL_get1_peer_certificate");
+      K_SSL_CIPHER_get_bits = (int (*)(const SSL_CIPHER *,int *)) _sslLib->symbol("SSL_CIPHER_get_bits");
+      K_SSL_CIPHER_get_version = (char * (*)(const SSL_CIPHER *)) _sslLib->symbol("SSL_CIPHER_get_version");
+      K_SSL_CIPHER_get_name = (const char * (*)(const SSL_CIPHER *)) _sslLib->symbol("SSL_CIPHER_get_name");
+      K_SSL_CIPHER_description = (char * (*)(const SSL_CIPHER *, char *, int)) _sslLib->symbol("SSL_CIPHER_description");
       K_SSL_CTX_use_PrivateKey = (int (*)(SSL_CTX*, EVP_PKEY*)) _sslLib->symbol("SSL_CTX_use_PrivateKey");
       K_SSL_CTX_use_certificate = (int (*)(SSL_CTX*, X509*)) _sslLib->symbol("SSL_CTX_use_certificate");
       K_SSL_get_error = (int (*)(SSL*, int)) _sslLib->symbol("SSL_get_error");
@@ -565,10 +662,11 @@ KConfig *cfg;
       K_SSL_peek = (int (*)(SSL*,void*,int)) _sslLib->symbol("SSL_peek");
       K_SSL_get1_session = (SSL_SESSION* (*)(SSL*)) _sslLib->symbol("SSL_get1_session");
       K_SSL_SESSION_free = (void (*)(SSL_SESSION*)) _sslLib->symbol("SSL_SESSION_free");
+      K_SSL_SESSION_up_ref = (int (*)(SSL_SESSION*)) _sslLib->symbol("SSL_SESSION_up_ref");
       K_SSL_set_session = (int (*)(SSL*,SSL_SESSION*)) _sslLib->symbol("SSL_set_session");
       K_d2i_SSL_SESSION = (SSL_SESSION* (*)(SSL_SESSION**,unsigned char**, long)) _sslLib->symbol("d2i_SSL_SESSION");
       K_i2d_SSL_SESSION = (int (*)(SSL_SESSION*,unsigned char**)) _sslLib->symbol("i2d_SSL_SESSION");
-      K_SSL_get_ciphers = (STACK *(*)(const SSL*)) _sslLib->symbol("SSL_get_ciphers");
+      K_SSL_get_ciphers = (STACK_OF(SSL_CIPHER) *(*)(const SSL*)) _sslLib->symbol("SSL_get_ciphers");
 #endif
 
 
@@ -577,6 +675,16 @@ KConfig *cfg;
       x = _sslLib->symbol("SSL_library_init");
       if (_cryptoLib) {
          if (x) ((int (*)())x)();
+#ifdef KSSL_HAVE_SSL
+         // OpenSSL >= 1.1.0: SSL_library_init() and the
+         // OPENSSL_add_all_algorithms_conf() etc. below are macros for these
+         x = _sslLib->symbol("OPENSSL_init_ssl");
+         if (x) ((int (*)(uint64_t, const OPENSSL_INIT_SETTINGS *))x)(0, NULL);
+         x = _cryptoLib->symbol("OPENSSL_init_crypto");
+         if (x) ((int (*)(uint64_t, const OPENSSL_INIT_SETTINGS *))x)(
+                 OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS |
+                 OPENSSL_INIT_LOAD_CONFIG, NULL);
+#endif
          x = _cryptoLib->symbol("OpenSSL_add_all_algorithms");
          if (!x)
             x = _cryptoLib->symbol("OPENSSL_add_all_algorithms");
@@ -741,6 +849,19 @@ long KOpenSSLProxy::SSL_ctrl(SSL *ssl,int cmd, long larg, char *parg) {
 }
 
 
+// These two were SSL_ctrl() macros, so they returned -1 without the library.
+uint64_t KOpenSSLProxy::SSL_set_options(SSL *ssl, uint64_t options) {
+   if (K_SSL_set_options) return (K_SSL_set_options)(ssl, options);
+   return (uint64_t)-1;
+}
+
+
+int KOpenSSLProxy::SSL_session_reused(SSL *ssl) {
+   if (K_SSL_session_reused) return (K_SSL_session_reused)(ssl);
+   return -1;
+}
+
+
 int KOpenSSLProxy::RAND_egd(const char *path) {
    if (K_RAND_egd) return (K_RAND_egd)(path);
    return -1;
@@ -777,25 +898,25 @@ X509 *KOpenSSLProxy::SSL_get_peer_certificate(SSL *s) {
 }
 
 
-int KOpenSSLProxy::SSL_CIPHER_get_bits(SSL_CIPHER *c,int *alg_bits) {
+int KOpenSSLProxy::SSL_CIPHER_get_bits(const SSL_CIPHER *c,int *alg_bits) {
    if (K_SSL_CIPHER_get_bits) return (K_SSL_CIPHER_get_bits)(c, alg_bits);
    return -1;
 }
 
 
-char * KOpenSSLProxy::SSL_CIPHER_get_version(SSL_CIPHER *c) {
+char * KOpenSSLProxy::SSL_CIPHER_get_version(const SSL_CIPHER *c) {
    if (K_SSL_CIPHER_get_version) return (K_SSL_CIPHER_get_version)(c);
    return 0L;
 }
 
 
-const char * KOpenSSLProxy::SSL_CIPHER_get_name(SSL_CIPHER *c) {
+const char * KOpenSSLProxy::SSL_CIPHER_get_name(const SSL_CIPHER *c) {
    if (K_SSL_CIPHER_get_name) return (K_SSL_CIPHER_get_name)(c);
    return 0L;
 }
 
 
-char * KOpenSSLProxy::SSL_CIPHER_description(SSL_CIPHER *c,char *buf,int size) {
+char * KOpenSSLProxy::SSL_CIPHER_description(const SSL_CIPHER *c,char *buf,int size) {
    if (K_SSL_CIPHER_description) return (K_SSL_CIPHER_description)(c,buf,size);
    return 0L;
 }
@@ -898,8 +1019,8 @@ void KOpenSSLProxy::X509_STORE_CTX_init(X509_STORE_CTX *ctx, X509_STORE *store, 
 }
 
 
-void KOpenSSLProxy::CRYPTO_free(void *x) {
-   if (K_CRYPTO_free) (K_CRYPTO_free)(x);
+void KOpenSSLProxy::CRYPTO_free(void *x, const char *file, int line) {
+   if (K_CRYPTO_free) (K_CRYPTO_free)(x, file, line);
 }
 
 
@@ -954,12 +1075,6 @@ int KOpenSSLProxy::BIO_write(BIO *b, const void *data, int len) {
 int KOpenSSLProxy::PEM_write_bio_X509(BIO *bp, X509 *x) {
    if (K_PEM_ASN1_write_bio) return (K_PEM_ASN1_write_bio) ((int (*)())K_i2d_X509, PEM_STRING_X509, bp, (char *)x, 0L, 0L, 0, 0L, 0L);
    else return -1;
-}
-
-
-ASN1_METHOD *KOpenSSLProxy::X509_asn1_meth(void) {
-   if (K_X509_asn1_meth) return (K_X509_asn1_meth)();
-   else return 0L;
 }
 
 
@@ -1064,24 +1179,24 @@ STACK_OF(X509) *KOpenSSLProxy::SSL_get_peer_cert_chain(SSL *s) {
 }
 
 
-void KOpenSSLProxy::sk_free(STACK *s) {
+void KOpenSSLProxy::OPENSSL_sk_free(OPENSSL_STACK *s) {
    if (K_sk_free) (K_sk_free)(s);
 }
 
 
-int KOpenSSLProxy::sk_num(STACK *s) {
+int KOpenSSLProxy::OPENSSL_sk_num(const OPENSSL_STACK *s) {
    if (K_sk_num) return (K_sk_num)(s);
    else return -1;
 }
 
 
-char *KOpenSSLProxy::sk_pop(STACK *s) {
+char *KOpenSSLProxy::OPENSSL_sk_pop(OPENSSL_STACK *s) {
    if (K_sk_pop) return (K_sk_pop)(s);
    else return 0L;
 }
 
 
-char *KOpenSSLProxy::sk_value(STACK *s, int n) {
+char *KOpenSSLProxy::OPENSSL_sk_value(const OPENSSL_STACK *s, int n) {
    if (K_sk_value) return (K_sk_value)(s, n);
    else return 0L;
 }
@@ -1096,19 +1211,54 @@ void KOpenSSLProxy::X509_STORE_CTX_set_purpose(X509_STORE_CTX *v, int purpose) {
 }
 
 
-STACK* KOpenSSLProxy::sk_dup(STACK *s) {
+void KOpenSSLProxy::X509_STORE_CTX_cleanup(X509_STORE_CTX *v) {
+   if (K_X509_STORE_CTX_cleanup) (K_X509_STORE_CTX_cleanup)(v);
+}
+
+
+// The following replace direct accesses to the members of X509_STORE_CTX
+// (error, error_depth, current_cert) and X509_STORE (verify_cb)
+int KOpenSSLProxy::X509_STORE_CTX_get_error(X509_STORE_CTX *v) {
+   if (K_X509_STORE_CTX_get_error) return (K_X509_STORE_CTX_get_error)(v);
+   else return X509_V_ERR_UNSPECIFIED;
+}
+
+
+void KOpenSSLProxy::X509_STORE_CTX_set_error(X509_STORE_CTX *v, int s) {
+   if (K_X509_STORE_CTX_set_error) (K_X509_STORE_CTX_set_error)(v, s);
+}
+
+
+int KOpenSSLProxy::X509_STORE_CTX_get_error_depth(X509_STORE_CTX *v) {
+   if (K_X509_STORE_CTX_get_error_depth) return (K_X509_STORE_CTX_get_error_depth)(v);
+   else return -1;
+}
+
+
+X509 *KOpenSSLProxy::X509_STORE_CTX_get_current_cert(X509_STORE_CTX *v) {
+   if (K_X509_STORE_CTX_get_current_cert) return (K_X509_STORE_CTX_get_current_cert)(v);
+   else return 0L;
+}
+
+
+void KOpenSSLProxy::X509_STORE_set_verify_cb(X509_STORE *v, int (*verify_cb)(int, X509_STORE_CTX *)) {
+   if (K_X509_STORE_set_verify_cb) (K_X509_STORE_set_verify_cb)(v, verify_cb);
+}
+
+
+OPENSSL_STACK* KOpenSSLProxy::OPENSSL_sk_dup(const OPENSSL_STACK *s) {
    if (K_sk_dup) return (K_sk_dup)(s);
    else return 0L;
 }
 
 
-STACK* KOpenSSLProxy::sk_new(int (*cmp)()) {
+OPENSSL_STACK* KOpenSSLProxy::OPENSSL_sk_new(OPENSSL_sk_compfunc cmp) {
    if (K_sk_new) return (K_sk_new)(cmp);
    else return 0L;
 }
 
 
-int KOpenSSLProxy::sk_push(STACK* s, char* d) {
+int KOpenSSLProxy::OPENSSL_sk_push(OPENSSL_STACK* s, const void* d) {
    if (K_sk_push) return (K_sk_push)(s,d);
    else return -1;
 }
@@ -1129,6 +1279,82 @@ ASN1_INTEGER *KOpenSSLProxy::X509_get_serialNumber(X509 *x) {
 EVP_PKEY *KOpenSSLProxy::X509_get_pubkey(X509 *x) {
    if (K_X509_get_pubkey) return (K_X509_get_pubkey)(x);
    else return 0L;
+}
+
+
+// The following replace direct accesses to the members of X509, EVP_PKEY,
+// RSA and DSA
+ASN1_TIME *KOpenSSLProxy::X509_getm_notBefore(const X509 *x) {
+   if (K_X509_getm_notBefore) return (K_X509_getm_notBefore)(x);
+   else return 0L;
+}
+
+
+ASN1_TIME *KOpenSSLProxy::X509_getm_notAfter(const X509 *x) {
+   if (K_X509_getm_notAfter) return (K_X509_getm_notAfter)(x);
+   else return 0L;
+}
+
+
+int KOpenSSLProxy::X509_get_signature_nid(const X509 *x) {
+   if (K_X509_get_signature_nid) return (K_X509_get_signature_nid)(x);
+   else return NID_undef;
+}
+
+
+void KOpenSSLProxy::X509_get0_signature(const ASN1_BIT_STRING **psig, const X509_ALGOR **palg, const X509 *x) {
+   if (K_X509_get0_signature) (K_X509_get0_signature)(psig, palg, x);
+   else {
+      if (psig) *psig = 0L;
+      if (palg) *palg = 0L;
+   }
+}
+
+
+int KOpenSSLProxy::EVP_PKEY_get_id(const EVP_PKEY *pkey) {
+   if (K_EVP_PKEY_get_id) return (K_EVP_PKEY_get_id)(pkey);
+   else return NID_undef;
+}
+
+
+RSA *KOpenSSLProxy::EVP_PKEY_get0_RSA(EVP_PKEY *pkey) {
+   if (K_EVP_PKEY_get0_RSA) return (K_EVP_PKEY_get0_RSA)(pkey);
+   else return 0L;
+}
+
+
+DSA *KOpenSSLProxy::EVP_PKEY_get0_DSA(EVP_PKEY *pkey) {
+   if (K_EVP_PKEY_get0_DSA) return (K_EVP_PKEY_get0_DSA)(pkey);
+   else return 0L;
+}
+
+
+void KOpenSSLProxy::RSA_get0_key(const RSA *r, const BIGNUM **n, const BIGNUM **e, const BIGNUM **d) {
+   if (K_RSA_get0_key) (K_RSA_get0_key)(r, n, e, d);
+   else {
+      if (n) *n = 0L;
+      if (e) *e = 0L;
+      if (d) *d = 0L;
+   }
+}
+
+
+void KOpenSSLProxy::DSA_get0_pqg(const DSA *d, const BIGNUM **p, const BIGNUM **q, const BIGNUM **g) {
+   if (K_DSA_get0_pqg) (K_DSA_get0_pqg)(d, p, q, g);
+   else {
+      if (p) *p = 0L;
+      if (q) *q = 0L;
+      if (g) *g = 0L;
+   }
+}
+
+
+void KOpenSSLProxy::DSA_get0_key(const DSA *d, const BIGNUM **pub_key, const BIGNUM **priv_key) {
+   if (K_DSA_get0_key) (K_DSA_get0_key)(d, pub_key, priv_key);
+   else {
+      if (pub_key) *pub_key = 0L;
+      if (priv_key) *priv_key = 0L;
+   }
 }
 
 
@@ -1407,12 +1633,12 @@ RSA* KOpenSSLProxy::RSA_generate_key(int bits, unsigned long e, void
    else return 0L;
 }
 
-STACK *KOpenSSLProxy::X509_get1_email(X509 *x) {
+OPENSSL_STACK *KOpenSSLProxy::X509_get1_email(X509 *x) {
    if (K_X509_get1_email) return (K_X509_get1_email)(x);
    else return 0L;
 }
 
-void KOpenSSLProxy::X509_email_free(STACK *sk) {
+void KOpenSSLProxy::X509_email_free(OPENSSL_STACK *sk) {
    if (K_X509_email_free) (K_X509_email_free)(sk);
 }
 
@@ -1471,6 +1697,12 @@ SSL_SESSION *KOpenSSLProxy::SSL_get1_session(SSL *ssl) {
 
 void KOpenSSLProxy::SSL_SESSION_free(SSL_SESSION *session) {
    if (K_SSL_SESSION_free) (K_SSL_SESSION_free)(session);
+}
+
+
+int KOpenSSLProxy::SSL_SESSION_up_ref(SSL_SESSION *session) {
+   if (K_SSL_SESSION_up_ref) return (K_SSL_SESSION_up_ref)(session);
+   else return 0;
 }
 
 
@@ -1541,8 +1773,14 @@ int KOpenSSLProxy::X509_REQ_set_subject_name(X509_REQ *req,X509_NAME *name) {
 
 
 unsigned char *KOpenSSLProxy::ASN1_STRING_data(ASN1_STRING *x) {
-   if (K_ASN1_STRING_data) return (K_ASN1_STRING_data)(x);
+   if (K_ASN1_STRING_get0_data) return const_cast<unsigned char *>((K_ASN1_STRING_get0_data)(x));
    return 0L;
+}
+
+
+int KOpenSSLProxy::ASN1_STRING_length(const ASN1_STRING *x) {
+   if (K_ASN1_STRING_length) return (K_ASN1_STRING_length)(x);
+   return 0;
 }
 
 STACK_OF(SSL_CIPHER) *KOpenSSLProxy::SSL_get_ciphers(const SSL* ssl) {

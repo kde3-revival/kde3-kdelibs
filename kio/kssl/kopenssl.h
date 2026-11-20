@@ -184,6 +184,13 @@ public:
    long    SSL_ctrl(SSL *ssl,int cmd, long larg, char *parg);
 
    /*
+    *   Since OpenSSL 1.1.0 SSL_set_options() and SSL_session_reused() are
+    *   real functions instead of SSL_ctrl() macros.
+    */
+   uint64_t SSL_set_options(SSL *ssl, uint64_t options);
+   int SSL_session_reused(SSL *ssl);
+
+   /*
     *   RAND_egd - set the path to the EGD
     */
    int RAND_egd(const char *path);
@@ -209,6 +216,8 @@ public:
 
    /*
     *   TLSv1_client_method - return a TLSv1 client method object
+    *   (OpenSSL >= 1.1.0: the version-flexible TLS_client_method(); the
+    *   TLS 1.0-only method is gone from OpenSSL 4)
     */
    SSL_METHOD *TLSv1_client_method();
 
@@ -227,12 +236,14 @@ public:
 
    /*
     *   SSLv23_client_method - return a SSLv23 client method object
+    *   (OpenSSL >= 1.1.0 names it TLS_client_method)
     */
    SSL_METHOD *SSLv23_client_method();
 
 
    /*
     *   SSL_get_peer_certificate - return the peer's certificate
+    *   (OpenSSL >= 3.0 names it SSL_get1_peer_certificate)
     */
    X509 *SSL_get_peer_certificate(SSL *s);
 
@@ -245,25 +256,25 @@ public:
    /*
     *   SSL_CIPHER_get_bits - get the number of bits in this cipher
     */
-   int SSL_CIPHER_get_bits(SSL_CIPHER *c,int *alg_bits);
+   int SSL_CIPHER_get_bits(const SSL_CIPHER *c,int *alg_bits);
 
 
    /*
     *   SSL_CIPHER_get_version - get the version of this cipher
     */
-   char *SSL_CIPHER_get_version(SSL_CIPHER *c);
+   char *SSL_CIPHER_get_version(const SSL_CIPHER *c);
 
 
    /*
     *   SSL_CIPHER_get_name - get the name of this cipher
     */
-   const char *SSL_CIPHER_get_name(SSL_CIPHER *c);
+   const char *SSL_CIPHER_get_name(const SSL_CIPHER *c);
 
 
    /*
     *   SSL_CIPHER_description - get the description of this cipher
     */
-   char *SSL_CIPHER_description(SSL_CIPHER *,char *buf,int size);
+   char *SSL_CIPHER_description(const SSL_CIPHER *,char *buf,int size);
 
 
    /*
@@ -316,9 +327,31 @@ public:
 
 
    /*
+    *   X509_STORE_CTX_cleanup - release the verification state of an X509
+    *   store context so that it can be initialized again
+    */
+   void X509_STORE_CTX_cleanup(X509_STORE_CTX *v);
+
+
+   /*
     *   X509_STORE_CTX_set_chain - set the certificate chain
+    *   (OpenSSL >= 1.1.0 names it X509_STORE_CTX_set0_untrusted)
     */
    void X509_STORE_CTX_set_chain(X509_STORE_CTX *v, STACK_OF(X509)* x);
+
+   /*
+    *   Accessors for the (now opaque) X509_STORE_CTX
+    */
+   int X509_STORE_CTX_get_error(X509_STORE_CTX *v);
+   void X509_STORE_CTX_set_error(X509_STORE_CTX *v, int s);
+   int X509_STORE_CTX_get_error_depth(X509_STORE_CTX *v);
+   X509 *X509_STORE_CTX_get_current_cert(X509_STORE_CTX *v);
+
+   /*
+    *   X509_STORE_set_verify_cb - set the verification callback (this was
+    *   the X509_STORE_set_verify_cb_func() macro accessing the struct)
+    */
+   void X509_STORE_set_verify_cb(X509_STORE *v, int (*verify_cb)(int, X509_STORE_CTX *));
 
    /*
     *   X509_STORE_CTX_set_purpose - set the purpose of the certificate 
@@ -399,8 +432,9 @@ public:
 
    /*
     *   CRYPTO_free - free up an internally allocated object
+    *   (called through the OPENSSL_free() macro)
     */
-   void CRYPTO_free(void *x);
+   void CRYPTO_free(void *x, const char *file, int line);
 
    /*
     *   BIO_new - create new BIO
@@ -441,12 +475,6 @@ public:
     *   PEM_write_bio_X509 - write a PEM encoded cert to a BIO*
     */
    int PEM_write_bio_X509(BIO *bp, X509 *x);
-
-
-   /*
-    *   X509_asn1_meth - used for netscape output
-    */
-   ASN1_METHOD *X509_asn1_meth();
 
 
    /*
@@ -516,46 +544,54 @@ public:
    void EVP_PKEY_free(EVP_PKEY *x);
 
 
-   /* 
+   /*
+    *   The sk_* stack functions are called OPENSSL_sk_* since OpenSSL
+    *   1.1.0 (sk_* are now macros for them).  The typed sk_TYPE_* macros
+    *   of <openssl/safestack.h> expand to these names, so a source file
+    *   can route them through this class with
+    *   #define OPENSSL_sk_num kossl->OPENSSL_sk_num  etc.
+    */
+
+   /*
     *   Pop off the stack
     */
-   char *sk_pop(STACK *s);
+   char *OPENSSL_sk_pop(OPENSSL_STACK *s);
 
 
-   /* 
+   /*
     *   Free the stack
     */
-   void sk_free(STACK *s);
+   void OPENSSL_sk_free(OPENSSL_STACK *s);
 
 
-   /* 
+   /*
     *  Number of elements in the stack
     */
-   int sk_num(STACK *s);
+   int OPENSSL_sk_num(const OPENSSL_STACK *s);
 
 
-   /* 
+   /*
     *  Value of element n in the stack
     */
-   char *sk_value(STACK *s, int n);
+   char *OPENSSL_sk_value(const OPENSSL_STACK *s, int n);
 
 
-   /* 
+   /*
     *  Create a new stack
     */
-   STACK *sk_new(int (*cmp)());
+   OPENSSL_STACK *OPENSSL_sk_new(OPENSSL_sk_compfunc cmp);
 
 
-   /* 
+   /*
     *  Add an element to the stack
     */
-   int sk_push(STACK *s, char *d);
+   int OPENSSL_sk_push(OPENSSL_STACK *s, const void *d);
 
 
-   /* 
+   /*
     *  Duplicate the stack
     */
-   STACK *sk_dup(STACK *s);
+   OPENSSL_STACK *OPENSSL_sk_dup(const OPENSSL_STACK *s);
 
 
    /*
@@ -574,6 +610,26 @@ public:
     *  Get the certificate's public key
     */
    EVP_PKEY *X509_get_pubkey(X509 *x);
+
+
+   /*
+    *  Accessors for the (now opaque) X509 structure
+    */
+   ASN1_TIME *X509_getm_notBefore(const X509 *x);
+   ASN1_TIME *X509_getm_notAfter(const X509 *x);
+   int X509_get_signature_nid(const X509 *x);
+   void X509_get0_signature(const ASN1_BIT_STRING **psig, const X509_ALGOR **palg, const X509 *x);
+
+
+   /*
+    *  Accessors for the (now opaque) EVP_PKEY, RSA and DSA structures
+    */
+   int EVP_PKEY_get_id(const EVP_PKEY *pkey);
+   RSA *EVP_PKEY_get0_RSA(EVP_PKEY *pkey);
+   DSA *EVP_PKEY_get0_DSA(EVP_PKEY *pkey);
+   void RSA_get0_key(const RSA *r, const BIGNUM **n, const BIGNUM **e, const BIGNUM **d);
+   void DSA_get0_pqg(const DSA *d, const BIGNUM **p, const BIGNUM **q, const BIGNUM **g);
+   void DSA_get0_key(const DSA *d, const BIGNUM **pub_key, const BIGNUM **priv_key);
 
 
    /*
@@ -614,8 +670,15 @@ public:
 
    /*
     *  ASN1_STRING_data
+    *  (OpenSSL >= 1.1.0: ASN1_STRING_get0_data, which returns the same
+    *  pointer as const)
     */
    unsigned char *ASN1_STRING_data(ASN1_STRING *x);
+
+   /*
+    *  ASN1_STRING_length
+    */
+   int ASN1_STRING_length(const ASN1_STRING *x);
 
    /*
     *  
@@ -821,8 +884,8 @@ public:
    int i2d_X509_REQ_fp(FILE *fp, X509_REQ *x);
 
    /* SMime support */
-   STACK *X509_get1_email(X509 *x);
-   void X509_email_free(STACK *sk);
+   OPENSSL_STACK *X509_get1_email(X509 *x);
+   void X509_email_free(OPENSSL_STACK *sk);
 
    /* Ciphers needed for SMime */
    EVP_CIPHER *EVP_des_ede3_cbc();
@@ -845,6 +908,9 @@ public:
 
    /* Frees a pointer to the SSL session id (reference decremented if needed) */
    void SSL_SESSION_free(SSL_SESSION *session);
+
+   /* Increments the reference count of the SSL session */
+   int SSL_SESSION_up_ref(SSL_SESSION *session);
 
    /* Set the SSL session to reuse. */
    int SSL_set_session(SSL *ssl, SSL_SESSION *session);
