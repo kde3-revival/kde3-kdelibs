@@ -21,6 +21,7 @@ configure.in.in
 ./kioslave/http/configure.in.bot
 ./kioslave/http/configure.in.in
 ./kjs/configure.in.in
+./knotify/configure.in.in
 ./libkscreensaver/configure.in.in
 configure.in.mid
 configure.in.bot

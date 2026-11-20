@@ -51,6 +51,10 @@
 #include <kuniqueapplication.h>
 #include <kwin.h>
 
+#ifdef HAVE_PULSEAUDIO
+#include "kpulseplayer.h"
+#endif
+
 #include "knotify.h"
 #include "knotify.moc"
 
@@ -62,7 +66,11 @@ public:
     QMap<QString, KConfig*> events;
     QMap<QString, KConfig*> configs;
     QString externalPlayer;
+    bool externalPlayerConfigured; // "External player" set, not auto-detected
     KProcess *externalPlayerProc;
+#ifdef HAVE_PULSEAUDIO
+    KPulsePlayer *pulsePlayer;     // created on the first sound
+#endif
 
     int externalPlayerEventId;
 
@@ -117,6 +125,9 @@ KNotify::KNotify()
     d->globalEvents = new KConfig("knotify/eventsrc", true, false, "data");
     d->globalConfig = new KConfig("knotify.eventsrc", true, false);
     d->externalPlayerProc = 0;
+#ifdef HAVE_PULSEAUDIO
+    d->pulsePlayer = 0;
+#endif
     d->inStartup = true;
 
     d->volume = 100;
@@ -128,6 +139,9 @@ KNotify::~KNotify()
 {
     reconfigure();
 
+#ifdef HAVE_PULSEAUDIO
+    delete d->pulsePlayer;
+#endif
     delete d;
 }
 
@@ -136,11 +150,12 @@ void KNotify::loadConfig() {
     // load external player settings
     KConfig *kc = KGlobal::config();
     kc->setGroup("Misc");
-    // The external player is the only way to play sounds, so it is used
-    // unless the user explicitly switched it off. Without a configured
-    // or auto-detected player sounds stay silent (see notifyBySound()).
+    // Sounds are played unless the user explicitly switched them off
+    // ("No audio output" in the kcm). See notifyBySound() for which
+    // player is used.
     d->useExternal = kc->readBoolEntry( "Use external player", true );
     d->externalPlayer = kc->readPathEntry("External player");
+    d->externalPlayerConfigured = !d->externalPlayer.isEmpty();
 
     // try to locate a suitable player if none is configured
     if ( d->externalPlayer.isEmpty() ) {
@@ -263,7 +278,7 @@ void KNotify::notify(const QString &event, const QString &fromApp,
 
     // emit event
     if ( present & KNotifyClient::Sound ) // && QFile(sound).isReadable()
-        notifyBySound( sound, fromApp, eventId );
+        notifyBySound( sound, fromApp, eventId, event );
 
     if ( present & KNotifyClient::Execute )
         notifyByExecute( commandline, event, fromApp, text, winId, eventId );
@@ -291,14 +306,22 @@ void KNotify::notify(const QString &event, const QString &fromApp,
 }
 
 
-bool KNotify::notifyBySound( const QString &sound, const QString &appname, int eventId )
+// Which player plays a sound (knotifyrc [Misc]):
+// - "Use external player" false ("No audio output"): none, the event is
+//   finished with NoSoundSupport;
+// - otherwise, with "External player" set: that player, always;
+// - otherwise the sound server through KPulsePlayer, when built with it;
+//   when it cannot decode the file, or no server can be reached, the
+//   first player found in $PATH (see loadConfig()); with none found the
+//   event is finished with NoSoundSupport.
+bool KNotify::notifyBySound( const QString &sound, const QString &appname,
+                             int eventId, const QString &event )
 {
     if (sound.isEmpty()) {
         soundFinished( eventId, NoSoundFile );
         return false;
     }
 
-    bool external = d->useExternal && !d->externalPlayer.isEmpty();
     // get file name
     QString soundFile(sound);
     if ( QFileInfo(sound).isRelative() )
@@ -317,12 +340,42 @@ bool KNotify::notifyBySound( const QString &sound, const QString &appname, int e
 
     // kdDebug() << "KNotify::notifyBySound - trying to play file " << soundFile << endl;
 
-    if (!external) {
-        // only an external player is supported
+    if ( !d->useExternal ) {
+        soundFinished( eventId, NoSoundSupport );
+        return false;
+    }
+
+#ifdef HAVE_PULSEAUDIO
+    if ( !d->externalPlayerConfigured ) {
+        if ( !d->pulsePlayer ) {
+            const KAboutData *about = KGlobal::instance()->aboutData();
+            d->pulsePlayer = new KPulsePlayer( about ? about->programName()
+                                                     : QString::fromLatin1( "KNotify" ) );
+            connect( d->pulsePlayer, SIGNAL( finished( int, bool ) ),
+                     SLOT( slotPulseFinished( int, bool ) ) );
+            connect( d->pulsePlayer, SIGNAL( unavailable( int, const QString & ) ),
+                     SLOT( slotPulseUnavailable( int, const QString & ) ) );
+        }
+        d->pulsePlayer->setVolume( d->volume );
+        if ( d->pulsePlayer->play( soundFile, eventId, event ) )
+            return true;
+        // libsndfile cannot decode it, maybe the external player can
+    }
+#else
+    Q_UNUSED( event );
+#endif
+
+    return playExternal( soundFile, eventId );
+}
+
+bool KNotify::playExternal( const QString &soundFile, int eventId )
+{
+    if ( d->externalPlayer.isEmpty() ) {
+        // no player configured or found
         soundFinished( eventId, NoSoundSupport );
         return false;
 
-    } else if(!d->externalPlayer.isEmpty()) {
+    } else {
         // use an external player to play the sound
         KProcess *proc = d->externalPlayerProc;
         if (!proc)
@@ -354,9 +407,6 @@ bool KNotify::notifyBySound( const QString &sound, const QString &appname, int e
         proc->start(KProcess::NotifyOnExit);
         return true;
     }
-
-    soundFinished( eventId, Unknown );
-    return false;
 }
 
 bool KNotify::notifyByMessagebox(const QString &text, int level, WId winId)
@@ -483,12 +533,28 @@ void KNotify::setVolume( int volume )
     if ( volume<0 ) volume=0;
     if ( volume>=100 ) volume=100;
     d->volume = volume;
+#ifdef HAVE_PULSEAUDIO
+    // also for the sounds playing now
+    if ( d->pulsePlayer )
+        d->pulsePlayer->setVolume( volume );
+#endif
 }
 
 void KNotify::slotPlayerProcessExited( KProcess *proc )
 {
     soundFinished( d->externalPlayerEventId,
                    (proc->normalExit() && proc->exitStatus() == 0) ? PlayedOK : Unknown );
+}
+
+void KNotify::slotPulseFinished( int eventId, bool ok )
+{
+    soundFinished( eventId, ok ? PlayedOK : Unknown );
+}
+
+void KNotify::slotPulseUnavailable( int eventId, const QString &soundFile )
+{
+    // no sound server: fall back to the auto-detected player
+    playExternal( soundFile, eventId );
 }
 
 void KNotify::soundFinished( int eventId, PlayingFinishedStatus reason )

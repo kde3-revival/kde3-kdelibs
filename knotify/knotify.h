@@ -70,7 +70,9 @@ k_dcop:
         void sessionReady(); // from ksmserver
 
 private:
-	bool notifyBySound(const QString &sound, const QString &appname, int eventId);
+	bool notifyBySound(const QString &sound, const QString &appname, int eventId,
+	                   const QString &event);
+	bool playExternal(const QString &soundFile, int eventId);
 	bool notifyByMessagebox(const QString &text, int level, WId winId);
 	bool notifyByLogfile(const QString &text, const QString &file);
 	bool notifyByStderr(const QString &text);
@@ -96,6 +98,10 @@ private:
 
 private slots:
     void slotPlayerProcessExited( KProcess *proc );
+    // KPulsePlayer (built only with HAVE_PULSEAUDIO, but moc does not
+    // see the preprocessor)
+    void slotPulseFinished( int eventId, bool ok );
+    void slotPulseUnavailable( int eventId, const QString &soundFile );
 
 private:
     KNotifyPrivate* d;
