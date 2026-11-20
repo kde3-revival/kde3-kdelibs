@@ -13,9 +13,11 @@ kde3_add_library(kdefx SHARED
   LINK
     KDE3Qt::Qt
     kdemacros
-  LINK_PRIVATE
-    X11::Xrender
 )
+# LIB_XRENDER, empty without XRender (HAVE_XRENDER)
+if(HAVE_XRENDER)
+  target_link_libraries(kdefx PRIVATE X11::Xrender)
+endif()
 # all_includes: -I$(top_srcdir)/kdefx
 target_include_directories(kdefx PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
 
