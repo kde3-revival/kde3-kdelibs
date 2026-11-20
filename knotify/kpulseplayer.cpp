@@ -110,9 +110,14 @@ private:
 
 
 // The channel map of the file when libsndfile knows it, else the default
-// for that many channels.
-static void channelMap( SNDFILE *sndfile, int channels, pa_channel_map *map )
+// for that many channels: the WAVEFORMATEXTENSIBLE order (FL FR FC LFE
+// RL RR ...) for a WAV (or W64, RF64) file with more than two channels,
+// which is what a WAV file without a channel mask means by convention,
+// and PulseAudio's default (the AIFF order, as paplay uses for any file
+// without a channel map) otherwise.
+static void channelMap( SNDFILE *sndfile, const SF_INFO &info, pa_channel_map *map )
 {
+    const int channels = info.channels;
     static const struct { int sf; pa_channel_position_t pa; } positions[] = {
         { SF_CHANNEL_MAP_MONO, PA_CHANNEL_POSITION_MONO },
         { SF_CHANNEL_MAP_LEFT, PA_CHANNEL_POSITION_FRONT_LEFT },
@@ -155,7 +160,20 @@ static void channelMap( SNDFILE *sndfile, int channels, pa_channel_map *map )
         if ( i == channels && pa_channel_map_valid( map ) )
             return;
     }
-    pa_channel_map_init_extend( map, channels, PA_CHANNEL_MAP_DEFAULT );
+    pa_channel_map_def_t def = PA_CHANNEL_MAP_DEFAULT;
+    if ( channels > 2 ) {
+        switch ( info.format & SF_FORMAT_TYPEMASK ) {
+        case SF_FORMAT_WAV:
+        case SF_FORMAT_WAVEX:
+        case SF_FORMAT_W64:
+        case SF_FORMAT_RF64:
+            def = PA_CHANNEL_MAP_WAVEEX;
+            break;
+        default:
+            break;
+        }
+    }
+    pa_channel_map_init_extend( map, channels, def );
 }
 
 
@@ -333,7 +351,7 @@ void KPulsePlayerPrivate::startStream( KPulseSound *s )
     ss.rate = s->info.samplerate;
     ss.channels = s->info.channels;
     pa_channel_map map;
-    channelMap( s->sndfile, ss.channels, &map );
+    channelMap( s->sndfile, s->info, &map );
 
     const QString name = s->eventName.isEmpty() ? QFileInfo( s->file ).fileName() : s->eventName;
     pa_proplist *props = pa_proplist_new();
