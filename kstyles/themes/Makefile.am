@@ -1,5 +1,7 @@
 
-kstylethemesdata_DATA = highcolor.themerc \
+kstylethemesdata_DATA = qtplatinum.themerc qtcde.themerc qtmotif.themerc qtwindows.themerc \
+	qtsgi.themerc qtmotifplus.themerc\
+	highcolor.themerc \
 	default.themerc light-v2.themerc \
 	light-v3.themerc keramik.themerc
 kstylethemesdatadir = $(kde_datadir)/kstyle/themes
