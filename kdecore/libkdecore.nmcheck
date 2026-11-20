@@ -63,17 +63,3 @@ strlcat
 vsnprintf
 snprintf
 
-# from malloc
-malloc
-free
-realloc
-calloc
-mallinfo
-mallopt
-cfree
-valloc
-pvalloc
-posix_memalign
-memalign
-kde_malloc_is_used
-kde_malloc_dummy_function

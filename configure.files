@@ -4,7 +4,6 @@ configure.in.in
 ./dnssd/configure.in.in
 ./kate/part/configure.in.in
 ./kdecore/configure.in.in
-./kdecore/malloc/configure.in.in
 ./kdefx/configure.in.in
 ./kdeprint/configure.in.in
 ./kdeprint/cups/configure.in.in
