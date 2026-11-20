@@ -48,6 +48,8 @@ include_directories(
 
 # meinproc needs the stylesheets of the source tree while building.
 set(KDE3_MEINPROC_ARGS "--srcdir=${PROJECT_SOURCE_DIR}/kdoctools")
+# kde3_use_dcopidlng(): kalyptus and its modules
+set(KDE3_DCOPIDLNG_DIR "${PROJECT_SOURCE_DIR}/dcop/dcopidlng")
 
 set(KDE3_BUILDING_KDELIBS TRUE)
 include(KDE3LibsMacros)
@@ -99,7 +101,8 @@ get_filename_component(KDE3_QT_PREFIX "${KDE3Qt_INCLUDE_DIR}" DIRECTORY)
 configure_package_config_file(cmake/KDE3LibsConfig.cmake.in
   "${PROJECT_BINARY_DIR}/KDE3LibsConfig.cmake"
   INSTALL_DESTINATION "${KDE3_CMAKE_INSTALL_DIR}"
-  PATH_VARS KDE3_INCLUDE_INSTALL_DIR KDE3_LIB_INSTALL_DIR KDE3_MODULE_INSTALL_DIR)
+  PATH_VARS KDE3_INCLUDE_INSTALL_DIR KDE3_LIB_INSTALL_DIR KDE3_MODULE_INSTALL_DIR
+            KDE3_DATA_INSTALL_DIR)
 # find_package(KDE3Libs 3) and find_package(KDE3Libs 3.5) both work
 write_basic_package_version_file("${PROJECT_BINARY_DIR}/KDE3LibsConfigVersion.cmake"
   VERSION "${KDELIBS_VERSION}"

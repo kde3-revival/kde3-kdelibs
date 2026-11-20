@@ -97,9 +97,16 @@ if(NOT DEFINED CMAKE_INSTALL_RPATH)
   endforeach()
 endif()
 
-# uic finds the installed KDE designer plugins (kdewidgets) here
+# The data the tools need, from where this kdelibs was found (which may
+# be a staging directory, so not through KStandardDirs and the
+# configured prefix):
+# uic finds the installed KDE designer plugins (kdewidgets) here,
 if(NOT DEFINED KDE3_UIC_PLUGIN_DIR)
   set(KDE3_UIC_PLUGIN_DIR "@PACKAGE_KDE3_MODULE_INSTALL_DIR@/plugins")
+endif()
+# and dcopidlng (kde3_use_dcopidlng()) kalyptus.
+if(NOT DEFINED KDE3_DCOPIDLNG_DIR)
+  set(KDE3_DCOPIDLNG_DIR "@PACKAGE_KDE3_DATA_INSTALL_DIR@/dcopidlng")
 endif()
 include(KDE3LibsMacros)
 

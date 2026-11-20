@@ -57,6 +57,10 @@ Common arguments:
 
 Other functions:
 
+``kde3_use_dcopidlng(<header>...)``
+  ``<name>_DCOPIDLNG = true``: the .kidl of these headers is made with
+  dcopidlng, which knows ``k_dcop_hidden:`` (source property
+  ``KDE3_DCOPIDLNG``; needs perl and ``KDE3_DCOPIDLNG_DIR``).
 ``kde3_install_icons([AUTO|<appname>...] [DESTINATION <dir>] [SOURCE_DIR <dir>] [EXCLUDE <file>...])``
   KDE_ICON: install ``<size-or-theme>-<type>-<name>.<ext>`` files with
   the am_edit naming rules (``cr22-action-foo.png`` ->
@@ -224,12 +228,42 @@ endfunction()
 # ---------------------------------------------------------------------
 # DCOP: foo.skel / foo.stub from foo.h (am_edit tag_IDLFILES)
 
+# kde3_use_dcopidlng(<header>...): make the .kidl of these headers with
+# dcopidlng instead of dcopidl (am_edit: <name>_DCOPIDLNG = true), which
+# understands "k_dcop_hidden:" sections (functions callable over DCOP but
+# not listed by functions()).  Call it before the target that lists the
+# .skel/.stub; it sets the source property KDE3_DCOPIDLNG of the header
+# in the current directory, which may also be set directly.
+function(kde3_use_dcopidlng)
+  foreach(_h IN LISTS ARGN)
+    get_filename_component(_h "${_h}" ABSOLUTE)
+    set_source_files_properties("${_h}" PROPERTIES KDE3_DCOPIDLNG TRUE)
+  endforeach()
+endfunction()
+
 function(_kde3_kidl header kidl)
   get_property(_done DIRECTORY PROPERTY _KDE3_KIDL_${kidl})
   if(_done)
     return()
   endif()
   set_property(DIRECTORY PROPERTY _KDE3_KIDL_${kidl} TRUE)
+  get_source_file_property(_ng "${header}" KDE3_DCOPIDLNG)
+  if(_ng)
+    # dcopidlng is perl (kalyptus); run it from the dcopidlng directory
+    # of the kdelibs that was found, not through the installed script,
+    # which locates it with kde-config (the configured prefix).
+    find_program(KDE3_PERL_EXECUTABLE perl)
+    mark_as_advanced(KDE3_PERL_EXECUTABLE)
+    if(NOT KDE3_PERL_EXECUTABLE)
+      message(FATAL_ERROR "perl is needed for dcopidlng (${header})")
+    endif()
+    kde3_generate_stdout("${kidl}"
+      COMMAND "${KDE3_PERL_EXECUTABLE}" "-I${KDE3_DCOPIDLNG_DIR}"
+              "${KDE3_DCOPIDLNG_DIR}/kalyptus" --allow_k_dcop_accessors
+              -f dcopidl "${header}"
+      DEPENDS "${header}" "${KDE3_DCOPIDLNG_DIR}/kalyptus")
+    return()
+  endif()
   add_custom_command(OUTPUT "${kidl}"
     COMMAND ${KDE3_TOOL_LAUNCHER} ${CMAKE_COMMAND}
       "-DDCOPIDL=$<TARGET_FILE:${KDE3_DCOPIDL_EXECUTABLE}>"
