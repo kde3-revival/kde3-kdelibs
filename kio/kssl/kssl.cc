@@ -87,8 +87,6 @@ static void setServerName(KOpenSSLProxy *kossl, SSL *ssl, const QString &peer)
 }
 #endif
 
-#define OPENSSL_sk_dup d->kossl->OPENSSL_sk_dup
-
 class KSSLPrivate {
 public:
 	KSSLPrivate() {
@@ -671,13 +669,9 @@ void KSSL::setPeerInfo() {
 #ifdef KSSL_HAVE_SSL
 	m_pi.setPeerHost(d->proxyPeer);
 	m_pi.m_cert.setCert(d->kossl->SSL_get_peer_certificate(d->m_ssl));
-	STACK_OF(X509) *xs = d->kossl->SSL_get_peer_cert_chain(d->m_ssl);
-	if (xs)
-		// not sk_X509_dup(): with OpenSSL 4 it also calls
-		// OPENSSL_sk_set_*thunks(), which this proxy does not
-		// provide; the copy inherits the thunks of xs anyway
-		xs = (STACK_OF(X509) *)OPENSSL_sk_dup((OPENSSL_STACK *)xs);   // Leak?
-	m_pi.m_cert.setChain((void *)xs);
+	// The chain belongs to the SSL object; setChain() copies the
+	// certificates (X509_dup()), so no copy of the stack is needed.
+	m_pi.m_cert.setChain((void *)d->kossl->SSL_get_peer_cert_chain(d->m_ssl));
 #endif
 }
 
@@ -733,8 +727,6 @@ EVP_PKEY *k = pkcs->getPrivateKey();
 	return false;
 #endif
 }
-
-#undef OPENSSL_sk_dup
 
 const KSSLSession* KSSL::session() const {
 	return d->session;
