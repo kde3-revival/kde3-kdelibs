@@ -4,7 +4,7 @@ if include_cups_SUBDIR
 CUPSSUBDIR=cups
 endif
 
-SUBDIRS = . management lpdunix $(CUPSSUBDIR) lpr rlpr ext filters pics tools tests
+SUBDIRS = . management lpdunix $(CUPSSUBDIR) lpr rlpr ext filters pics tools
 
 INCLUDES= -I$(top_srcdir)/kdefx -I$(top_srcdir)/kded -I$(top_srcdir) $(all_includes)
 

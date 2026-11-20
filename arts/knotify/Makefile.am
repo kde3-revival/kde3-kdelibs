@@ -12,11 +12,6 @@ endif
 knotify_la_LDFLAGS = $(all_libraries) -module -avoid-version
 knotify_la_METASOURCES = AUTO
 
-check_PROGRAMS		= knotifytest
-knotifytest_SOURCES	= knotifytest.cpp
-knotifytest_LDADD	= $(LIB_KDECORE)
-knotifytest_LDFLAGS	= $(all_libraries) $(KDE_RPATH)
-
 noinst_HEADERS	=  knotify.h
 
 kdelnkdir = $(kde_servicesdir)

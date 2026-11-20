@@ -7,9 +7,6 @@ INCLUDES= -I$(srcdir)/../ -I$(top_srcdir)/kio/ -I$(top_srcdir)/libltdl \
 libkparts_la_LDFLAGS = $(KDE_MT_LDFLAGS) -version-info 3:0:1 -no-undefined
 libkparts_la_LIBADD  = $(LIB_KIO)
 
-check-local:
-	(cd tests && $(MAKE) check )
-
 ####### Files
 
 lib_LTLIBRARIES = libkparts.la

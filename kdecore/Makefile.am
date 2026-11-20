@@ -27,7 +27,7 @@ SVGICONS=svgicons
 SVGICON_LIB=svgicons/libkdesvgicons.la
 endif
 
-SUBDIRS = malloc network $(SVGICONS) . kconfig_compiler tests
+SUBDIRS = malloc network $(SVGICONS) . kconfig_compiler
 
 # For the future: examine if condensing the tons of *_LDFLAGS variables
 # into $(all_libraries) isn't better

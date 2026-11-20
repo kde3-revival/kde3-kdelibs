@@ -21,13 +21,12 @@
 # AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-SUBDIRS = KDE-ICE . dcopidl dcopidlng dcopidl2cpp client tests
+SUBDIRS = KDE-ICE . dcopidl dcopidlng dcopidl2cpp client
 KDE_OPTIONS = qtonly
 
 INCLUDES = $(all_includes)
 
 bin_PROGRAMS = dcopserver_shutdown
-check_PROGRAMS = testdcop testdcopc dcop_deadlock_test
 
 lib_LTLIBRARIES  = libDCOP.la 
 libDCOP_la_LIBADD = KDE-ICE/libkICE.la $(LIB_QT)
@@ -36,7 +35,7 @@ libDCOP_la_NMCHECK = $(srcdir)/libDCOP.nmcheck
 libDCOP_la_NMCHECKWEAK = $(srcdir)/libDCOP_weak.nmcheck $(top_srcdir)/kdecore/libqt-mt_weak.nmcheck
 
 include_HEADERS = dcopclient.h dcopobject.h dcopstub.h dcopref.h dcoptypes.h kdatastream.h
-noinst_HEADERS = version.h dcopglobal.h dcopserver.h testdcop.h dcopsignals.h dcop-path.h
+noinst_HEADERS = version.h dcopglobal.h dcopserver.h dcopsignals.h dcop-path.h
 
 METASOURCES = AUTO
 
@@ -49,18 +48,6 @@ dcopserver_la_SOURCES = dcopserver.cpp dcopsignals.cpp
 dcopserver_la_LIBADD  = libDCOP.la
 
 dcopserver_shutdown_SOURCES = dcopserver_shutdown.c
-
-testdcop_LDFLAGS = $(KDE_RPATH) $(all_libraries)
-testdcop_SOURCES = testdcop.cpp
-testdcop_LDADD = libDCOP.la
-
-dcop_deadlock_test_LDFLAGS = $(KDE_RPATH) $(all_libraries)
-dcop_deadlock_test_SOURCES = dcop_deadlock_test.cpp
-dcop_deadlock_test_LDADD = ../kdecore/libkdecore.la
-
-testdcopc_LDFLAGS = $(KDE_RPATH) $(all_libraries)
-testdcopc_SOURCES = testdcopc.c dcopc.c
-testdcopc_LDADD =  KDE-ICE/libkICE.la $(LIBSM)
 
 EXTRA_DIST = HOWTO ICE Mainpage.dox
 

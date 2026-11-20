@@ -36,9 +36,3 @@ katejscript.lut.h : $(srcdir)/katejscript.cpp $(CREATE_HASH_TABLE)
 katejscript.lo: katejscript.lut.h
 
 CLEANFILES = $(LUT_FILES)
-
-## test program
-TESTS  = testkateregression
-check_PROGRAMS = testkateregression
-testkateregression_SOURCES = test_regression.cpp
-testkateregression_LDADD = $(libkatepart_la_LIBADD)

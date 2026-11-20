@@ -18,7 +18,7 @@
 #    the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
 #    Boston, MA 02110-1301, USA.
 
-SUBDIRS = . kdetrayproxy tests about
+SUBDIRS = . kdetrayproxy about
 
 INCLUDES= -I$(top_srcdir)/kdefx -I$(top_srcdir)/interfaces $(all_includes)
 

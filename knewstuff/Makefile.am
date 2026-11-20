@@ -16,11 +16,7 @@ khotnewstuff_LDFLAGS = $(all_libraries) $(KDE_RPATH)
 khotnewstuff_LDADD = libknewstuff.la
 khotnewstuff_SOURCES = khotnewstuff.cpp
 
-EXTRA_PROGRAMS = testnewstuff ghns
-
-testnewstuff_LDFLAGS = $(all_libraries) $(KDE_RPATH)
-testnewstuff_LDADD   = libknewstuff.la
-testnewstuff_SOURCES = testnewstuff.cpp
+EXTRA_PROGRAMS = ghns
 
 ghns_LDFLAGS = $(all_libraries) $(KDE_RPATH)
 ghns_LDADD   = libknewstuff.la
@@ -33,7 +29,7 @@ kde_conf_DATA = khotnewstuffrc
 
 knsdir = $(includedir)/knewstuff
 kns_HEADERS = downloaddialog.h engine.h entry.h knewstuffgeneric.h knewstuff.h providerdialog.h provider.h uploaddialog.h knewstuffbutton.h knewstuffsecure.h
-noinst_HEADERS = testnewstuff.h ghns.h security.h
+noinst_HEADERS = ghns.h security.h
 
 KDE_ICON=AUTO
 

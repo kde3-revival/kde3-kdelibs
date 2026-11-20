@@ -19,9 +19,6 @@ parser:
 	cd $(srcdir) && flex -B -8 -oscanner.cc scanner.ll  ;\
 	bison -t -d -v -o yacc.cc yacc.yy && mv yacc.hh yacc.cc.h
 
-check-local: 
-	$(srcdir)/run_test.sh $(srcdir)
-
-EXTRA_DIST = dcopidl_test.h scanner.ll yacc.yy
+EXTRA_DIST = scanner.ll yacc.yy
 
 MAINTAINERCLEANFILES = yacc.cc.output

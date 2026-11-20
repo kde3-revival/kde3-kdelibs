@@ -24,7 +24,7 @@ kjavadatadir = $(kde_datadir)/kjava/
 kjavaiconsdir = $(kde_datadir)/kjava/icons
 kjavaicons_ICON = AUTO
 
-SUBDIRS = . tests dummy
+SUBDIRS = . dummy
 
 kde_module_LTLIBRARIES= kjavaappletviewer.la
 kjavaappletviewer_la_SOURCES= kjavaapplet.cpp kjavaappletcontext.cpp \

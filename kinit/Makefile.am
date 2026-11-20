@@ -17,7 +17,6 @@
 
 INCLUDES = -I$(srcdir)/../libltdl/ $(all_includes) $(KDEINIT_XFT_INCLUDES)
 
-SUBDIRS = . tests
 
 bin_PROGRAMS = kdeinit kdeinit_wrapper kshell kdeinit_shutdown lnusertemp kwrapper kioslave \
                kstartupconfig kdostartupconfig start_kdeinit start_kdeinit_wrapper

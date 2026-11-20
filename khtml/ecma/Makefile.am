@@ -84,7 +84,3 @@ domparser.lo: domparser.lut.h
 CLEANFILES = $(LUT_FILES)
 
 # interactive test program
-#check_PROGRAMS = testecma
-#testecma_SOURCES = testecma.cpp
-#testecma_LDADD = ../libkhtml.la $(top_builddir)/kjs/libkjs.la
-

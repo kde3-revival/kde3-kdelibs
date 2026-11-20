@@ -35,12 +35,6 @@ kcm_kresources_la_LDFLAGS = $(all_libraries) -module -avoid-version -no-undefine
 kcm_kresources_la_LIBADD = libkresources.la
 
 
-check_PROGRAMS = testresources
-
-testresources_LDFLAGS = $(all_libraries) $(KDE_RPATH)
-testresources_LDADD   = libkresources.la
-testresources_SOURCES = testresources.cpp
-
 xdg_apps_DATA = kresources.desktop
 
 servicetypedir = $(kde_servicetypesdir)

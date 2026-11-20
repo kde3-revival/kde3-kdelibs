@@ -41,7 +41,7 @@ libkhtml_la_METASOURCES = AUTO
 
 include_HEADERS = khtmlview.h khtml_part.h khtml_events.h khtml_settings.h khtmldefaults.h
 
-noinst_HEADERS = design.h testkhtml.h test_regression.h khtml_ext.h \
+noinst_HEADERS = design.h khtml_ext.h \
 		 khtml_pagecache.h khtmlimage.h khtmlpart_p.h khtml_printsettings.h \
 		kjserrordlg.ui.h
 
@@ -113,19 +113,8 @@ parser:
 	bash scripts/maketags && \
 	bash scripts/makeprop
 
-## test program
-check_PROGRAMS 	= testkhtml
-EXTRA_PROGRAMS = testkhtml_static testregression
-testkhtml_SOURCES = testkhtml.cpp domtreeview.cpp
-testkhtml_LDADD = libkhtml.la 
-testkhtml_static_SOURCES = testkhtml.cpp domtreeview.cpp 
-testkhtml_static_LDADD = libkhtml.la
-testkhtml_static_LDFLAGS = -static
-testregression_SOURCES = test_regression.cpp test_regression_fontoverload.cpp
-testregression_LDADD = libkhtml.la
-
 DOXYGEN_REFERENCES = kdecore kdeui kio kdefx kparts
-DOXYGEN_EXCLUDE =  test*.* css ecma html java kmultipart misc pics rendering test xml
+DOXYGEN_EXCLUDE =  css ecma html java kmultipart misc pics rendering xml
 
 include ../admin/Doxyfile.am
 

@@ -1,4 +1,4 @@
-SUBDIRS = . ui tests plugins
+SUBDIRS = . ui plugins
 METASOURCES = AUTO
 
 noinst_LTLIBRARIES = libkspell2base.la

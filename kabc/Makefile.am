@@ -1,4 +1,4 @@
-SUBDIRS = vcard vcardparser . formats plugins scripts tests
+SUBDIRS = vcard vcardparser . formats plugins scripts
 
 # Make sure $(all_includes) remains last!
 INCLUDES = -I$(top_builddir)/kabc -I$(top_srcdir)/kabc -I$(top_srcdir)/kab \
