@@ -395,17 +395,10 @@ int main(void) {
 endif()
 option(KDE3_ENABLE_INOTIFY "Use Linux inode notifications (inotify)" ON)
 if(KDE3_ENABLE_INOTIFY)
-  check_c_source_compiles("
-#include <asm/unistd.h>
-#define _S390_BITOPS_H
-#include <linux/inotify.h>
-#ifndef IN_ALL_EVENTS
-#error no inotify notification
-#endif
-#ifndef __NR_inotify_init
-#error no __NR_inotify_init
-#endif
-int main(void) { return 0; }" HAVE_INOTIFY)
+  # What kio/kio/kdirwatch.cpp uses: the C library's <sys/inotify.h>.  Not
+  # __NR_inotify_init, which the asm-generic architectures (aarch64,
+  # riscv64, loongarch64) lack; they only have inotify_init1.
+  check_symbol_exists(inotify_init "sys/inotify.h" HAVE_INOTIFY)
 endif()
 
 # Image and compression libraries (AC_FIND_ZLIB/JPEG/PNG/TIFF/BZIP2)
