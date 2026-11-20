@@ -104,6 +104,10 @@ endif()
 if(NOT DEFINED KDE3_UIC_PLUGIN_DIR)
   set(KDE3_UIC_PLUGIN_DIR "@PACKAGE_KDE3_MODULE_INSTALL_DIR@/plugins")
 endif()
+# meinproc its stylesheets and DTDs (kdoctools' --srcdir layout),
+if(NOT DEFINED KDE3_MEINPROC_ARGS)
+  set(KDE3_MEINPROC_ARGS "--srcdir=@PACKAGE_KDE3_DATA_INSTALL_DIR@/ksgmltools2")
+endif()
 # and dcopidlng (kde3_use_dcopidlng()) kalyptus.
 if(NOT DEFINED KDE3_DCOPIDLNG_DIR)
   set(KDE3_DCOPIDLNG_DIR "@PACKAGE_KDE3_DATA_INSTALL_DIR@/dcopidlng")
