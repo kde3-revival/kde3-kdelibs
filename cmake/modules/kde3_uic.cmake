@@ -28,8 +28,16 @@ if(PLUGIN_DIR)
   list(APPEND _args -L "${PLUGIN_DIR}")
 endif()
 
+# uic writes the .ui path it is given into a comment of its output, and
+# that header may be installed: run it in the directory of the .ui with
+# the bare file name, so that no build machine path ends up there (am_edit
+# passed $(srcdir)/foo.ui).
+get_filename_component(_uidir "${UI_FILE}" DIRECTORY)
+get_filename_component(_uiname "${UI_FILE}" NAME)
+
 if(NOT SOURCE)
-  execute_process(COMMAND "${UIC}" ${_args} "${UI_FILE}"
+  execute_process(COMMAND "${UIC}" ${_args} "${_uiname}"
+    WORKING_DIRECTORY "${_uidir}"
     OUTPUT_VARIABLE _out RESULT_VARIABLE _result)
   if(NOT _result EQUAL 0)
     message(FATAL_ERROR "uic ${UI_FILE} failed: ${_result}")
@@ -41,7 +49,8 @@ if(NOT SOURCE)
 else()
   get_filename_component(_hname "${HEADER}" NAME)
   get_filename_component(_base "${HEADER}" NAME_WE)
-  execute_process(COMMAND "${UIC}" ${_args} -tr tr2i18n -i "${_hname}" "${UI_FILE}"
+  execute_process(COMMAND "${UIC}" ${_args} -tr tr2i18n -i "${_hname}" "${_uiname}"
+    WORKING_DIRECTORY "${_uidir}"
     OUTPUT_VARIABLE _out RESULT_VARIABLE _result)
   if(NOT _result EQUAL 0)
     message(FATAL_ERROR "uic -i ${_hname} ${UI_FILE} failed: ${_result}")
