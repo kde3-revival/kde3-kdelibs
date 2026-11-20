@@ -133,6 +133,9 @@ static X509* (*K_X509_STORE_CTX_get_current_cert) (X509_STORE_CTX *) = 0L;
 static void (*K_X509_STORE_set_verify_cb) (X509_STORE *, int (*)(int, X509_STORE_CTX *)) = 0L;
 static int (*K_X509_STORE_set_default_paths) (X509_STORE *) = 0L;
 static int (*K_X509_STORE_add_cert) (X509_STORE *, X509 *) = 0L;
+static STACK_OF(X509_OBJECT) *(*K_X509_STORE_get0_objects) (X509_STORE *) = 0L;
+static int (*K_X509_OBJECT_get_type) (const X509_OBJECT *) = 0L;
+static X509 *(*K_X509_OBJECT_get0_X509) (const X509_OBJECT *) = 0L;
 static STACK_OF(X509) *(*K_X509_STORE_CTX_get0_chain) (X509_STORE_CTX *) = 0L;
 static void (*K_sk_free) (OPENSSL_STACK*) = 0L;
 static int (*K_sk_num) (const OPENSSL_STACK*) = 0L;
@@ -505,6 +508,9 @@ KConfig *cfg;
       K_X509_STORE_set_verify_cb = (void (*)(X509_STORE *, int (*)(int, X509_STORE_CTX *))) _cryptoLib->symbol("X509_STORE_set_verify_cb");
       K_X509_STORE_set_default_paths = (int (*)(X509_STORE *)) _cryptoLib->symbol("X509_STORE_set_default_paths");
       K_X509_STORE_add_cert = (int (*)(X509_STORE *, X509 *)) _cryptoLib->symbol("X509_STORE_add_cert");
+      K_X509_STORE_get0_objects = (STACK_OF(X509_OBJECT) *(*)(X509_STORE *)) _cryptoLib->symbol("X509_STORE_get0_objects");
+      K_X509_OBJECT_get_type = (int (*)(const X509_OBJECT *)) _cryptoLib->symbol("X509_OBJECT_get_type");
+      K_X509_OBJECT_get0_X509 = (X509 *(*)(const X509_OBJECT *)) _cryptoLib->symbol("X509_OBJECT_get0_X509");
       K_X509_STORE_CTX_get0_chain = (STACK_OF(X509) *(*)(X509_STORE_CTX *)) _cryptoLib->symbol("X509_STORE_CTX_get0_chain");
       // the sk_* functions were renamed to OPENSSL_sk_* in OpenSSL 1.1.0
       K_sk_free = (void (*) (OPENSSL_STACK *)) _cryptoLib->symbol("OPENSSL_sk_free");
@@ -1265,6 +1271,24 @@ int KOpenSSLProxy::X509_STORE_set_default_paths(X509_STORE *v) {
 int KOpenSSLProxy::X509_STORE_add_cert(X509_STORE *v, X509 *x) {
    if (K_X509_STORE_add_cert) return (K_X509_STORE_add_cert)(v, x);
    return 0;
+}
+
+
+STACK_OF(X509_OBJECT) *KOpenSSLProxy::X509_STORE_get0_objects(X509_STORE *v) {
+   if (K_X509_STORE_get0_objects) return (K_X509_STORE_get0_objects)(v);
+   return 0L;
+}
+
+
+int KOpenSSLProxy::X509_OBJECT_get_type(const X509_OBJECT *a) {
+   if (K_X509_OBJECT_get_type) return (K_X509_OBJECT_get_type)(a);
+   return X509_LU_NONE;
+}
+
+
+X509 *KOpenSSLProxy::X509_OBJECT_get0_X509(const X509_OBJECT *a) {
+   if (K_X509_OBJECT_get0_X509) return (K_X509_OBJECT_get0_X509)(a);
+   return 0L;
 }
 
 

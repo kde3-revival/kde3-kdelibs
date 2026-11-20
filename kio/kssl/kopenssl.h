@@ -366,6 +366,22 @@ public:
    int X509_STORE_add_cert(X509_STORE *v, X509 *x);
 
    /*
+    *   X509_STORE_get0_objects - the certificates and CRLs of a store
+    *   (X509_STORE::objs, which is opaque since OpenSSL 1.1.0)
+    */
+   STACK_OF(X509_OBJECT) *X509_STORE_get0_objects(X509_STORE *v);
+
+   /*
+    *   X509_OBJECT_get_type - X509_LU_X509, X509_LU_CRL, ...
+    */
+   int X509_OBJECT_get_type(const X509_OBJECT *a);
+
+   /*
+    *   X509_OBJECT_get0_X509 - the certificate of an X509_LU_X509 object
+    */
+   X509 *X509_OBJECT_get0_X509(const X509_OBJECT *a);
+
+   /*
     *   X509_STORE_CTX_get0_chain - the chain X509_verify_cert() built
     */
    STACK_OF(X509) *X509_STORE_CTX_get0_chain(X509_STORE_CTX *v);
