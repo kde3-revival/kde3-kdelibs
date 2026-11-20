@@ -318,9 +318,16 @@ void KCrash::startDrKonqi( const char* argv[], int argc )
     startDirectly( argv, argc );
     return;
   }
-  long pid;
-  read_socket(socket, buffer, header.arg_length);
-  pid = *((long *) buffer);
+  long pid = 0;
+  // A failed or short read leaves stale bytes in the buffer: then there is
+  // no pid, none to declare as our tracer (-1 is PR_SET_PTRACER_ANY) and
+  // none to wait for (kill(0, 0) would always succeed).  Give up as when
+  // Dr. Konqi is gone.
+  if( header.arg_length >= (long) sizeof( pid ) && header.arg_length <= BUFSIZE
+      && read_socket( socket, buffer, header.arg_length ) == 0 )
+    memcpy( &pid, buffer, sizeof( pid ));
+  if( pid <= 0 )
+    _exit(253);
   allowTracer( pid );
 
   alarm(0); // Seems we made it....
