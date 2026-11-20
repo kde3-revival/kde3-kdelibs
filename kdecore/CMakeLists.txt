@@ -169,6 +169,7 @@ kde3_add_library(kdecore SHARED
     kdecorenetwork
     X11::Xext
     ${KDE3_LIBUTIL}
+    ${KDE3_LIBRESOLV}
     ${_kdecore_idn}
 )
 

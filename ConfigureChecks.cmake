@@ -90,13 +90,30 @@ foreach(_f
     getprotobyname_r getservbyname_r getservbyport_r poll madvise
     getaddrinfo freeaddrinfo getnameinfo gai_strerror setmntent getmntinfo
     setfsent mmap munmap getpagesize snprintf vsnprintf strlcpy strlcat
-    posix_fadvise res_init backtrace revoke)
+    posix_fadvise backtrace revoke)
+  # Link tests without headers, like AC_CHECK_FUNCS.  Functions that
+  # may be macros or are checked with their headers in autotools are
+  # handled below (on glibc only res_init differs: it is a macro for
+  # __res_init, and libc exports no res_init symbol).
   string(TOUPPER "HAVE_${_f}" _var)
   check_function_exists(${_f} ${_var})
 endforeach()
 set(HAVE_FADVISE ${HAVE_POSIX_FADVISE})
+
+# AC_CHECK_RES_INIT: res_init() with <resolv.h>, with -lresolv if needed
+# (glibc < 2.34 and some other systems keep it in libresolv).
+set(_res_init_headers "sys/types.h;netinet/in.h;arpa/nameser.h;resolv.h")
+check_symbol_exists(res_init "${_res_init_headers}" HAVE_RES_INIT)
+set(KDE3_LIBRESOLV "")
 if(NOT HAVE_RES_INIT)
-  check_library_exists(resolv __res_init "" HAVE_RES_INIT)
+  cmake_push_check_state(RESET)
+  set(CMAKE_REQUIRED_LIBRARIES resolv)
+  check_symbol_exists(res_init "${_res_init_headers}" HAVE_RES_INIT_IN_LIBRESOLV)
+  cmake_pop_check_state()
+  if(HAVE_RES_INIT_IN_LIBRESOLV)
+    set(HAVE_RES_INIT 1)
+    set(KDE3_LIBRESOLV resolv)
+  endif()
 endif()
 if(HAVE_GETSERVBYNAME_R)
   check_symbol_exists(getservbyname_r "sys/types.h;sys/socket.h;netdb.h"
