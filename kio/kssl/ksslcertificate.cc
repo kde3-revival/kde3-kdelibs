@@ -197,15 +197,18 @@ QString rc = "";
 #ifdef KSSL_HAVE_SSL
 char *s;
 int n, i;
+const ASN1_BIT_STRING *sig;
 
-	i = d->kossl->OBJ_obj2nid(d->m_cert->sig_alg->algorithm);
+	// OBJ_obj2nid(x->sig_alg->algorithm)
+	i = d->kossl->X509_get_signature_nid(d->m_cert);
 	rc = i18n("Signature Algorithm: ");
 	rc += (i == NID_undef)?i18n("Unknown"):QString(d->kossl->OBJ_nid2ln(i));
 
 	rc += "\n";
 	rc += i18n("Signature Contents:");
-	n = d->m_cert->signature->length;
-	s = (char *)d->m_cert->signature->data;
+	d->kossl->X509_get0_signature(&sig, 0L, d->m_cert);
+	n = sig ? d->kossl->ASN1_STRING_length(sig) : 0;
+	s = sig ? (char *)d->kossl->ASN1_STRING_data(const_cast<ASN1_BIT_STRING *>(sig)) : 0L;
 	for (i = 0; i < n; i++) {
 		if (i%20 != 0) rc += ":";
 		else rc += "\n";
@@ -225,10 +228,11 @@ void KSSLCertificate::getEmails(QStringList &to) const {
 	if (!d->m_cert)
 		return;
 	
-	STACK *s = d->kossl->X509_get1_email(d->m_cert);
+	OPENSSL_STACK *s = d->kossl->X509_get1_email(d->m_cert);
 	if (s) {
-		for(int n=0; n < s->num; n++) {
-			to.append(d->kossl->sk_value(s,n));
+		int num = d->kossl->OPENSSL_sk_num(s);
+		for(int n=0; n < num; n++) {
+			to.append(d->kossl->OPENSSL_sk_value(s,n));
 		}
 		d->kossl->X509_email_free(s);
 	}
@@ -309,12 +313,12 @@ QString rc = "";
 	EVP_PKEY *pkey = d->kossl->X509_get_pubkey(d->m_cert);
 	if (pkey) {
 		#ifndef NO_RSA
-			if (pkey->type == EVP_PKEY_RSA)
+			if (d->kossl->EVP_PKEY_get_id(pkey) == EVP_PKEY_RSA)
 				rc = "RSA";
 			else
 		#endif
 		#ifndef NO_DSA
-			if (pkey->type == EVP_PKEY_DSA)
+			if (d->kossl->EVP_PKEY_get_id(pkey) == EVP_PKEY_DSA)
 				rc = "DSA";
 			else
 		#endif
@@ -337,10 +341,12 @@ char *x = NULL;
 	if (pkey) {
 		rc = i18n("Unknown", "Unknown key algorithm");
 		#ifndef NO_RSA
-			if (pkey->type == EVP_PKEY_RSA) {
+			if (d->kossl->EVP_PKEY_get_id(pkey) == EVP_PKEY_RSA) {
+				const BIGNUM *rsa_n, *rsa_e;
+				d->kossl->RSA_get0_key(d->kossl->EVP_PKEY_get0_RSA(pkey), &rsa_n, &rsa_e, 0L);
 				rc = i18n("Key type: RSA (%1 bit)") + "\n";
 
-				x = d->kossl->BN_bn2hex(pkey->pkey.rsa->n);
+				x = d->kossl->BN_bn2hex(rsa_n);
 				rc += i18n("Modulus: ");
 				rc = rc.arg(strlen(x)*4);
 				for (unsigned int i = 0; i < strlen(x); i++) {
@@ -353,16 +359,20 @@ char *x = NULL;
 				rc += "\n";
 				d->kossl->OPENSSL_free(x);
 
-				x = d->kossl->BN_bn2hex(pkey->pkey.rsa->e);
+				x = d->kossl->BN_bn2hex(rsa_e);
 				rc += i18n("Exponent: 0x") + x + "\n";
 				d->kossl->OPENSSL_free(x);
 			}
 		#endif
 		#ifndef NO_DSA
-			if (pkey->type == EVP_PKEY_DSA) {
+			if (d->kossl->EVP_PKEY_get_id(pkey) == EVP_PKEY_DSA) {
+				const BIGNUM *dsa_p, *dsa_q, *dsa_g, *dsa_pub_key;
+				DSA *dsa = d->kossl->EVP_PKEY_get0_DSA(pkey);
+				d->kossl->DSA_get0_pqg(dsa, &dsa_p, &dsa_q, &dsa_g);
+				d->kossl->DSA_get0_key(dsa, &dsa_pub_key, 0L);
 				rc = i18n("Key type: DSA (%1 bit)") + "\n";
 
-				x = d->kossl->BN_bn2hex(pkey->pkey.dsa->p);
+				x = d->kossl->BN_bn2hex(dsa_p);
 				rc += i18n("Prime: ");
 				// hack - this may not be always accurate
 				rc = rc.arg(strlen(x)*4) ;
@@ -376,7 +386,7 @@ char *x = NULL;
 				rc += "\n";
 				d->kossl->OPENSSL_free(x);
 
-				x = d->kossl->BN_bn2hex(pkey->pkey.dsa->q);
+				x = d->kossl->BN_bn2hex(dsa_q);
 				rc += i18n("160 bit prime factor: ");
 				for (unsigned int i = 0; i < strlen(x); i++) {
 					if (i%40 != 0 && i%2 == 0)
@@ -388,7 +398,7 @@ char *x = NULL;
 				rc += "\n";
 				d->kossl->OPENSSL_free(x);
 	
-				x = d->kossl->BN_bn2hex(pkey->pkey.dsa->g);
+				x = d->kossl->BN_bn2hex(dsa_g);
 				rc += QString("g: ");
 				for (unsigned int i = 0; i < strlen(x); i++) {
 					if (i%40 != 0 && i%2 == 0)
@@ -400,7 +410,7 @@ char *x = NULL;
 				rc += "\n";
 				d->kossl->OPENSSL_free(x);
 	
-				x = d->kossl->BN_bn2hex(pkey->pkey.dsa->pub_key);
+				x = d->kossl->BN_bn2hex(dsa_pub_key);
 				rc += i18n("Public key: ");
 				for (unsigned int i = 0; i < strlen(x); i++) {
 					if (i%40 != 0 && i%2 == 0)
@@ -659,7 +669,7 @@ KSSLCertificate::KSSLValidationList KSSLCertificate::validateVerbose(KSSLCertifi
 			return errors;
 		}
 
-		X509_STORE_set_verify_cb_func(certStore, X509Callback);
+		d->kossl->X509_STORE_set_verify_cb(certStore, X509Callback);
 
 		certLookup = d->kossl->X509_STORE_add_lookup(certStore, d->kossl->X509_LOOKUP_file());
 		if (!certLookup) {
@@ -701,9 +711,9 @@ KSSLCertificate::KSSLValidationList KSSLCertificate::validateVerbose(KSSLCertifi
 		KSSL_X509CallBack_ca = ca ? ca->d->m_cert : 0;
 		KSSL_X509CallBack_ca_found = false;
 
-		certStoreCTX->error = X509_V_OK;
+		d->kossl->X509_STORE_CTX_set_error(certStoreCTX, X509_V_OK);
 		rc = d->kossl->X509_verify_cert(certStoreCTX);
-		int errcode = certStoreCTX->error;
+		int errcode = d->kossl->X509_STORE_CTX_get_error(certStoreCTX);
 		if (ca && !KSSL_X509CallBack_ca_found) {
 			ksslv = KSSLCertificate::Irrelevant;
 		} else {
@@ -713,12 +723,21 @@ KSSLCertificate::KSSLValidationList KSSLCertificate::validateVerbose(KSSLCertifi
 		if (	(ksslv != KSSLCertificate::Ok) &&
 			(ksslv != KSSLCertificate::Irrelevant) &&
 			purpose == KSSLCertificate::SSLServer) {
+			// OpenSSL >= 1.1.0 refuses to verify twice with the
+			// same context (X509_V_ERR_INVALID_CALL), so set it
+			// up again
+			d->kossl->X509_STORE_CTX_cleanup(certStoreCTX);
+			d->kossl->X509_STORE_CTX_init(certStoreCTX, certStore, d->m_cert, NULL);
+			if (d->_chain.isValid()) {
+				d->kossl->X509_STORE_CTX_set_chain(certStoreCTX, (STACK_OF(X509)*)d->_chain.rawChain());
+			}
+
 			d->kossl->X509_STORE_CTX_set_purpose(certStoreCTX,
 						X509_PURPOSE_NS_SSL_SERVER);
 
-			certStoreCTX->error = X509_V_OK;
+			d->kossl->X509_STORE_CTX_set_error(certStoreCTX, X509_V_OK);
 			rc = d->kossl->X509_verify_cert(certStoreCTX);
-			errcode = certStoreCTX->error;
+			errcode = d->kossl->X509_STORE_CTX_get_error(certStoreCTX);
 			ksslv = processError(errcode);
 		}
 		d->kossl->X509_STORE_CTX_free(certStoreCTX);
@@ -851,7 +870,7 @@ return rc;
 
 QString KSSLCertificate::getNotBefore() const {
 #ifdef KSSL_HAVE_SSL
-return ASN1_UTCTIME_QString(X509_get_notBefore(d->m_cert));
+return ASN1_UTCTIME_QString(d->kossl->X509_getm_notBefore(d->m_cert));
 #else
 return QString::null;
 #endif
@@ -860,7 +879,7 @@ return QString::null;
 
 QString KSSLCertificate::getNotAfter() const {
 #ifdef KSSL_HAVE_SSL
-return ASN1_UTCTIME_QString(X509_get_notAfter(d->m_cert));
+return ASN1_UTCTIME_QString(d->kossl->X509_getm_notAfter(d->m_cert));
 #else
 return QString::null;
 #endif
@@ -869,7 +888,7 @@ return QString::null;
 
 QDateTime KSSLCertificate::getQDTNotBefore() const {
 #ifdef KSSL_HAVE_SSL
-return ASN1_UTCTIME_QDateTime(X509_get_notBefore(d->m_cert), NULL);
+return ASN1_UTCTIME_QDateTime(d->kossl->X509_getm_notBefore(d->m_cert), NULL);
 #else
 return QDateTime::currentDateTime();
 #endif
@@ -878,7 +897,7 @@ return QDateTime::currentDateTime();
 
 QDateTime KSSLCertificate::getQDTNotAfter() const {
 #ifdef KSSL_HAVE_SSL
-return ASN1_UTCTIME_QDateTime(X509_get_notAfter(d->m_cert), NULL);
+return ASN1_UTCTIME_QDateTime(d->kossl->X509_getm_notAfter(d->m_cert), NULL);
 #else
 return QDateTime::currentDateTime();
 #endif
@@ -1003,30 +1022,46 @@ return qba;
 QByteArray KSSLCertificate::toNetscape() {
 QByteArray qba;
 #ifdef KSSL_HAVE_SSL
-ASN1_HEADER ah;
-ASN1_OCTET_STRING os;
-KTempFile ktf;
+	// The Netscape certificate format, what i2d_ASN1_HEADER() wrote for
+	// an ASN1_HEADER { NETSCAPE_CERT_HDR, cert, X509_asn1_meth() } (and
+	// i2d_NETSCAPE_X509() alias "openssl x509 -outform NET"):
+	//   SEQUENCE { OCTET STRING "certificate", Certificate }
+	// in DER.  OpenSSL has no ASN1_HEADER/ASN1_METHOD any more, so the
+	// encoding is put together here.
+	if (!getCert())
+		return qba;
+	int certlen = d->kossl->i2d_X509(getCert(), NULL);
+	if (certlen <= 0)
+		return qba;
 
-	os.data = (unsigned char *)NETSCAPE_CERT_HDR;
-	os.length = strlen(NETSCAPE_CERT_HDR);
-	ah.header = &os;
-	ah.data = (char *)getCert();
-	ah.meth = d->kossl->X509_asn1_meth();
+	const unsigned int hdrlen = sizeof(NETSCAPE_CERT_HDR) - 1;
+	// OCTET STRING: tag, length (< 128), contents; then the certificate
+	const unsigned int contlen = 2 + hdrlen + certlen;
+	// DER length: short form below 128, else 0x80|n and n big endian bytes
+	unsigned char len[sizeof(unsigned int) + 1];
+	unsigned int lenlen = 0;
+	if (contlen < 0x80) {
+		len[lenlen++] = contlen;
+	} else {
+		unsigned int n = 0;
+		for (unsigned int v = contlen; v; v >>= 8)
+			n++;
+		len[lenlen++] = 0x80 | n;
+		while (n--)
+			len[lenlen++] = (contlen >> (8 * n)) & 0xff;
+	}
 
-	d->kossl->ASN1_i2d_fp(ktf.fstream(),(unsigned char *)&ah);
-
-	ktf.close();
-
-	QFile qf(ktf.name());
-	qf.open(IO_ReadOnly);
-	char *buf = new char[qf.size()];
-	qf.readBlock(buf, qf.size());
-	qba.duplicate(buf, qf.size());
-	qf.close();
-	delete[] buf;
-
-	ktf.unlink();
-
+	qba.resize(1 + lenlen + contlen);
+	unsigned char *p = reinterpret_cast<unsigned char *>(qba.data());
+	*p++ = 0x30;                    // SEQUENCE, constructed
+	memcpy(p, len, lenlen);
+	p += lenlen;
+	*p++ = 0x04;                    // OCTET STRING
+	*p++ = hdrlen;
+	memcpy(p, NETSCAPE_CERT_HDR, hdrlen);
+	p += hdrlen;
+	if (d->kossl->i2d_X509(getCert(), &p) != certlen)
+		qba.resize(0);
 #endif
 return qba;
 }
@@ -1093,7 +1128,7 @@ QStringList KSSLCertificate::subjAltNames() const {
 	int cnt = d->kossl->sk_GENERAL_NAME_num(names);
 
 	for (int i = 0; i < cnt; i++) {
-		const GENERAL_NAME *val = (const GENERAL_NAME *)d->kossl->sk_value(names, i);
+		const GENERAL_NAME *val = (const GENERAL_NAME *)d->kossl->OPENSSL_sk_value((OPENSSL_STACK *)names, i);
 		if (val->type != GEN_DNS) {
 			continue;
 		}
@@ -1103,7 +1138,7 @@ QStringList KSSLCertificate::subjAltNames() const {
 			rc += s;
 		}
 	}
-	d->kossl->sk_free(names);
+	d->kossl->OPENSSL_sk_free((OPENSSL_STACK *)names);
 #endif
 	return rc;
 }

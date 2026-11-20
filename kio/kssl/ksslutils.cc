@@ -40,8 +40,8 @@ int y=0,M=0,d=0,h=0,m=0,s=0;
 QDate qdate;
 QTime qtime;
  
-  i = tm->length;
-  v = (char *)tm->data;
+  i = KOSSL::self()->ASN1_STRING_length(tm);
+  v = (char *)KOSSL::self()->ASN1_STRING_data(tm);
  
   if (i < 10) goto auq_err;
   if (v[i-1] == 'Z') gmt=1;
