@@ -116,6 +116,58 @@ if(NOT DEFINED KDE3_UIC_PLUGIN_DIR)
 endif()
 
 # ---------------------------------------------------------------------
+# RUNPATH of the installed libraries, modules and programs
+#
+# Each gets (see _kde3_set_install_rpath):
+#  1. $ORIGIN/<path to KDE3_LIB_INSTALL_DIR>, so that an installation
+#     works wherever it is copied to (a DESTDIR staging tree, a
+#     relocated package), as kde3-qt does it;
+#  2. the absolute KDE library directory (of the module, and of kdelibs
+#     if that is elsewhere): setuid/setgid programs (kdesud of kdebase,
+#     for example) run in secure mode, where ld.so ignores $ORIGIN;
+#  3. KDE3_QT_RPATH, the library directory of the installed kde3-qt.
+# Directories the linker searches anyway are left out.
+
+if(NOT DEFINED KDE3_QT_RPATH)
+  # Where kde3-qt is installed, not the tree kdelibs is built against
+  # (which may be a development tree): pkg-config kde3-qt, else the
+  # default prefix of kde3-qt.
+  set(_kde3_qt_rpath /opt/kde3-qt/lib)
+  find_package(PkgConfig QUIET)
+  if(PKG_CONFIG_FOUND)
+    pkg_check_modules(_KDE3QT_RPATH_PC QUIET kde3-qt)
+    if(_KDE3QT_RPATH_PC_FOUND)
+      pkg_get_variable(_kde3_qt_rpath kde3-qt libdir)
+    endif()
+  endif()
+  set(KDE3_QT_RPATH "${_kde3_qt_rpath}" CACHE PATH
+    "Library directory of the installed kde3-qt, put into the RUNPATH of installed KDE binaries")
+endif()
+
+function(_kde3_set_install_rpath target destination)
+  if(IS_ABSOLUTE "${destination}")
+    set(_full "${destination}")
+  else()
+    set(_full "${CMAKE_INSTALL_PREFIX}/${destination}")
+  endif()
+  file(RELATIVE_PATH _rel "${_full}" "${KDE3_FULL_LIB_INSTALL_DIR}")
+  string(REGEX REPLACE "/+$" "" _rel "${_rel}")
+  if(_rel STREQUAL "")
+    set(_rpath "$ORIGIN")
+  else()
+    set(_rpath "$ORIGIN/${_rel}")
+  endif()
+  foreach(_dir "${KDE3_FULL_LIB_INSTALL_DIR}" "${KDE3_QT_RPATH}")
+    if(_dir AND NOT _dir IN_LIST _rpath
+       AND NOT _dir IN_LIST CMAKE_C_IMPLICIT_LINK_DIRECTORIES
+       AND NOT _dir IN_LIST CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES)
+      list(APPEND _rpath "${_dir}")
+    endif()
+  endforeach()
+  set_target_properties(${target} PROPERTIES INSTALL_RPATH "${_rpath}")
+endfunction()
+
+# ---------------------------------------------------------------------
 # moc
 
 function(_kde3_moc_command header output)
@@ -351,6 +403,7 @@ function(kde3_add_library name type)
       endif()
       install(TARGETS ${name} EXPORT ${ARG_EXPORT}
         LIBRARY DESTINATION "${ARG_DESTINATION}")
+      _kde3_set_install_rpath(${name} "${ARG_DESTINATION}")
     endif()
   else()
     # libtool convenience library: position independent, linked into
@@ -371,6 +424,7 @@ function(kde3_add_module name)
       set(ARG_DESTINATION "${KDE3_MODULE_INSTALL_DIR}")
     endif()
     install(TARGETS ${name} LIBRARY DESTINATION "${ARG_DESTINATION}")
+    _kde3_set_install_rpath(${name} "${ARG_DESTINATION}")
   endif()
 endfunction()
 
@@ -388,6 +442,7 @@ function(kde3_add_executable name)
     else()
       install(TARGETS ${name} RUNTIME DESTINATION "${ARG_DESTINATION}")
     endif()
+    _kde3_set_install_rpath(${name} "${ARG_DESTINATION}")
   endif()
 endfunction()
 
@@ -423,6 +478,9 @@ extern \"C\" KDE_EXPORT int kdeinitmain(int argc, char* argv[]) { return kdemain
     install(TARGETS ${_lib} LIBRARY DESTINATION "${KDE3_LIB_INSTALL_DIR}")
     install(TARGETS ${name} RUNTIME DESTINATION "${KDE3_BIN_INSTALL_DIR}")
     install(TARGETS ${name}_module LIBRARY DESTINATION "${KDE3_MODULE_INSTALL_DIR}")
+    _kde3_set_install_rpath(${_lib} "${KDE3_LIB_INSTALL_DIR}")
+    _kde3_set_install_rpath(${name} "${KDE3_BIN_INSTALL_DIR}")
+    _kde3_set_install_rpath(${name}_module "${KDE3_MODULE_INSTALL_DIR}")
   endif()
 endfunction()
 

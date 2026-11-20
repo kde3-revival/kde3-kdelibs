@@ -32,14 +32,6 @@ add_compile_definitions(HAVE_CONFIG_H)
 add_compile_definitions(
   "$<$<COMPILE_LANGUAGE:CXX>:QT_CLEAN_NAMESPACE;QT_NO_ASCII_CAST;QT_NO_STL;QT_NO_COMPAT;QT_NO_TRANSLATION>")
 
-# Installed libraries and modules find kde3-qt and each other.
-set(KDE3_QT_RPATH "${KDE3Qt_LIBRARY_DIR}" CACHE PATH
-  "Library directory of kde3-qt to put into the installed RUNPATH")
-set(CMAKE_INSTALL_RPATH "${KDE3_FULL_LIB_INSTALL_DIR}")
-if(NOT KDE3_QT_RPATH STREQUAL KDE3_FULL_LIB_INSTALL_DIR)
-  list(APPEND CMAKE_INSTALL_RPATH "${KDE3_QT_RPATH}")
-endif()
-
 # -I$(top_builddir) of every Makefile (config.h) and all_includes of
 # configure.in.mid: every directory of kdelibs is compiled with these
 # (kdecore uses kio and kdeui headers, for example).  Installed targets
