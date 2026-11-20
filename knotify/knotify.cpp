@@ -409,8 +409,15 @@ bool KNotify::playExternal( const QString &soundFile, int eventId )
             (*proc) << QString::fromLatin1( "--volume=%1" ).arg( paVolume );
         }
         (*proc) << QFile::encodeName( soundFile );
+        if ( !proc->start( KProcess::NotifyOnExit ) ) {
+            // it cannot be forked or executed (a configured player that does
+            // not exist, for instance), so no processExited() will report the
+            // event: report it here, as for a player that fails
+            kdDebug() << "KNotify: cannot start the player " << d->externalPlayer << endl;
+            soundFinished( eventId, Unknown );
+            return false;
+        }
         d->externalPlayerEventId = eventId;
-        proc->start(KProcess::NotifyOnExit);
         return true;
     }
 }
