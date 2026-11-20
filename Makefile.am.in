@@ -18,7 +18,7 @@
 #    Boston, MA 02110-1301, USA.
 
 
-COMPILE_FIRST = dcop libltdl kdefx kdecore kdeui kdesu kjs kwallet kio
+COMPILE_FIRST = dcop kdefx kdecore kdeui kdesu kjs kwallet kio
 COMPILE_BEFORE_doc = kdoctools
 COMPILE_AFTER_kparts = kdeprint kinit kate interfaces khtml
 COMPILE_AFTER_kdeprint = kate khtml
@@ -28,8 +28,6 @@ COMPILE_BEFORE_kate = interfaces kutils
 COMPILE_BEFORE_kcmshell = kutils
 COMPILE_BEFORE_kdewidgets = kabc khtml
 COMPILE_BEFORE_interfaces = kabc
-
-$(top_srcdir)/acinclude.m4: $(top_srcdir)/libltdl/ltdl.m4
 
 AUTOMAKE_OPTIONS = foreign 1.6.1
 
