@@ -199,6 +199,12 @@ void KHostName::changeDcop()
 
    QCString oldNetId = line1;
 
+   // Edit the ICE authority file DCOP uses, not iceauth's default one.
+   QString iceauth = "iceauth";
+   QCString authFile = DCOPClient::iceauthFile();
+   if (!authFile.isEmpty())
+      iceauth += " -f "+KProcess::quote(QFile::decodeName(authFile));
+
    if (!newName.isEmpty())
    {
       int i = line1.findRev(':');
@@ -228,8 +234,8 @@ void KHostName::changeDcop()
       QCString compatLink = DCOPClient::dcopServerFileOld(newName);
       ::symlink(fname.data(), compatLink.data()); // Compatibility link
 
-      // Update .ICEauthority
-      QString cmd = "iceauth list "+KProcess::quote("netid="+oldNetId);
+      // Update the ICE authority file
+      QString cmd = iceauth+" list "+KProcess::quote("netid="+oldNetId);
       FILE *iceFile = popen(QFile::encodeName(cmd), "r");
       if (!iceFile)
       {
@@ -264,7 +270,7 @@ void KHostName::changeDcop()
          if (netId != oldNetId)
             continue;
 
-         cmd = "iceauth add ";
+         cmd = iceauth+" add ";
          cmd += KProcess::quote(protName);
          cmd += " '' ";
          cmd += KProcess::quote(newNetId);
@@ -278,7 +284,7 @@ void KHostName::changeDcop()
 
    // Remove old entries
    {
-      QString cmd = "iceauth remove "+KProcess::quote("netid="+oldNetId);
+      QString cmd = iceauth+" remove "+KProcess::quote("netid="+oldNetId);
       system(QFile::encodeName(cmd));
       unlink(origFName.data());
       origFName = DCOPClient::dcopServerFileOld(oldName); // Compatibility link

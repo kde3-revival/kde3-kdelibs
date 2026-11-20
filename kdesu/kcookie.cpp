@@ -163,7 +163,11 @@ void KCookie::getICECookie()
         if (strncmp((*it).data(), m_dcopTransport.data(), m_dcopTransport.length()) != 0)
             continue;
         m_DCOPSrv = *it;
-	QCString cmd = DCOPClient::iceauthPath()+" list netid="+QFile::encodeName(KProcess::quote(m_DCOPSrv));
+	QCString cmd = DCOPClient::iceauthPath();
+	QCString authFile = DCOPClient::iceauthFile();
+	if (!authFile.isEmpty())
+	    cmd += " -f "+QFile::encodeName(KProcess::quote(QFile::decodeName(authFile)));
+	cmd += " list netid="+QFile::encodeName(KProcess::quote(m_DCOPSrv));
 	blockSigChild();
 	if (!(f = popen(cmd, "r")))
 	{

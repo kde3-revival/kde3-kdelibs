@@ -26,6 +26,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <sys/types.h>
 #include <pwd.h>
+#include <unistd.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -387,6 +388,33 @@ static UserList userList()
 }
 
 /**
+ * Return the ICE authority file of a session of @p user.
+ * libICE uses $XDG_RUNTIME_DIR/ICEauthority when XDG_RUNTIME_DIR is set
+ * (by logind/elogind: /run/user/<uid>), else $HOME/.ICEauthority.
+ * The runtime file is preferred when it exists; for the current user
+ * $XDG_RUNTIME_DIR is used, for other users /run/user/<uid>.
+ */
+static QString iceAuthFileForUser( const QString &user, const QString &home )
+{
+    passwd *pw = getpwnam( user.local8Bit() );
+    if( pw )
+    {
+	QString runtimeDir;
+	const char *xdgRuntimeDir = getenv( "XDG_RUNTIME_DIR" );
+	if( pw->pw_uid == getuid() && xdgRuntimeDir && *xdgRuntimeDir )
+	    runtimeDir = QFile::decodeName( xdgRuntimeDir );
+	else
+	    runtimeDir = QString( "/run/user/%1" ).arg( pw->pw_uid );
+	QString runtimeFile = runtimeDir + "/ICEauthority";
+	if( QFileInfo( runtimeFile ).exists() )
+	    return runtimeFile;
+    }
+    if( home.isEmpty() )
+	return QString::null;
+    return home + "/.ICEauthority";
+}
+
+/**
  * Return a list of available DCOP sessions for the specified user
  * An empty list means no sessions are available, or an error occurred.
  */
@@ -593,8 +621,7 @@ int runDCOP( QCStringList args, UserList users, Session session,
 	    ( getenv( "ICEAUTHORITY" ) == 0 || getenv( "DISPLAY" ) == 0 ) ) )
 	{
 	    // Check for ICE authority file and if the file can be read by us
-	    QString home = it.data();
-	    QString iceFile = it.data() + "/.ICEauthority";
+	    QString iceFile = iceAuthFileForUser( it.key(), it.data() );
 	    QFileInfo fi( iceFile );
 	    if( iceFile.isEmpty() )
 	    {

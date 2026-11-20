@@ -385,6 +385,10 @@ For example
 
 ICEAUTHORITY=~user/.ICEauthority kdesu root -c kcmroot -dcopserver `cat ~user/.DCOPserver`
 
+(the ICE authority file is $ICEAUTHORITY if set, else
+$XDG_RUNTIME_DIR/ICEauthority if XDG_RUNTIME_DIR is set, e.g.
+/run/user/<uid>/ICEauthority, else ~/.ICEauthority)
+
 will, after kdesu got the root password, execute kcmroot as root, talking
 to the user's dcop server.
 
