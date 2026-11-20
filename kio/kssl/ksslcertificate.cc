@@ -1133,12 +1133,22 @@ QStringList KSSLCertificate::subjAltNames() const {
 			continue;
 		}
 
-		QString s = (const char *)d->kossl->ASN1_STRING_data(val->d.ia5);
+		// CVE-2009-2702: a name with an embedded NUL
+		// ("www.bank.example\0.evil.example") would be cut at the
+		// NUL and match a host it was not issued for; skip it.
+		const char *data = (const char *)d->kossl->ASN1_STRING_data(val->d.ia5);
+		int len = d->kossl->ASN1_STRING_length(val->d.ia5);
+		if (!data || len <= 0 || qstrlen(data) != (uint)len) {
+			continue;
+		}
+
+		QString s = data;
 		if (!s.isEmpty()) {
 			rc += s;
 		}
 	}
-	d->kossl->OPENSSL_sk_free((OPENSSL_STACK *)names);
+	// frees the names too; OPENSSL_sk_free() leaked them
+	d->kossl->GENERAL_NAMES_free(names);
 #endif
 	return rc;
 }

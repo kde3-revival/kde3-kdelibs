@@ -726,6 +726,11 @@ public:
    void *X509_get_ext_d2i(X509 *x, int nid, int *crit, int *idx);
 
    /*
+    *  GENERAL_NAMES_free - free a GENERAL_NAMES (e.g. subjectAltName)
+    */
+   void GENERAL_NAMES_free(GENERAL_NAMES *gens);
+
+   /*
     *
     */
    char *i2s_ASN1_OCTET_STRING(X509V3_EXT_METHOD *method, ASN1_OCTET_STRING *ia5);
