@@ -643,7 +643,7 @@ KConfig *cfg;
                                   _sslLib->symbol("SSL_CTX_set_cipher_list");
       K_SSL_CTX_set_verify = (void (*)(SSL_CTX*, int, int (*)(int, X509_STORE_CTX*))) _sslLib->symbol("SSL_CTX_set_verify");
       K_SSL_use_certificate = (int (*)(SSL*, X509*))
-                                  _sslLib->symbol("SSL_CTX_use_certificate");
+                                  _sslLib->symbol("SSL_use_certificate");
       K_SSL_get_current_cipher = (SSL_CIPHER *(*)(SSL *))
                                   _sslLib->symbol("SSL_get_current_cipher");
       K_SSL_ctrl = (long (*)(SSL * ,int, long, char *))
