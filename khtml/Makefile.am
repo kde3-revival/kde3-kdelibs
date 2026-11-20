@@ -109,7 +109,7 @@ parser:
 	bash scripts/makeprop
 
 DOXYGEN_REFERENCES = kdecore kdeui kio kdefx kparts
-DOXYGEN_EXCLUDE =  css ecma html java kmultipart misc pics rendering xml
+DOXYGEN_EXCLUDE =  css ecma html kmultipart misc pics rendering xml
 
 include ../admin/Doxyfile.am
 

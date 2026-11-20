@@ -82,5 +82,3 @@ domparser.lo: domparser.lut.h
 
 
 CLEANFILES = $(LUT_FILES)
-
-# interactive test program

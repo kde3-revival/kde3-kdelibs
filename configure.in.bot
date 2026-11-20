@@ -111,22 +111,6 @@ if test "$ac_use_cups" != "yes"; then
   all_tests=bad
 fi
 
-if test "$EXRSTATUS" = "no"; then
-  echo ""
-  echo "No OpenEXR Libraries were found"
-  echo "Install the OpenEXR package (from http://www.openexr.org)"
-  echo "if you want EXR image format support"
-  echo ""
-fi
-
-if test "$EXRSTATUS" = "old"; then
-  echo ""
-  echo "OpenEXR libraries were found, but at least version 1.1.0 is required"
-  echo "Install a newer OpenEXR package (from http://www.openexr.org)"
-  echo "if you want EXR image format support"
-  echo ""
-fi
-
 if test "$USE_POSIX_ACL" != "yes"; then
   echo ""
   echo "libacl was not found. Without that library, you will not be able"
