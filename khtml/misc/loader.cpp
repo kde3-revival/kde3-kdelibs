@@ -461,7 +461,7 @@ private:
 
 static QString buildAcceptHeader()
 {
-    return "image/png, image/jpeg, video/x-mng, image/jp2, image/gif;q=0.5,*/*;q=0.1";
+    return "image/png, image/jpeg, video/x-mng, image/gif;q=0.5,*/*;q=0.1";
 }
 
 // -------------------------------------------------------------------------------------
