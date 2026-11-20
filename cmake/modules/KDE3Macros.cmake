@@ -295,12 +295,23 @@ function(kde3_add_library name type)
   if(type STREQUAL "SHARED")
     _kde3_setup_target(${name} PUBLIC)
     if(ARG_VERSION_INFO)
-      if(NOT ARG_VERSION_INFO MATCHES "^([0-9]+):([0-9]+):([0-9]+)$")
-        message(FATAL_ERROR "kde3_add_library(${name}): VERSION_INFO must be current:revision:age")
+      # libtool: current[:revision[:age]], missing parts are 0;
+      # lib<name>.so.<current-age>.<age>.<revision>
+      if(NOT ARG_VERSION_INFO MATCHES "^([0-9]+)(:([0-9]+))?(:([0-9]+))?$")
+        message(FATAL_ERROR "kde3_add_library(${name}): VERSION_INFO must be current[:revision[:age]]")
       endif()
-      math(EXPR _major "${CMAKE_MATCH_1} - ${CMAKE_MATCH_3}")
+      set(_cur "${CMAKE_MATCH_1}")
+      set(_rev "${CMAKE_MATCH_3}")
+      set(_age "${CMAKE_MATCH_5}")
+      if(_rev STREQUAL "")
+        set(_rev 0)
+      endif()
+      if(_age STREQUAL "")
+        set(_age 0)
+      endif()
+      math(EXPR _major "${_cur} - ${_age}")
       set_target_properties(${name} PROPERTIES
-        VERSION "${_major}.${CMAKE_MATCH_3}.${CMAKE_MATCH_2}"
+        VERSION "${_major}.${_age}.${_rev}"
         SOVERSION "${_major}")
     endif()
     add_library(KDE3::${name} ALIAS ${name})
@@ -570,4 +581,41 @@ function(kde3_generate_stdout output)
     DEPENDS ${ARG_DEPENDS} "${KDE3_MACROS_DIR}/kde3_run_to_file.cmake"
     COMMENT "Generating ${_name}"
     VERBATIM)
+endfunction()
+
+# ---------------------------------------------------------------------
+# kde3_install_setuid_root(<file in KDE3_BIN_INSTALL_DIR>)
+#
+# The "(chown root $(DESTDIR)$(bindir)/x && chmod 4755 ...) || echo"
+# install hooks: make an installed program setuid root when the
+# installation runs with the permission to do so, otherwise only print
+# a note (packagers set the mode themselves).
+
+function(kde3_install_setuid_root name)
+  install(CODE "
+    set(_f \"\$ENV{DESTDIR}${KDE3_FULL_BIN_INSTALL_DIR}/${name}\")
+    execute_process(COMMAND chown 0 \"\${_f}\" RESULT_VARIABLE _r
+      OUTPUT_QUIET ERROR_QUIET)
+    if(_r EQUAL 0)
+      execute_process(COMMAND chmod 4755 \"\${_f}\")
+      message(STATUS \"${name} is installed setuid root\")
+    else()
+      message(STATUS \"Please make ${name} setuid root\")
+    endif()")
+endfunction()
+
+# kde3_install_symlink(<target> <link>): install a symbolic link <link>
+# (path relative to CMAKE_INSTALL_PREFIX, or absolute) pointing to
+# <target> ($(LN_S) in install hooks).
+
+function(kde3_install_symlink target link)
+  if(NOT IS_ABSOLUTE "${link}")
+    set(link "${CMAKE_INSTALL_PREFIX}/${link}")
+  endif()
+  install(CODE "
+    set(_l \"\$ENV{DESTDIR}${link}\")
+    get_filename_component(_d \"\${_l}\" DIRECTORY)
+    file(MAKE_DIRECTORY \"\${_d}\")
+    file(REMOVE \"\${_l}\")
+    file(CREATE_LINK \"${target}\" \"\${_l}\" SYMBOLIC)")
 endfunction()

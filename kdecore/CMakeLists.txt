@@ -219,22 +219,13 @@ kde3_add_executable(kde-config
     kdecore
 )
 
-# kgrantpty is installed setuid root (install-exec-hook), only when the
-# installation runs as root, like autotools.
+# install-exec-hook
 kde3_add_executable(kgrantpty
   SOURCES
     kgrantpty.c
 )
 set_target_properties(kgrantpty PROPERTIES POSITION_INDEPENDENT_CODE ON)
-install(CODE "
-  set(_f \"\$ENV{DESTDIR}${KDE3_FULL_BIN_INSTALL_DIR}/kgrantpty\")
-  execute_process(COMMAND chown 0 \"\${_f}\" RESULT_VARIABLE _r ERROR_QUIET)
-  if(_r EQUAL 0)
-    execute_process(COMMAND chmod 4755 \"\${_f}\")
-    message(STATUS \"kgrantpty is installed with a set SETUID root bit\")
-  else()
-    message(STATUS \"Please make kgrantpty setuid root\")
-  endif()")
+kde3_install_setuid_root(kgrantpty)
 
 install(FILES
   kconfig.h

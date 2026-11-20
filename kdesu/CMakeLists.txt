@@ -31,7 +31,4 @@ install(FILES
   stub.h
   DESTINATION ${KDE3_INCLUDE_INSTALL_DIR}/kdesu)
 # install-data-hook: kdesu/pty.h -> kdesu_pty.h
-install(CODE "
-  set(_l \"\$ENV{DESTDIR}${KDE3_FULL_INCLUDE_INSTALL_DIR}/kdesu/pty.h\")
-  file(REMOVE \"\${_l}\")
-  file(CREATE_LINK kdesu_pty.h \"\${_l}\" SYMBOLIC)")
+kde3_install_symlink(kdesu_pty.h ${KDE3_INCLUDE_INSTALL_DIR}/kdesu/pty.h)
