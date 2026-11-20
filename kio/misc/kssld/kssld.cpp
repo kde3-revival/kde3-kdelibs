@@ -214,8 +214,8 @@ void KSSLD::cacheReload() {
 void KSSLD::cacheClearList() {
 KSSLCNode *node;
 
-	for (node = certList.first(); node; node = certList.next()) {
-		certList.remove(node);
+	while ((node = certList.first())) {
+		certList.removeFirst();
 		delete node;
 	}
 
@@ -309,11 +309,13 @@ KSSLCNode *node;
 KSSLCertificateCache::KSSLCertificatePolicy KSSLD::cacheGetPolicyByCN(QString cn) {
 KSSLCNode *node;
 
-	for (node = certList.first(); node; node = certList.next()) {
+	// the iterator is advanced before node is removed from the list
+	for (QPtrListIterator<KSSLCNode> it(certList); (node = it.current()); ) {
+		++it;
 		if (KSSLX509Map(node->cert->getSubject()).getValue("CN") == cn) {
 			if (!node->permanent &&
 				node->expires < QDateTime::currentDateTime()) {
-				certList.remove(node);
+				certList.removeRef(node);
 				cfg->deleteGroup(node->cert->getMD5Digest());
 				delete node;
 				continue;
@@ -359,11 +361,13 @@ return KSSLCertificateCache::Unknown;
 bool KSSLD::cacheSeenCN(QString cn) {
 KSSLCNode *node;
 
-	for (node = certList.first(); node; node = certList.next()) {
+	// the iterator is advanced before node is removed from the list
+	for (QPtrListIterator<KSSLCNode> it(certList); (node = it.current()); ) {
+		++it;
 		if (KSSLX509Map(node->cert->getSubject()).getValue("CN") == cn) {
 			if (!node->permanent &&
 				node->expires < QDateTime::currentDateTime()) {
-				certList.remove(node);
+				certList.removeRef(node);
 				cfg->deleteGroup(node->cert->getMD5Digest());
 				delete node;
 				cacheSaveToDisk();
@@ -432,9 +436,11 @@ bool KSSLD::cacheRemoveBySubject(QString subject) {
 KSSLCNode *node;
 bool gotOne = false;
 
-	for (node = certList.first(); node; node = certList.next()) {
+	// the iterator is advanced before node is removed from the list
+	for (QPtrListIterator<KSSLCNode> it(certList); (node = it.current()); ) {
+		++it;
 		if (node->cert->getSubject() == subject) {
-			certList.remove(node);
+			certList.removeRef(node);
 			cfg->deleteGroup(node->cert->getMD5Digest());
 			searchRemoveCert(node->cert);
 			delete node;
@@ -452,9 +458,11 @@ bool KSSLD::cacheRemoveByCN(QString cn) {
 KSSLCNode *node;
 bool gotOne = false;
 
-	for (node = certList.first(); node; node = certList.next()) {
+	// the iterator is advanced before node is removed from the list
+	for (QPtrListIterator<KSSLCNode> it(certList); (node = it.current()); ) {
+		++it;
 		if (KSSLX509Map(node->cert->getSubject()).getValue("CN") == cn) {
-			certList.remove(node);
+			certList.removeRef(node);
 			cfg->deleteGroup(node->cert->getMD5Digest());
 			searchRemoveCert(node->cert);
 			delete node;
