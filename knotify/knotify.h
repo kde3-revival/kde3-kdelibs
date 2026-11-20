@@ -34,7 +34,7 @@ Q_OBJECT
 K_DCOP
 
 public:
-	KNotify( bool useArts );
+	KNotify();
 	~KNotify();
 
     enum PlayingFinishedStatus
@@ -83,11 +83,9 @@ private:
                              int winId,
                              int eventId );
     bool notifyByTaskbar( WId winId );
-	
-	bool isPlaying( const QString& soundFile ) const;
+
 
     void soundFinished( int eventId, PlayingFinishedStatus reason );
-    void abortFirstPlayObject();
 	
         WId checkWinId( const QString& appName, WId senderWinId );
 
@@ -97,9 +95,7 @@ private:
 	bool isGlobal(const QString &eventname);
 
 private slots:
-    void playTimeout();
     void slotPlayerProcessExited( KProcess *proc );
-    void restartedArtsd();
 
 private:
     KNotifyPrivate* d;

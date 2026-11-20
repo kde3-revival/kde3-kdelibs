@@ -32,11 +32,8 @@ class KAudioPlayerPrivate;
  * know if what you wanted to play really got played.
  *
  * It doesn't require linking any special libraries, as it operates over
- * DCOP. In the current implementation, it only indirectly communicates
- * with the aRts soundserver, using knotify as DCOP -> MCOP bridge.
- *
- * Due to that fact, if you need "fast" response times, more control or
- * feedback, use the MCOP interfaces rather than this.
+ * DCOP: the sound is played by knotify (with the external player
+ * configured in the System Notifications settings).
  *
  * An example of using this class is:
  *

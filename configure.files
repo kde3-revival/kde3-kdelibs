@@ -1,5 +1,4 @@
 configure.in.in
-./arts/configure.in.in
 ./dcop/configure.in.in
 ./dnssd/configure.in.bot
 ./dnssd/configure.in.in

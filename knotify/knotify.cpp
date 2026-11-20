@@ -27,14 +27,6 @@
 #include <sys/stat.h>
 
 #include <config.h>
-#ifndef WITHOUT_ARTS
-// aRts headers
-#include <connect.h>
-#include <dispatcher.h>
-#include <flowsystem.h>
-#include <qiomanager.h>
-#include <soundserver.h>
-#endif
 
 // QT headers
 #include <qfile.h>
@@ -45,10 +37,6 @@
 // KDE headers
 #include <dcopclient.h>
 #include <kaboutdata.h>
-#ifndef WITHOUT_ARTS
-#include <kartsdispatcher.h>
-#include <kartsserver.h>
-#endif
 #include <kcmdlineargs.h>
 #include <kconfig.h>
 #include <kdebug.h>
@@ -58,10 +46,6 @@
 #include <kpassivepopup.h>
 #include <kiconloader.h>
 #include <kmacroexpander.h>
-#ifndef WITHOUT_ARTS
-#include <kplayobjectfactory.h>
-#include <kaudiomanagerplay.h>
-#endif
 #include <kprocess.h>
 #include <kstandarddirs.h>
 #include <kuniqueapplication.h>
@@ -80,26 +64,13 @@ public:
     QString externalPlayer;
     KProcess *externalPlayerProc;
 
-#ifndef WITHOUT_ARTS
-    QPtrList<KDE::PlayObject> playObjects;
-    QMap<KDE::PlayObject*,int> playObjectEventMap;
-    KAudioManagerPlay *audioManager;
-#endif
     int externalPlayerEventId;
 
     bool useExternal;
-    bool useArts;
     int volume;
-    QTimer *playTimer;
     bool inStartup;
     QString startupEvents;
 };
-
-// Yes, it's ugly to put this here, but this facilitates the cautious startup
-// procedure.
-#ifndef WITHOUT_ARTS
-KArtsServer *soundServer = 0;
-#endif
 
 extern "C"{
 
@@ -126,106 +97,8 @@ KDE_EXPORT int kdemain(int argc, char **argv)
     KUniqueApplication app;
     app.disableSessionManagement();
 
-    // KNotify is started on KDE startup and on demand (using
-    // KNotifClient::startDaemon()) whenever a KNotify event occurs. Especially
-    // KWin may fire many events (e.g. when a window pops up). When we have
-    // problems with aRts or the installation, we might get an infinite loop
-    // of knotify crashing, popping up the crashhandler window and kwin firing
-    // another event, starting knotify again...
-    // We try to prevent this by tracking our startup and offer options to
-    // abort this.
-
-#ifndef WITHOUT_ARTS
-    KConfigGroup config( KGlobal::config(), "StartProgress" );
-    KConfig artsKCMConfig( "kcmartsrc" );
-    artsKCMConfig.setGroup( "Arts" );
-    bool useArts = artsKCMConfig.readBoolEntry( "StartServer", true );
-    if (useArts)
-        useArts = config.readBoolEntry( "Use Arts", useArts );
-    bool ok = config.readBoolEntry( "Arts Init", true );
-
-    if ( useArts && !ok )
-    {
-        if ( KMessageBox::questionYesNo(
-                 0L,
-                 i18n("During the previous startup, KNotify crashed while creating "
-                      "Arts::Dispatcher. Do you want to try again or disable "
-                      "aRts sound output?\n\n"
-                      "If you choose to disable aRts output now, you can re-enable "
-                      "it later or select an alternate sound player "
-                      "in the System Notifications control panel."),
-                 i18n("KNotify Problem"),
-                 i18n("&Try Again"),
-                 i18n("D&isable aRts Output"),
-                 "KNotifyStartProgress",
-                 0 /* don't call KNotify :) */
-                 )
-             == KMessageBox::No )
-        {
-            useArts = false;
-        }
-    }
-
-    // when ArtsDispatcher crashes, we know it the next start.
-    config.writeEntry( "Arts Init", false );
-    config.writeEntry( "Use Arts", useArts );
-    config.sync();
-
-    KArtsDispatcher *dispatcher = 0;
-    if ( useArts )
-    {
-        dispatcher = new KArtsDispatcher;
-        soundServer = new KArtsServer;
-    }
-
-    // ok, seemed to work.
-    config.writeEntry("Arts Init", useArts );
-    config.sync();
-
-    ok = config.readBoolEntry( "KNotify Init", true );
-    if ( useArts && !ok )
-    {
-        if ( KMessageBox::questionYesNo(
-                 0L,
-                 i18n("During the previous startup, KNotify crashed while instantiating "
-                      "KNotify. Do you want to try again or disable "
-                      "aRts sound output?\n\n"
-                      "If you choose to disable aRts output now, you can re-enable "
-                      "it later or select an alternate sound player "
-                      "in the System Notifications control panel."),
-                 i18n("KNotify Problem"),
-                 i18n("&Try Again"),
-                 i18n("D&isable aRts Output"),
-                 "KNotifyStartProgress",
-                 0 /* don't call KNotify :) */
-                 )
-             == KMessageBox::No )
-        {
-            useArts = false;
-            delete soundServer;
-            soundServer = 0L;
-            delete dispatcher;
-            dispatcher = 0L;
-        }
-    }
-
-    // when KNotify instantiation crashes, we know it the next start.
-    config.writeEntry( "KNotify Init", false );
-    config.writeEntry( "Use Arts", useArts );
-    config.sync();
-
     // start notify service
-    KNotify *notify = new KNotify( useArts );
-
-    config.writeEntry( "KNotify Init", true );
-    config.sync();
-
-#else
-
-    // start notify service, without aRts
-    KNotify *notify = new KNotify( false );
-
-#endif
+    KNotify *notify = new KNotify;
 
     app.dcopClient()->setDefaultObject( "Notify" );
     app.dcopClient()->setDaemonMode( true );
@@ -233,36 +106,20 @@ KDE_EXPORT int kdemain(int argc, char **argv)
 
     int ret = app.exec();
     delete notify;
-#ifndef WITHOUT_ARTS
-    delete soundServer;
-    delete dispatcher;
-#endif
     return ret;
 }
 }// end extern "C"
 
-KNotify::KNotify( bool useArts )
+KNotify::KNotify()
     : QObject(), DCOPObject("Notify")
 {
     d = new KNotifyPrivate;
     d->globalEvents = new KConfig("knotify/eventsrc", true, false, "data");
     d->globalConfig = new KConfig("knotify.eventsrc", true, false);
     d->externalPlayerProc = 0;
-    d->useArts = useArts;
     d->inStartup = true;
-#ifndef WITHOUT_ARTS
-    d->playObjects.setAutoDelete(true);
-    d->audioManager = 0;
-    if( useArts )
-    {
-        connect( soundServer, SIGNAL( restartedServer() ), this, SLOT( restartedArtsd() ) );
-        restartedArtsd(); //started allready need to initialize d->audioManager
-    }
-#endif
 
     d->volume = 100;
-
-    d->playTimer = 0;
 
     loadConfig();
 }
@@ -271,14 +128,6 @@ KNotify::~KNotify()
 {
     reconfigure();
 
-#ifndef WITHOUT_ARTS
-    d->playObjects.clear();
-
-    delete d->globalEvents;
-    delete d->globalConfig;
-    delete d->externalPlayerProc;
-    delete d->audioManager;
-#endif
     delete d;
 }
 
@@ -456,9 +305,9 @@ bool KNotify::notifyBySound( const QString &sound, const QString &appname, int e
         if ( soundFile.isEmpty() )
             soundFile = locate( "sound", sound );
     }
-    if ( soundFile.isEmpty() || isPlaying( soundFile ) )
+    if ( soundFile.isEmpty() )
     {
-        soundFinished( eventId, soundFile.isEmpty() ? NoSoundFile : FileAlreadyPlaying );
+        soundFinished( eventId, NoSoundFile );
         return false;
     }
 
@@ -466,74 +315,9 @@ bool KNotify::notifyBySound( const QString &sound, const QString &appname, int e
     // kdDebug() << "KNotify::notifyBySound - trying to play file " << soundFile << endl;
 
     if (!external) {
-        //If we disabled using aRts, just return,
-        //(If we don't, we'll blow up accessing the null soundServer)
-        if (!d->useArts)
-        {
-            soundFinished( eventId, NoSoundSupport );
-            return false;
-        }
-
-#ifndef WITHOUT_ARTS
-        // play sound finally
-        while( d->playObjects.count()>5 )
-            abortFirstPlayObject();
-
-        KDE::PlayObjectFactory factory(soundServer->server());
-        if( d->audioManager )
-            factory.setAudioManagerPlay( d->audioManager );
-        KURL soundURL;
-        soundURL.setPath(soundFile);
-        KDE::PlayObject *playObject = factory.createPlayObject(soundURL, false);
-
-        if (playObject->isNull())
-        {
-            soundFinished( eventId, NoSoundSupport );
-            delete playObject;
-            return false;
-        }
-
-        if ( d->volume != 100 )
-        {
-            // It works to access the playObject immediately because we don't allow
-            // non-file URLs for sounds.
-            Arts::StereoVolumeControl volumeControl = Arts::DynamicCast(soundServer->server().createObject("Arts::StereoVolumeControl"));
-            Arts::PlayObject player = playObject->object();
-            Arts::Synth_AMAN_PLAY ap = d->audioManager->amanPlay();
-            if( ! volumeControl.isNull() && ! player.isNull() && ! ap.isNull() )
-            {
-                volumeControl.scaleFactor( d->volume/100.0 );
-
-                ap.stop();
-                Arts::disconnect( player, "left", ap, "left" );
-                Arts::disconnect( player, "right", ap, "right" );
-
-                ap.start();
-                volumeControl.start();
-
-                Arts::connect(player,"left",volumeControl,"inleft");
-                Arts::connect(player,"right",volumeControl,"inright");
-
-                Arts::connect(volumeControl,"outleft",ap,"left");
-                Arts::connect(volumeControl,"outright",ap,"right");
-
-                player._addChild( volumeControl, "volume" );
-            }
-        }
-
-        playObject->play();
-        d->playObjects.append( playObject );
-        d->playObjectEventMap.insert( playObject, eventId );
-
-        if ( !d->playTimer )
-        {
-            d->playTimer = new QTimer( this );
-            connect( d->playTimer, SIGNAL( timeout() ), SLOT( playTimeout() ) );
-        }
-        if ( !d->playTimer->isActive() )
-            d->playTimer->start( 1000 );
-#endif
-        return true;
+        // only an external player is supported
+        soundFinished( eventId, NoSoundSupport );
+        return false;
 
     } else if(!d->externalPlayer.isEmpty()) {
         // use an external player to play the sound
@@ -686,58 +470,10 @@ void KNotify::setVolume( int volume )
     d->volume = volume;
 }
 
-void KNotify::playTimeout()
-{
-#ifndef WITHOUT_ARTS
-    for ( QPtrListIterator< KDE::PlayObject > it(d->playObjects); *it;)
-    {
-        QPtrListIterator< KDE::PlayObject > current = it;
-        ++it;
-        if ( (*current)->state() != Arts::posPlaying )
-        {
-            QMap<KDE::PlayObject*,int>::Iterator eit = d->playObjectEventMap.find( *current );
-            if ( eit != d->playObjectEventMap.end() )
-            {
-                soundFinished( *eit, PlayedOK );
-                d->playObjectEventMap.remove( eit );
-            }
-            d->playObjects.remove( current );
-        }
-    }
-    if ( !d->playObjects.count() )
-        d->playTimer->stop();
-#endif
-}
-
-bool KNotify::isPlaying( const QString& soundFile ) const
-{
-#ifndef WITHOUT_ARTS
-    for ( QPtrListIterator< KDE::PlayObject > it(d->playObjects); *it; ++it)
-    {
-        if ( (*it)->mediaName() == soundFile )
-            return true;
-    }
-#endif
-    return false;
-}
-
 void KNotify::slotPlayerProcessExited( KProcess *proc )
 {
     soundFinished( d->externalPlayerEventId,
                    (proc->normalExit() && proc->exitStatus() == 0) ? PlayedOK : Unknown );
-}
-
-void KNotify::abortFirstPlayObject()
-{
-#ifndef WITHOUT_ARTS
-    QMap<KDE::PlayObject*,int>::Iterator it = d->playObjectEventMap.find( d->playObjects.getFirst() );
-    if ( it != d->playObjectEventMap.end() )
-    {
-        soundFinished( it.data(), Aborted );
-        d->playObjectEventMap.remove( it );
-    }
-    d->playObjects.removeFirst();
-#endif
 }
 
 void KNotify::soundFinished( int eventId, PlayingFinishedStatus reason )
@@ -778,16 +514,6 @@ WId KNotify::checkWinId( const QString &appName, WId senderWinId )
         }
     }
     return senderWinId;
-}
-
-void KNotify::restartedArtsd()
-{
-#ifndef WITHOUT_ARTS
-    delete d->audioManager;
-    d->audioManager = new KAudioManagerPlay( soundServer );
-    d->audioManager->setTitle( i18n( "KDE System Notifications" ) );
-    d->audioManager->setAutoRestoreID( "KNotify Aman Play" );
-#endif
 }
 
 void KNotify::sessionReady()

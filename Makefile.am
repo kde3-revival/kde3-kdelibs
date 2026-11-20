@@ -29,7 +29,7 @@ COMPILE_FIRST = dcop libltdl kdefx kdecore kdeui kdesu kjs kwallet kio
 # COMPILE_BEFORE_kspell2 = kutils
 # COMPILE_BEFORE_kcmshell = kutils
 # COMPILE_BEFORE_kdewidgets = kabc khtml
-# COMPILE_BEFORE_interfaces = arts kabc
+# COMPILE_BEFORE_interfaces = kabc
 
 $(top_srcdir)/acinclude.m4: $(top_srcdir)/libltdl/ltdl.m4
 

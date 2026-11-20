@@ -17,17 +17,12 @@ execution of a KDE program, as well as internationalization files for these
 libraries, misc HTML documentation, theme modules, and regression tests. 
 Here is an alphabetical list:
 
-* arts
-    ARTS (analog realtime synthesizer) is a environment of small modules
-    that one can plug together to process multimedia data. This directory
-    contains KDE wrapper and KDE user interface elements for ARTS.
-
 * dcop
     The desktop communication program allows even shell scripts to
     communicate with KDE applications. It's also the base for KParts.
 
 * interfaces
-    kparts interface for text editors, mediaplayer and scripting.
+    kparts interface for text editors and scripting.
 
 * kab
     OBSOLETE, see kabc: Used to be the address book library, but now only
