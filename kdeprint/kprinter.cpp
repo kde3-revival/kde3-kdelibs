@@ -182,9 +182,6 @@ void KPrinter::loadSettings()
 	if (searchName().isEmpty() && pconf->readBoolEntry("UseLast", true))
 		setSearchName(conf->readEntry("Printer"));
 
-	// latest used print command
-	setOption("kde-printcommand",conf->readPathEntry("PrintCommand"));
-
 	// latest used document directory
 	setDocDirectory( conf->readPathEntry( "DocDirectory" ) );
 	setDocFileName( "print" );
@@ -202,9 +199,6 @@ void KPrinter::saveSettings()
 	KConfig	*conf = KGlobal::config();
 	conf->setGroup("KPrinter Settings");
 	conf->writeEntry("Printer",searchName());
-	// latest used print command
-	conf->writePathEntry("PrintCommand",option("kde-printcommand"));
-
 	// latest used document directory
 	if ( d->m_docdirectory.isEmpty() )
 	{

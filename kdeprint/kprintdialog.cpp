@@ -71,11 +71,10 @@
 class KPrintDialog::KPrintDialogPrivate
 {
 public:
-	QLabel	*m_type, *m_state, *m_comment, *m_location, *m_cmdlabel, *m_filelabel;
+	QLabel	*m_type, *m_state, *m_comment, *m_location, *m_filelabel;
 	KPushButton	*m_properties, *m_default, *m_options, *m_ok, *m_extbtn;
 	QPushButton	*m_wizard, *m_filter;
 	QCheckBox	*m_preview;
-	QLineEdit	*m_cmd;
 	TreeComboBox	*m_printers;
 	QVBox		*m_dummy;
 	PluginComboBox	*m_plugin;
@@ -152,11 +151,6 @@ KPrintDialog::KPrintDialog(QWidget *parent, const char *name)
 						" <p>This button starts the <em>KDE Add Printer Wizard</em>.</p>"
 						" <p>Use the Wizard to add locally"
 						" defined printers to your system. </p>"
-						" </qt>" );
-	QString whatsThisExternalPrintCommand = i18n( " <qt><b>External Print Command</b>"
-						" <p>Here you can enter any command that would also print for you in "
-						" a <em>konsole</em> window. </p>"
-						" <b>Example:</b> <pre>a2ps -P &lt;printername&gt; --medium=A3</pre>."
 						" </qt>" );
 	QString whatsThisOptions = i18n( " <qt><b>Additional Print Job Options</b>"
 						" <p>This button shows or hides additional printing options.</qt>" );
@@ -311,12 +305,6 @@ KPrintDialog::KPrintDialog(QWidget *parent, const char *name)
 	QWhatsThis::add(d->m_file,whatsThisOutputFileLineedit);
 	d->m_file->setEnabled(false);
 	d->m_filelabel->setBuddy(d->m_file);
-	d->m_cmdlabel = new QLabel(i18n("Print co&mmand:"), m_pbox);
-        QWhatsThis::add( d->m_cmdlabel, whatsThisExternalPrintCommand);
-
-	d->m_cmd = new QLineEdit(m_pbox);
-        QWhatsThis::add( d->m_cmd, whatsThisExternalPrintCommand);
-	d->m_cmdlabel->setBuddy(d->m_cmd);
 	d->m_dummy = new QVBox(this);
 	d->m_plugin = new PluginComboBox(this);
 	d->m_extbtn = new KPushButton(this);
@@ -332,7 +320,6 @@ KPrintDialog::KPrintDialog(QWidget *parent, const char *name)
 	QWidget::setTabOrder( d->m_wizard, d->m_properties );
 	QWidget::setTabOrder( d->m_properties, d->m_preview );
 	QWidget::setTabOrder( d->m_preview, d->m_file );
-	QWidget::setTabOrder( d->m_file, d->m_cmd );
 	QWidget::setTabOrder( d->m_plugin, d->m_persistent );
 	QWidget::setTabOrder( d->m_persistent, d->m_extbtn );
 	QWidget::setTabOrder( d->m_extbtn, d->m_options );
@@ -354,7 +341,7 @@ KPrintDialog::KPrintDialog(QWidget *parent, const char *name)
 	l2->addStretch(1);
 	l2->addWidget(d->m_ok,0);
 	l2->addWidget(m_cancel,0);
-	QGridLayout	*l3 = new QGridLayout(m_pbox->layout(),3,3,7);
+	QGridLayout	*l3 = new QGridLayout(m_pbox->layout(),2,3,7);
 	l3->setColStretch(1,1);
 	l3->setRowStretch(0,1);
 	QGridLayout	*l4 = new QGridLayout(0, 5, 2, 0, 5);
@@ -384,9 +371,6 @@ KPrintDialog::KPrintDialog(QWidget *parent, const char *name)
 	//***
 	l3->addWidget(d->m_filelabel,1,0);
 	l3->addWidget(d->m_file,1,1);
-	//***
-	l3->addWidget(d->m_cmdlabel,2,0);
-	l3->addMultiCellWidget(d->m_cmd,2,2,1,2);
 
 	// connections
 	connect(d->m_ok,SIGNAL(clicked()),SLOT(accept()));
@@ -456,9 +440,6 @@ void KPrintDialog::setFlags(int f)
 	bool	on = (f & KMUiManager::OutputToFile);
 	SHOWHIDE(d->m_filelabel, on)
 	SHOWHIDE(d->m_file, on)
-	on = (f & KMUiManager::PrintCommand);
-	SHOWHIDE(d->m_cmdlabel, on)
-	SHOWHIDE(d->m_cmd, on)
 	SHOWHIDE(d->m_persistent, (f & KMUiManager::Persistent))
 
 	// also update "wizard" button
@@ -591,7 +572,6 @@ void KPrintDialog::initialize(KPrinter *printer)
 	if (d->m_printer->option("kde-preview") == "1" || d->m_printer->previewOnly())
 		d->m_preview->setChecked(true);
 	d->m_preview->setEnabled(!d->m_printer->previewOnly());
-	d->m_cmd->setText(d->m_printer->option("kde-printcommand"));
 	QPtrListIterator<KPrintDialogPage>	it(d->m_pages);
 	for (;it.current();++it)
 		it.current()->setOptions(d->m_printer->options());
@@ -679,7 +659,6 @@ void KPrintDialog::done(int result)
 			d->m_printer->setOutputToFile(false);
 		d->m_printer->setPrinterName(prt->printerName());
 		d->m_printer->setSearchName(prt->name());
-		opts["kde-printcommand"] = d->m_cmd->text();
 		opts["kde-preview"] = (d->m_preview->isChecked() ? "1" : "0");
 		opts["kde-isspecial"] = (prt->isSpecial() ? "1" : "0");
 		opts["kde-special-command"] = prt->option("kde-special-command");
@@ -776,8 +755,6 @@ void KPrintDialog::enableOutputFile(bool on)
 void KPrintDialog::enableSpecial(bool on)
 {
 	d->m_default->setDisabled(on);
-	d->m_cmdlabel->setDisabled(on);
-	d->m_cmd->setDisabled(on);
 	KPCopiesPage	*copypage = (KPCopiesPage*)child("CopiesPage","KPCopiesPage");
 	if (copypage)
 		copypage->initialize(!on);
