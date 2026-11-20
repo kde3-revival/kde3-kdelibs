@@ -20,7 +20,7 @@ AM_CPPFLAGS = -D_LARGEFILE64_SOURCE
 
 INCLUDES=  -I$(srcdir)/.. -I$(top_srcdir) -I$(srcdir)/../kssl -I../kssl $(all_includes) $(SSL_INCLUDES)
 
-SUBDIRS = . ksendbugmail kpac kdesasl kssld kfile kwalletd kntlm
+SUBDIRS = . ksendbugmail kpac kssld kfile kwalletd kntlm
 
 lib_LTLIBRARIES =
 kdeinit_LTLIBRARIES = kio_uiserver.la
@@ -44,8 +44,7 @@ ktelnetservice_SOURCES = ktelnetservice.cpp
 ktelnetservice_LDADD = $(LIB_KDEUI)
 ktelnetservice_LDFLAGS = $(KDE_RPATH) $(all_libraries)
 
-protocol_DATA = kmailservice.protocol telnet.protocol rlogin.protocol rtsp.protocol ssh.protocol \
-		mms.protocol mmst.protocol mmsu.protocol pnm.protocol rtspt.protocol rtspu.protocol
+protocol_DATA = kmailservice.protocol telnet.protocol rlogin.protocol ssh.protocol
 protocoldir = $(kde_servicesdir)
 
 kiomiscdir = $(includedir)/kio
