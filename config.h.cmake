@@ -263,6 +263,8 @@
 #cmakedefine KDEINIT_USE_FONTCONFIG 1
 /* Enable prevention against poor Linux OOM-killer */
 #cmakedefine KDEINIT_OOM_PROTECT 1
+/* Define if knotify plays sounds with libpulse and libsndfile */
+#cmakedefine HAVE_PULSEAUDIO 1
 /* Defined if compiling without arts */
 #define WITHOUT_ARTS 1
 
