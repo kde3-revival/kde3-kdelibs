@@ -1,6 +1,7 @@
 #include <cups/ipp.h>
 #include <cups/http.h>
 #include <cups/cups.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/stat.h>
