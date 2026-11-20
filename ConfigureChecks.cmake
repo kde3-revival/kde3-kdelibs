@@ -394,12 +394,9 @@ if(KDE3_WITH_DNSSD)
   endif()
 endif()
 
-# kssl.  KOpenSSLProxy and the kssl classes are written against the
-# OpenSSL 0.9.x API (public structs, STACK, ASN1_HEADER, macros that
-# became functions and vice versa) and do not compile with OpenSSL 1.1
-# or later yet.  Until they are ported, kdelibs is built without SSL
-# support, as autotools did when OpenSSL was missing.
-option(KDE3_WITH_OPENSSL "SSL support in kssl (needs the OpenSSL 3 port of kssl)" OFF)
+# kssl (KDE_CHECK_SSL): OpenSSL is dlopen()ed by KOpenSSLProxy; only
+# the headers are used at build time.
+option(KDE3_WITH_OPENSSL "SSL support in kssl" ON)
 if(KDE3_WITH_OPENSSL)
   find_package(OpenSSL REQUIRED)
   set(HAVE_SSL 1)
