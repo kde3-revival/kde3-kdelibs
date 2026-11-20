@@ -114,6 +114,5 @@ Comment[zh_HK]=KDE 通知伺服程式
 Comment[zh_TW]=KDE 通知服務程式
 Comment[zu]=Isaziso se-Daemon ye-KDE
 Icon=knotify
-ServiceTypes=KNotify
 X-DCOP-ServiceType=Unique
 X-KDE-StartupNotify=false
