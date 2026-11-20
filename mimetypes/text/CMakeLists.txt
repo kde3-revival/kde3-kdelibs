@@ -43,7 +43,10 @@ install(FILES
   DESTINATION ${KDE3_MIME_INSTALL_DIR}/text)
 
 
-# install-data-local: hide mime types that moved elsewhere
+# install-data-local: hide mime types that moved elsewhere.  The rule
+# also wrote uninstall.desktop to x-python.desktop, which is installed
+# as a real mime type above (text/x-python moved back into kdelibs);
+# make ran install-data-local before installing the data files, so the
+# real file won.  Here it would be overwritten, so it is left out.
 install(FILES uninstall.desktop DESTINATION ${KDE3_MIME_INSTALL_DIR}/text RENAME x-perl.desktop)
-install(FILES uninstall.desktop DESTINATION ${KDE3_MIME_INSTALL_DIR}/text RENAME x-python.desktop)
 install(FILES uninstall.desktop DESTINATION ${KDE3_MIME_INSTALL_DIR}/text RENAME x-lyx.desktop)
