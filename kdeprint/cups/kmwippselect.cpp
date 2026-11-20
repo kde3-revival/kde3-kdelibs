@@ -83,9 +83,9 @@ void KMWIppSelect::initPrinter(KMPrinter *p)
 		ipp_attribute_t	*attr = req.first();
 		while (attr)
 		{
-			if (attr->name && strcmp(attr->name,"printer-name") == 0)
-				m_list->insertItem(SmallIcon("kdeprint_printer"),QString::fromLatin1(attr->values[0].string.text));
-			attr = attr->next;
+			if (ippGetName(attr) && strcmp(ippGetName(attr),"printer-name") == 0)
+				m_list->insertItem(SmallIcon("kdeprint_printer"),QString::fromLatin1(ippGetString(attr, 0, NULL)));
+			attr = req.next();
 		}
 		m_list->sort();
 	}

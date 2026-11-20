@@ -475,20 +475,22 @@ void KMCupsManager::loadServerPrinters()
 
 void KMCupsManager::processRequest(IppRequest* req)
 {
+	// last() moves the attribute cursor, so it cannot be called inside the loop
+	ipp_attribute_t	*lastAttr = req->last();
 	ipp_attribute_t	*attr = req->first();
 	KMPrinter	*printer = new KMPrinter();
 	while (attr)
 	{
-		QString	attrname(attr->name);
+		QString	attrname(ippGetName(attr));
 		if (attrname == "printer-name")
 		{
-			QString	value = QString::fromLocal8Bit(attr->values[0].string.text);
+			QString	value = QString::fromLocal8Bit(ippGetString(attr, 0, NULL));
 			printer->setName(value);
 			printer->setPrinterName(value);
 		}
 		else if (attrname == "printer-type")
 		{
-			int	value = attr->values[0].integer;
+			int	value = ippGetInteger(attr, 0);
 			printer->setType(0);
 			printer->addType(((value & CUPS_PRINTER_CLASS) || (value & CUPS_PRINTER_IMPLICIT) ? KMPrinter::Class : KMPrinter::Printer));
 			if ((value & CUPS_PRINTER_REMOTE)) printer->addType(KMPrinter::Remote);
@@ -499,7 +501,7 @@ void KMCupsManager::processRequest(IppRequest* req)
 		}
 		else if (attrname == "printer-state")
 		{
-			switch (attr->values[0].integer)
+			switch (ippGetInteger(attr, 0))
 			{
 				case IPP_PRINTER_IDLE: printer->setState(KMPrinter::Idle); break;
 				case IPP_PRINTER_PROCESSING: printer->setState(KMPrinter::Processing); break;
@@ -508,22 +510,22 @@ void KMCupsManager::processRequest(IppRequest* req)
 		}
 		else if (attrname == "printer-uri-supported")
 		{
-			printer->setUri(KURL(attr->values[0].string.text));
+			printer->setUri(KURL(ippGetString(attr, 0, NULL)));
 		}
 		else if (attrname == "printer-location")
 		{
-			printer->setLocation(QString::fromLocal8Bit(attr->values[0].string.text));
+			printer->setLocation(QString::fromLocal8Bit(ippGetString(attr, 0, NULL)));
 		}
 		else if (attrname == "printer-is-accepting-jobs")
 		{
-			printer->setAcceptJobs(attr->values[0].boolean);
+			printer->setAcceptJobs(ippGetBoolean(attr, 0));
 		}
-		if (attrname.isEmpty() || attr == req->last())
+		if (attrname.isEmpty() || attr == lastAttr)
 		{
 			addPrinter(printer);
 			printer = new KMPrinter();
 		}
-		attr = attr->next;
+		attr = req->next();
 	}
 	delete printer;
 }
@@ -821,15 +823,17 @@ QStringList KMCupsManager::detectLocalPrinters()
 	if (req.doRequest("/"))
 	{
 		QString	desc, uri, printer, cl;
+		// last() moves the attribute cursor, so it cannot be called inside the loop
+		ipp_attribute_t	*lastAttr = req.last();
 		ipp_attribute_t	*attr = req.first();
 		while (attr)
 		{
-			QString	attrname(attr->name);
-			if (attrname == "device-info") desc = attr->values[0].string.text;
-			else if (attrname == "device-make-and-model") printer = attr->values[0].string.text;
-			else if (attrname == "device-uri") uri = attr->values[0].string.text;
-			else if ( attrname == "device-class" ) cl = attr->values[ 0 ].string.text;
-			if (attrname.isEmpty() || attr == req.last())
+			QString	attrname(ippGetName(attr));
+			if (attrname == "device-info") desc = ippGetString(attr, 0, NULL);
+			else if (attrname == "device-make-and-model") printer = ippGetString(attr, 0, NULL);
+			else if (attrname == "device-uri") uri = ippGetString(attr, 0, NULL);
+			else if ( attrname == "device-class" ) cl = ippGetString(attr, 0, NULL);
+			if (attrname.isEmpty() || attr == lastAttr)
 			{
 				if (!uri.isEmpty())
 				{
@@ -838,7 +842,7 @@ QStringList KMCupsManager::detectLocalPrinters()
 				}
 				uri = desc = printer = cl = QString::null;
 			}
-			attr = attr->next;
+			attr = req.next();
 		}
 	}
 	return list;
