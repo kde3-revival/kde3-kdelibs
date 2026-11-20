@@ -37,6 +37,7 @@
 
 #include <kstandarddirs.h>
 #include <kconfig.h>
+#include <ksimpleconfig.h>
 #include <kmdcodec.h>
 #include <klocale.h>
 #include <qdatetime.h>
@@ -625,9 +626,11 @@ KSSLCertificate::KSSLValidation KSSLCertificate::validate(KSSLCertificate::KSSLP
 // in distrusted.  A group without x509 only holds the flags the user
 // gave a CA of the bundled list kdelibs no longer has: such a CA is
 // trusted only if the system store has it, unless site=false.
+// Only the user's own ksslcalist is read, not one in a global config
+// directory: older kdelibs installed one with their bundled CAs.
 static void addUserCAs(X509_STORE *store, QStringList &distrusted)
 {
-	KConfig cfg("ksslcalist", true, false);
+	KSimpleConfig cfg(locateLocal("config", "ksslcalist"), true);
 	QStringList groups = cfg.groupList();
 
 	for (QStringList::Iterator i = groups.begin(); i != groups.end(); ++i) {

@@ -641,12 +641,21 @@ bool KSSLD::caRegenerate() {
 
 
 
+// The user's ksslcalist only, the one KSSLCertificate reads: a
+// ksslcalist in a global config directory ($KDEDIRS/share/config, e.g.
+// left over from a kdelibs that shipped a list of CAs) is neither
+// trusted nor listed.
+static QString caListFile() {
+	return locateLocal("config", "ksslcalist");
+}
+
+
 bool KSSLD::caAdd(QString certificate, bool ssl, bool email, bool code) {
 KSSLCertificate *x = KSSLCertificate::fromString(certificate.local8Bit());
 
 	if (!x) return false;
 
-KConfig cfg("ksslcalist", false, false);
+KSimpleConfig cfg(caListFile(), false);
 
 	cfg.setGroup(x->getSubject());
 	cfg.writeEntry("x509", certificate);
@@ -735,7 +744,7 @@ bool KSSLD::caRemoveFromFile(QString filename) {
 
 QStringList KSSLD::caList() {
 QStringList x;
-KConfig cfg("ksslcalist", true, false);
+KSimpleConfig cfg(caListFile(), true);
 
 	x = cfg.groupList();
 	x.remove("<default>");
@@ -745,7 +754,7 @@ return x;
 
 
 bool KSSLD::caUseForSSL(QString subject) {
-KConfig cfg("ksslcalist", true, false);
+KSimpleConfig cfg(caListFile(), true);
 
 	if (!cfg.hasGroup(subject))
 		return false;
@@ -757,7 +766,7 @@ return cfg.readBoolEntry("site", false);
 
 
 bool KSSLD::caUseForEmail(QString subject) {
-KConfig cfg("ksslcalist", true, false);
+KSimpleConfig cfg(caListFile(), true);
 
 	if (!cfg.hasGroup(subject))
 		return false;
@@ -769,7 +778,7 @@ return cfg.readBoolEntry("email", false);
 
 
 bool KSSLD::caUseForCode(QString subject) {
-KConfig cfg("ksslcalist", true, false);
+KSimpleConfig cfg(caListFile(), true);
 
 	if (!cfg.hasGroup(subject))
 		return false;
@@ -780,7 +789,7 @@ return cfg.readBoolEntry("code", false);
 
 
 bool KSSLD::caRemove(QString subject) {
-KConfig cfg("ksslcalist", false, false);
+KSimpleConfig cfg(caListFile(), false);
 	if (!cfg.hasGroup(subject))
 		return false;
 
@@ -792,7 +801,7 @@ return true;
 
 
 QString KSSLD::caGetCert(QString subject) {
-KConfig cfg("ksslcalist", true, false);
+KSimpleConfig cfg(caListFile(), true);
 	if (!cfg.hasGroup(subject))
 		return QString::null;
 
@@ -803,7 +812,7 @@ return cfg.readEntry("x509", QString::null);
 
 
 bool KSSLD::caSetUse(QString subject, bool ssl, bool email, bool code) {
-KConfig cfg("ksslcalist", false, false);
+KSimpleConfig cfg(caListFile(), false);
 	if (!cfg.hasGroup(subject))
 		return false;
 
