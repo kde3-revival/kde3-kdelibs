@@ -243,7 +243,7 @@ int main(int argc, char* argv[])
 		fprintf(debugF,"%s = %s\n",options[c].name,options[c].value);
 #endif
 	/* print files */
-	jobID = cupsPrintFiles(printer, num_files, files, jobname, num_options, options);
+	jobID = cupsPrintFiles(printer, num_files, (const char **)files, jobname, num_options, options);
 	/* erase unemcrypted password for security */
 	memset( passwd, 0, BUFSIZE2 );
 	/* check job creation status */
