@@ -11,8 +11,9 @@ Functions that replace the KDE 3 automake extensions (admin/am_edit):
 ``kde3_add_library(<name> SHARED|STATIC|OBJECT [VERSION_INFO c:r:a] ...)``
   A library ``lib<name>``.  SHARED libraries get the SONAME of libtool's
   ``-version-info c:r:a`` (``lib<name>.so.<c-a>.<a>.<r>``), are installed
-  into KDE3_LIB_INSTALL_DIR, exported as ``KDE3::<name>`` and get the
-  alias ``KDE3::<name>`` in the build as well.  OBJECT libraries replace
+  into KDE3_LIB_INSTALL_DIR and, in kdelibs, exported as
+  ``KDE3::<name>`` with the alias ``KDE3::<name>`` in the build as well
+  (other modules pass their own EXPORT set).  OBJECT libraries replace
   libtool convenience libraries (noinst_LTLIBRARIES): link them into the
   library that used them in LIBADD.
 ``kde3_add_module(<name> ...)``
@@ -50,7 +51,9 @@ Common arguments:
   Compile with ``-fexceptions`` (KDE_CXXFLAGS = $(USE_EXCEPTIONS)).
 ``NO_INSTALL``, ``DESTINATION <dir>``, ``OUTPUT_NAME <name>``
 ``EXPORT <set>``
-  Export set for installed libraries (default ``KDE3LibsTargets``).
+  Export set for installed libraries and programs (default: none; in
+  kdelibs, where ``KDE3_BUILDING_KDELIBS`` is set, ``KDE3LibsTargets``
+  for libraries).
 
 Other functions:
 
@@ -391,18 +394,26 @@ function(kde3_add_library name type)
         VERSION "${_major}.${_age}.${_rev}"
         SOVERSION "${_major}")
     endif()
-    add_library(KDE3::${name} ALIAS ${name})
     target_include_directories(${name} INTERFACE
       "$<INSTALL_INTERFACE:${KDE3_INCLUDE_INSTALL_DIR}>")
-    if(NOT ARG_NO_INSTALL)
+    # The KDE3:: names and the KDE3LibsTargets export set belong to
+    # kdelibs; other modules export only into a set they name.
+    if(KDE3_BUILDING_KDELIBS)
+      add_library(KDE3::${name} ALIAS ${name})
       if(NOT ARG_EXPORT)
         set(ARG_EXPORT KDE3LibsTargets)
       endif()
+    endif()
+    if(NOT ARG_NO_INSTALL)
       if(NOT ARG_DESTINATION)
         set(ARG_DESTINATION "${KDE3_LIB_INSTALL_DIR}")
       endif()
-      install(TARGETS ${name} EXPORT ${ARG_EXPORT}
-        LIBRARY DESTINATION "${ARG_DESTINATION}")
+      if(ARG_EXPORT)
+        install(TARGETS ${name} EXPORT ${ARG_EXPORT}
+          LIBRARY DESTINATION "${ARG_DESTINATION}")
+      else()
+        install(TARGETS ${name} LIBRARY DESTINATION "${ARG_DESTINATION}")
+      endif()
       _kde3_set_install_rpath(${name} "${ARG_DESTINATION}")
     endif()
   else()

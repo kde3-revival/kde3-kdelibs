@@ -52,6 +52,7 @@ include_directories(
 # meinproc needs the stylesheets of the source tree while building.
 set(KDE3_MEINPROC_ARGS "--srcdir=${PROJECT_SOURCE_DIR}/kdoctools")
 
+set(KDE3_BUILDING_KDELIBS TRUE)
 include(KDE3LibsMacros)
 
 add_subdirectory(dcop)
