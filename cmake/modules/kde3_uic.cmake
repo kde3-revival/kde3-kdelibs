@@ -16,6 +16,15 @@
 
 set(_args -nounload)
 if(PLUGIN_DIR)
+  # uic says nothing when it cannot load a plugin; it just leaves out
+  # what it knows from it (the #includes of the KDE widgets).
+  # KDE3LibsMacros checks at configure time that it loads; here only
+  # that it is still there.
+  if(NOT EXISTS "${PLUGIN_DIR}/designer")
+    message(FATAL_ERROR "uic: no designer plugins in ${PLUGIN_DIR}/designer "
+      "(KDE3_UIC_PLUGIN_DIR); the KDE widgets of ${UI_FILE} would be "
+      "compiled without their declarations")
+  endif()
   list(APPEND _args -L "${PLUGIN_DIR}")
 endif()
 

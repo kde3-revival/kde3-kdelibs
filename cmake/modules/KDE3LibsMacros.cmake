@@ -128,21 +128,62 @@ endif()
 # dcopidl2cpp, kconfig_compiler, meinproc, and uic loading the kdewidgets
 # plugin).  Inside kdelibs they are build targets and need nothing.
 # Elsewhere they are the installed programs of the kdelibs that was
-# found, possibly in a DESTDIR staging tree, and kde3-qt possibly not in
-# KDE3_QT_RPATH (a development tree): run them with the libraries and
-# data of the kdelibs and kde3-qt that were found (KDEDIRS: meinproc
-# reads its stylesheets and DTDs through KStandardDirs).  Modules may
-# use it for their own calls of the tools (KDE3::makekdewidgets, ...).
+# found, possibly in a DESTDIR staging tree: they find its libraries
+# through their $ORIGIN-relative RUNPATH; the launcher adds the data of
+# that kdelibs (KDEDIRS, KStandardDirs) and, only if the kde3-qt that was
+# found is not in KDE3_QT_RPATH (a development tree), its library
+# directory.  Modules may use it for their own calls of the tools
+# (KDE3::makekdewidgets, ...).
 if(NOT DEFINED KDE3_TOOL_LAUNCHER)
   set(KDE3_TOOL_LAUNCHER "")
   if(NOT KDE3_BUILDING_KDELIBS AND UNIX AND NOT APPLE AND KDE3_PREFIX)
-    set(_kde3_ld "${KDE3_LIB_DIR}")
-    if(KDE3Qt_LIBRARY_DIR)
-      string(APPEND _kde3_ld ":${KDE3Qt_LIBRARY_DIR}")
+    set(KDE3_TOOL_LAUNCHER "${CMAKE_COMMAND}" -E env "KDEDIRS=${KDE3_PREFIX}")
+    # kdelibs' own libraries come from the tools' $ORIGIN-relative
+    # RUNPATH; kde3-qt only needs help when the one that was found is not
+    # in the RUNPATH (KDE3_QT_RPATH, e.g. a development tree).  Put it
+    # in front of LD_LIBRARY_PATH, keeping what the build environment
+    # has there (before CMake 3.25, which has no "env --modify": what
+    # it has when configuring).
+    if(KDE3Qt_LIBRARY_DIR AND NOT KDE3Qt_LIBRARY_DIR STREQUAL KDE3_QT_RPATH)
+      if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
+        list(APPEND KDE3_TOOL_LAUNCHER --modify
+          "LD_LIBRARY_PATH=path_list_prepend:${KDE3Qt_LIBRARY_DIR}")
+      elseif("$ENV{LD_LIBRARY_PATH}" STREQUAL "")
+        list(APPEND KDE3_TOOL_LAUNCHER "LD_LIBRARY_PATH=${KDE3Qt_LIBRARY_DIR}")
+      else()
+        list(APPEND KDE3_TOOL_LAUNCHER
+          "LD_LIBRARY_PATH=${KDE3Qt_LIBRARY_DIR}:$ENV{LD_LIBRARY_PATH}")
+      endif()
     endif()
-    set(KDE3_TOOL_LAUNCHER "${CMAKE_COMMAND}" -E env
-      "LD_LIBRARY_PATH=${_kde3_ld}" "KDEDIRS=${KDE3_PREFIX}")
   endif()
+endif()
+
+# The kdewidgets designer plugin must load into uic: without it uic
+# silently leaves out the #includes of the KDE widgets in .ui files.
+# Check once per plugin directory with a KLineEdit.
+if(KDE3_UIC_PLUGIN_DIR AND NOT KDE3_BUILDING_KDELIBS
+   AND NOT KDE3_UIC_PLUGIN_CHECKED STREQUAL KDE3_UIC_PLUGIN_DIR)
+  set(_kde3_probe "${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/kde3_uic_probe.ui")
+  file(WRITE "${_kde3_probe}" "<!DOCTYPE UI><UI version=\"3.3\" stdsetdef=\"1\">
+<class>KDE3UicProbe</class>
+<widget class=\"QWidget\"><property name=\"name\"><cstring>KDE3UicProbe</cstring></property>
+<vbox><widget class=\"KLineEdit\"><property name=\"name\"><cstring>edit</cstring></property></widget></vbox>
+</widget></UI>
+")
+  get_target_property(_kde3_uic KDE3Qt::uic IMPORTED_LOCATION)
+  # the implementation (-i) has the #includes of the widgets
+  execute_process(COMMAND ${KDE3_TOOL_LAUNCHER} "${_kde3_uic}" -nounload
+      -L "${KDE3_UIC_PLUGIN_DIR}" -i kde3_uic_probe.h "${_kde3_probe}"
+    OUTPUT_VARIABLE _kde3_out ERROR_VARIABLE _kde3_err RESULT_VARIABLE _kde3_r)
+  if(NOT _kde3_r EQUAL 0 OR NOT _kde3_out MATCHES "#include <klineedit.h>")
+    message(FATAL_ERROR "uic cannot load the kdewidgets designer plugin "
+      "from ${KDE3_UIC_PLUGIN_DIR}/designer (KDE3_UIC_PLUGIN_DIR), so it "
+      "would generate code without the declarations of the KDE widgets.  "
+      "Check that kdewidgets.so is there and that its libraries can be "
+      "loaded (ldd).  ${_kde3_err}")
+  endif()
+  set(KDE3_UIC_PLUGIN_CHECKED "${KDE3_UIC_PLUGIN_DIR}" CACHE INTERNAL
+    "KDE3_UIC_PLUGIN_DIR checked to load into uic")
 endif()
 
 # ---------------------------------------------------------------------
