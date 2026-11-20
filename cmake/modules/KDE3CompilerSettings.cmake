@@ -87,3 +87,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   # KDEDModule from the kded process (LIB_KDED is empty on Linux).
   string(APPEND CMAKE_SHARED_LINKER_FLAGS " -Wl,--no-undefined")
 endif()
+
+# A change in a shared library does not relink everything that links it
+# (only its interface matters for them, and that is in its headers).
+if(NOT DEFINED CMAKE_LINK_DEPENDS_NO_SHARED)
+  set(CMAKE_LINK_DEPENDS_NO_SHARED ON)
+endif()
