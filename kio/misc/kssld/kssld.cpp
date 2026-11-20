@@ -317,6 +317,7 @@ KSSLCNode *node;
 				node->expires < QDateTime::currentDateTime()) {
 				certList.removeRef(node);
 				cfg->deleteGroup(node->cert->getMD5Digest());
+				searchRemoveCert(node->cert);
 				delete node;
 				continue;
 			}
@@ -343,6 +344,7 @@ KSSLCNode *node;
 				node->expires < QDateTime::currentDateTime()) {
 				certList.remove(node);
 				cfg->deleteGroup(node->cert->getMD5Digest());
+				searchRemoveCert(node->cert);
 				delete node;
 				cacheSaveToDisk();
 				return KSSLCertificateCache::Unknown;
@@ -369,6 +371,7 @@ KSSLCNode *node;
 				node->expires < QDateTime::currentDateTime()) {
 				certList.removeRef(node);
 				cfg->deleteGroup(node->cert->getMD5Digest());
+				searchRemoveCert(node->cert);
 				delete node;
 				cacheSaveToDisk();
 				continue;
@@ -393,6 +396,7 @@ KSSLCNode *node;
 				node->expires < QDateTime::currentDateTime()) {
 				certList.remove(node);
 				cfg->deleteGroup(node->cert->getMD5Digest());
+				searchRemoveCert(node->cert);
 				delete node;
 				cacheSaveToDisk();
 				return false;
@@ -417,6 +421,7 @@ KSSLCNode *node;
 					QDateTime::currentDateTime()) {
 				certList.remove(node);
 				cfg->deleteGroup(node->cert->getMD5Digest());
+				searchRemoveCert(node->cert);
 				delete node;
 				cacheSaveToDisk();
 				return false;
