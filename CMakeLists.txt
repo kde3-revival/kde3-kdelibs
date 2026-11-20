@@ -122,3 +122,23 @@ install(FILES
   cmake/modules/kde3_uic.cmake
   cmake/modules/kde3_run_to_file.cmake
   DESTINATION "${KDE3_CMAKE_INSTALL_DIR}")
+
+# what configure printed at its end: the packages found or missing and
+# the KDE3_WITH_*/KDE3_ENABLE_* options
+include(FeatureSummary)
+# option: what it turned on (enabled and found)
+foreach(_f
+    WITH_ACL:USE_POSIX_ACL WITH_DNSSD:HAVE_DNSSD WITH_FAM:HAVE_FAM
+    WITH_GSSAPI:HAVE_LIBGSSAPI WITH_LIBIDN:HAVE_LIBIDN WITH_OPENSSL:HAVE_SSL
+    WITH_PCRE:HAVE_PCREPOSIX WITH_PULSEAUDIO:HAVE_PULSEAUDIO
+    WITH_TIFF:HAVE_LIBTIFF WITH_UTEMPTER:HAVE_UTEMPTER
+    WITH_LIBTHAI:HAVE_LIBTHAI WITH_LUA:HAVE_LUA ENABLE_INOTIFY:HAVE_INOTIFY
+    ENABLE_DNOTIFY:HAVE_DNOTIFY ENABLE_MITSHM:HAVE_MITSHM
+    ENABLE_SENDFILE:HAVE_SENDFILE ENABLE_WARNINGS:KDE3_ENABLE_WARNINGS)
+  string(REPLACE ":" ";" _f "${_f}")
+  list(GET _f 0 _opt)
+  list(GET _f 1 _have)
+  get_property(_doc CACHE KDE3_${_opt} PROPERTY HELPSTRING)
+  add_feature_info(KDE3_${_opt} ${_have} "${_doc}")
+endforeach()
+feature_summary(WHAT PACKAGES_FOUND PACKAGES_NOT_FOUND ENABLED_FEATURES DISABLED_FEATURES)
