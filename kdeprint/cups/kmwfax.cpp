@@ -55,9 +55,12 @@ KMWFax::KMWFax(QWidget *parent, const char *name)
 		ipp_attribute_t	*attr = req.first();
 		while (attr)
 		{
-			if (ippGetName(attr) && strcmp(ippGetName(attr),"device-uri") == 0 && strncmp(ippGetString(attr, 0, NULL),"fax",3) == 0)
+			// ippGetString() is NULL for a value that is not a string
+			const char *devuri = (ippGetName(attr) && strcmp(ippGetName(attr),"device-uri") == 0)
+				? ippGetString(attr, 0, NULL) : NULL;
+			if (devuri && strncmp(devuri,"fax",3) == 0)
 			{
-				m_list->insertItem(SmallIcon("blockdevice"),QString::fromLatin1(ippGetString(attr, 0, NULL)));
+				m_list->insertItem(SmallIcon("blockdevice"),QString::fromLatin1(devuri));
 			}
 			attr = req.next();
 		}

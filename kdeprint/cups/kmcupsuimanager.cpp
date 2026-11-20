@@ -143,20 +143,24 @@ void KMCupsUiManager::setupWizard(KMWizard *wizard)
 		ipp_attribute_t	*attr = req.first();
 		while (attr)
 		{
-			if (ippGetName(attr) && strcmp(ippGetName(attr),"device-uri") == 0)
+			// ippGetString() is NULL for a value that is not a
+			// string (a misbehaving server, an out-of-band value)
+			const char *devuri = (ippGetName(attr) && strcmp(ippGetName(attr),"device-uri") == 0)
+				? ippGetString(attr, 0, NULL) : NULL;
+			if (devuri)
 			{
-				if (strncmp(ippGetString(attr, 0, NULL),"socket",6) == 0) backend->enableBackend(KMWizard::TCP,true);
-				else if (strncmp(ippGetString(attr, 0, NULL),"parallel",8) == 0) backend->enableBackend(KMWizard::Local,true);
-				else if (strncmp(ippGetString(attr, 0, NULL),"serial",6) == 0) backend->enableBackend(KMWizard::Local,true);
-				else if (strncmp(ippGetString(attr, 0, NULL),"smb",3) == 0) backend->enableBackend(KMWizard::SMB,true);
-				else if (strncmp(ippGetString(attr, 0, NULL),"lpd",3) == 0) backend->enableBackend(KMWizard::LPD,true);
-				else if (strncmp(ippGetString(attr, 0, NULL),"usb",3) == 0) backend->enableBackend(KMWizard::Local,true);
-				else if (strncmp(ippGetString(attr, 0, NULL),"http",4) == 0 || strncmp(ippGetString(attr, 0, NULL),"ipp",3) == 0)
+				if (strncmp(devuri,"socket",6) == 0) backend->enableBackend(KMWizard::TCP,true);
+				else if (strncmp(devuri,"parallel",8) == 0) backend->enableBackend(KMWizard::Local,true);
+				else if (strncmp(devuri,"serial",6) == 0) backend->enableBackend(KMWizard::Local,true);
+				else if (strncmp(devuri,"smb",3) == 0) backend->enableBackend(KMWizard::SMB,true);
+				else if (strncmp(devuri,"lpd",3) == 0) backend->enableBackend(KMWizard::LPD,true);
+				else if (strncmp(devuri,"usb",3) == 0) backend->enableBackend(KMWizard::Local,true);
+				else if (strncmp(devuri,"http",4) == 0 || strncmp(devuri,"ipp",3) == 0)
 				{
 					backend->enableBackend(KMWizard::IPP,true);
 					backend->enableBackend(KMWizard::Custom+1,true);
 				}
-				else if (strncmp(ippGetString(attr, 0, NULL),"fax",3) == 0) backend->enableBackend(KMWizard::Custom+2,true);
+				else if (strncmp(devuri,"fax",3) == 0) backend->enableBackend(KMWizard::Custom+2,true);
 			}
 			attr = req.next();
 		}
