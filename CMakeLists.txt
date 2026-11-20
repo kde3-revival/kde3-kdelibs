@@ -59,3 +59,4 @@ include(KDE3Macros)
 
 add_subdirectory(dcop)
 add_subdirectory(kdefx)
+add_subdirectory(kdecore)

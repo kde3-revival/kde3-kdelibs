@@ -21,7 +21,7 @@
 #define _KDE_MACROS_H_
 
 /* Set by configure */
-#undef __KDE_HAVE_GCC_VISIBILITY
+#cmakedefine __KDE_HAVE_GCC_VISIBILITY 1
 
 /**
  * The KDE_NO_EXPORT macro marks the symbol of the given variable 
