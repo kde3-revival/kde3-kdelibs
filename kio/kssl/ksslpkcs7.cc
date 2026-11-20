@@ -35,12 +35,12 @@
 #include <assert.h>
 
 #ifdef KSSL_HAVE_SSL
-#define sk_new kossl->sk_new
-#define sk_push kossl->sk_push
-#define sk_free kossl->sk_free
-#define sk_value kossl->sk_value
-#define sk_num kossl->sk_num
-#define sk_dup kossl->sk_dup
+#define OPENSSL_sk_new kossl->OPENSSL_sk_new
+#define OPENSSL_sk_push kossl->OPENSSL_sk_push
+#define OPENSSL_sk_free kossl->OPENSSL_sk_free
+#define OPENSSL_sk_value kossl->OPENSSL_sk_value
+#define OPENSSL_sk_num kossl->OPENSSL_sk_num
+#define OPENSSL_sk_dup kossl->OPENSSL_sk_dup
 #endif
 
 
@@ -198,11 +198,11 @@ QString KSSLPKCS7::name() {
 
  
 #ifdef KSSL_HAVE_SSL
-#undef sk_new
-#undef sk_push
-#undef sk_free
-#undef sk_value
-#undef sk_num
-#undef sk_dup
+#undef OPENSSL_sk_new
+#undef OPENSSL_sk_push
+#undef OPENSSL_sk_free
+#undef OPENSSL_sk_value
+#undef OPENSSL_sk_num
+#undef OPENSSL_sk_dup
 #endif
 

@@ -39,11 +39,11 @@
 
 
 // forward included macros to KOpenSSLProxy
-#define sk_new kossl->sk_new
-#define sk_free kossl->sk_free
-#define sk_push kossl->sk_push
-#define sk_value kossl->sk_value
-#define sk_num kossl->sk_num
+#define OPENSSL_sk_new kossl->OPENSSL_sk_new
+#define OPENSSL_sk_free kossl->OPENSSL_sk_free
+#define OPENSSL_sk_push kossl->OPENSSL_sk_push
+#define OPENSSL_sk_value kossl->OPENSSL_sk_value
+#define OPENSSL_sk_num kossl->OPENSSL_sk_num
 #define BIO_ctrl kossl->BIO_ctrl
 
 
@@ -87,7 +87,7 @@ KSMIMECryptoPrivate::KSMIMECryptoPrivate(KOpenSSLProxy *kossl): kossl(kossl) {
 
 
 STACK_OF(X509) *KSMIMECryptoPrivate::certsToX509(QPtrList<KSSLCertificate> &certs) {
-    STACK_OF(X509) *x509 = sk_new(NULL);
+    STACK_OF(X509) *x509 = (STACK_OF(X509) *)OPENSSL_sk_new(NULL);
     KSSLCertificate *cert = certs.first();
     while(cert) {
 	sk_X509_push(x509, cert->getCert());
@@ -242,7 +242,10 @@ void KSMIMECryptoPrivate::MemBIOToQByteArray(BIO *src, QByteArray &dest) {
        We assume that openssl uses malloc() (it does in
        default config) and rip out the buffer.
     */
-    reinterpret_cast<BUF_MEM *>(src->ptr)->data = NULL;
+    BUF_MEM *bm = NULL;
+    BIO_get_mem_ptr(src, &bm);  // was src->ptr; the BIO is opaque now
+    if (bm)
+        bm->data = NULL;
 }
 
     
