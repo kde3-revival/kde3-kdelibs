@@ -1,0 +1,6 @@
+add_subdirectory(plastik)
+add_subdirectory(highcolor)
+add_subdirectory(highcontrast)
+add_subdirectory(themes)
+add_subdirectory(light)
+add_subdirectory(keramik)
