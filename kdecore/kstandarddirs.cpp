@@ -1375,13 +1375,13 @@ void KStandardDirs::addKDEDefaults()
 
     // begin XDG_DATA_XXX
     xdgdirs = readEnvPath("XDG_DATA_DIRS");
+    xdgdirList.clear();
     if (!xdgdirs.isEmpty())
     {
 	tokenize(xdgdirList, xdgdirs, QChar(KPATH_SEPARATOR));
     }
     else
     {
-	xdgdirList.clear();
         for (QStringList::ConstIterator it = kdedirList.begin();
            it != kdedirList.end(); ++it)
         {
