@@ -13,7 +13,10 @@ Search order:
   the kde3-qt build or install tree (``include/``, ``lib/``, ``bin/``);
   nothing else is searched when it is set,
 * the ``kde3-qt`` pkg-config module,
-* ``/opt/kde3-qt``.
+* ``/opt/kde3-qt``,
+* ``KDE3Qt_FALLBACK_DIR`` if set (KDE3LibsConfig sets it to the kde3-qt
+  kdelibs was built with, so that it is only used when none of the
+  above has one).
 
 Imported targets:
 
@@ -51,7 +54,7 @@ else()
       list(APPEND _kde3qt_hints "${_kde3qt_pc_prefix}")
     endif()
   endif()
-  list(APPEND _kde3qt_hints /opt/kde3-qt)
+  list(APPEND _kde3qt_hints /opt/kde3-qt ${KDE3Qt_FALLBACK_DIR})
 endif()
 
 find_path(KDE3Qt_INCLUDE_DIR NAMES qglobal.h qconfig.h

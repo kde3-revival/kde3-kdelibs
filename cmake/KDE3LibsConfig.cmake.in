@@ -21,10 +21,12 @@ list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 
 include(CMakeFindDependencyMacro)
 
-# kdelibs was built against this kde3-qt; use the same unless the caller
-# points elsewhere.  FindKDE3Qt rejects anything that is not kde3-qt.
-if(NOT QT_DIR AND NOT DEFINED ENV{QT_DIR} AND NOT DEFINED ENV{QTDIR})
-  set(QT_DIR "@KDE3_QT_PREFIX@")
+# kde3-qt is searched at configure time of the module: QT_DIR (-D or
+# environment), QTDIR, pkg-config kde3-qt, /opt/kde3-qt, and only then
+# the kde3-qt kdelibs was built with.  FindKDE3Qt rejects anything that
+# is not kde3-qt.
+if(NOT DEFINED KDE3Qt_FALLBACK_DIR)
+  set(KDE3Qt_FALLBACK_DIR "@KDE3_QT_PREFIX@")
 endif()
 find_dependency(KDE3Qt)
 find_dependency(X11)
