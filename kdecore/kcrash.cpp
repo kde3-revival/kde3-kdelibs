@@ -346,7 +346,14 @@ void KCrash::startDirectly( const char* argv[], int )
 {
   fprintf( stderr, "KCrash cannot reach kdeinit, launching directly.\n" );
   pid_t pid = fork();
-  if (pid <= 0)
+  if (pid < 0)
+  {
+    // Not the child branch: we would exec Dr. Konqi in place of the
+    // crashed process, which it is about to debug.
+    fprintf( stderr, "KCrash cannot fork(), Dr. Konqi not started.\n" );
+    return;
+  }
+  if (pid == 0)
   {
     if(!geteuid() && setgid(getgid()) < 0)
       _exit(253);
