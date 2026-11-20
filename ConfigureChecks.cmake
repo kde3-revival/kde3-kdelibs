@@ -90,7 +90,7 @@ foreach(_f
     getprotobyname_r getservbyname_r getservbyport_r poll madvise
     getaddrinfo freeaddrinfo getnameinfo gai_strerror setmntent getmntinfo
     setfsent mmap munmap getpagesize snprintf vsnprintf strlcpy strlcat
-    posix_fadvise backtrace revoke)
+    posix_fadvise backtrace)
   # Link tests without headers, like AC_CHECK_FUNCS.  Functions that
   # may be macros or are checked with their headers in autotools are
   # handled below (on glibc only res_init differs: it is a macro for
@@ -115,6 +115,18 @@ if(NOT HAVE_RES_INIT)
     set(KDE3_LIBRESOLV resolv)
   endif()
 endif()
+
+# kdecore: "revoke(tty) in unistd.h" (KPty calls it on BSD only).
+# glibc has a stub that links but always fails with ENOSYS; it marks
+# such functions with __stub_<name> in <gnu/stubs.h> (from <unistd.h>),
+# which AC_CHECK_FUNC honours.  Do not count the stub.
+check_c_source_compiles("
+#include <unistd.h>
+#if defined(__stub_revoke) || defined(__stub___revoke)
+#error revoke() is a stub
+#endif
+int main(void) { return revoke(\"/dev/tty\"); }" HAVE_REVOKE)
+
 if(HAVE_GETSERVBYNAME_R)
   check_symbol_exists(getservbyname_r "sys/types.h;sys/socket.h;netdb.h"
     HAVE_DECL_GETSERVBYNAME_R)
