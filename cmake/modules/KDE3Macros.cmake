@@ -568,17 +568,23 @@ function(kde3_create_handbook appname)
 endfunction()
 
 # ---------------------------------------------------------------------
-# kde3_generate_stdout(<output> COMMAND <cmd> <args>... [DEPENDS ...])
+# kde3_generate_stdout(<output> COMMAND <cmd> <args>... [INPUT <file>]
+#                      [DEPENDS ...])
 #
-# For Makefile.am rules of the form "output: deps; command > $@".
+# For Makefile.am rules of the form "output: deps; command [< in] > $@".
 
 function(kde3_generate_stdout output)
-  cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "COMMAND;DEPENDS")
+  cmake_parse_arguments(PARSE_ARGV 1 ARG "" "INPUT" "COMMAND;DEPENDS")
   get_filename_component(_name "${output}" NAME)
+  set(_input)
+  if(ARG_INPUT)
+    set(_input "-DINPUT=${ARG_INPUT}")
+  endif()
   add_custom_command(OUTPUT "${output}"
     COMMAND ${CMAKE_COMMAND} "-DOUTPUT=${output}" "-DCOMMAND=${ARG_COMMAND}"
-            -P "${KDE3_MACROS_DIR}/kde3_run_to_file.cmake"
-    DEPENDS ${ARG_DEPENDS} "${KDE3_MACROS_DIR}/kde3_run_to_file.cmake"
+            ${_input} -P "${KDE3_MACROS_DIR}/kde3_run_to_file.cmake"
+    DEPENDS ${ARG_DEPENDS} ${ARG_INPUT}
+            "${KDE3_MACROS_DIR}/kde3_run_to_file.cmake"
     COMMENT "Generating ${_name}"
     VERBATIM)
 endfunction()

@@ -1,3 +1,15 @@
+# html-php.xml, css-php.xml, javascript-php.xml: generate-php.pl < x.xml
+set(_php)
+foreach(_x html css javascript)
+  set(_out "${CMAKE_CURRENT_BINARY_DIR}/${_x}-php.xml")
+  kde3_generate_stdout("${_out}"
+    COMMAND perl "${CMAKE_CURRENT_SOURCE_DIR}/generate-php.pl"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/${_x}.xml"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/generate-php.pl")
+  list(APPEND _php "${_out}")
+endforeach()
+add_custom_target(kate_php_syntax ALL DEPENDS ${_php})
+
 install(FILES
   katepart.desktop
   DESTINATION ${KDE3_SERVICES_INSTALL_DIR})
@@ -105,9 +117,9 @@ install(FILES
   lex.xml
   yacc.xml
   cg.xml
-  html-php.xml
-  css-php.xml
-  javascript-php.xml
+  ${CMAKE_CURRENT_BINARY_DIR}/html-php.xml
+  ${CMAKE_CURRENT_BINARY_DIR}/css-php.xml
+  ${CMAKE_CURRENT_BINARY_DIR}/javascript-php.xml
   ahdl.xml
   ansic89.xml
   tibasic.xml
