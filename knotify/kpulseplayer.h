@@ -34,10 +34,11 @@ class KPulsePlayerPrivate;
  * detected by content) and streamed with the asynchronous libpulse API
  * from the Qt event loop (see KPulseMainloop), without threads.
  *
- * One server connection is opened on the first play() and kept. When it
- * fails or the server goes away, the sounds still waiting for it are
- * reported with unavailable(), the playing ones with finished(id, false),
- * and the next play() connects again.
+ * One server connection is opened on the first play() and kept; no server
+ * is autospawned. When it fails, is not ready within 3 seconds, or the
+ * server goes away, the sounds still waiting for it are reported with
+ * unavailable(), the playing ones with finished(id, false), and the next
+ * play() connects again.
  *
  * Every signal is emitted from the event loop, never from inside play()
  * or setVolume(), so slots may call play() again.
@@ -92,6 +93,7 @@ signals:
 
 private slots:
     void reap();
+    void connectTimeout();
 
 private:
     KPulsePlayerPrivate *d;

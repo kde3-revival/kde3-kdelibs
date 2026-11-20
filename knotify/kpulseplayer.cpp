@@ -86,6 +86,9 @@ public:
 
     QValueList<KPulseSound *> sounds;
     QTimer *reapTimer;
+    QTimer *connectTimer;       // gives up on a connection not ready in time
+
+    void connectTimeout();
 
 private:
     void connectContext();
@@ -163,6 +166,8 @@ KPulsePlayerPrivate::KPulsePlayerPrivate( KPulsePlayer *q, const QString &appNam
     mainloop = new KPulseMainloop;
     reapTimer = new QTimer( q );
     QObject::connect( reapTimer, SIGNAL( timeout() ), q, SLOT( reap() ) );
+    connectTimer = new QTimer( q );
+    QObject::connect( connectTimer, SIGNAL( timeout() ), q, SLOT( connectTimeout() ) );
 }
 
 KPulsePlayerPrivate::~KPulsePlayerPrivate()
@@ -266,13 +271,33 @@ void KPulsePlayerPrivate::connectContext()
     }
     pa_context_set_state_callback( context, contextStateCallback, this );
     // no PA_CONTEXT_NOFAIL: an unreachable server must fail, so that the
-    // caller can use another player
-    if ( pa_context_connect( context, 0, PA_CONTEXT_NOFLAGS, 0 ) < 0 ) {
+    // caller can use another player; and no autospawn: knotify must not
+    // start a (PulseAudio) daemon of its own, the external players are
+    // the fallback when there is no server
+    if ( pa_context_connect( context, 0, PA_CONTEXT_NOAUTOSPAWN, 0 ) < 0 ) {
         if ( !contextFailed )    // else contextStateCallback() said it
             kdDebug() << "KPulsePlayer: cannot connect: " << pa_strerror( pa_context_errno( context ) ) << endl;
         contextFailed = true;
         schedule();
+        return;
     }
+    // libpulse gives up on a server that accepts the connection but does
+    // not answer only after its own timeout (30 s); notification sounds
+    // are useless that late, and the external player fallback would be
+    // just as late. A local server is ready within milliseconds, so 3 s
+    // is a generous limit even on a loaded system.
+    connectTimer->start( 3000, true );
+}
+
+void KPulsePlayerPrivate::connectTimeout()
+{
+    if ( !context || contextReady || contextFailed )
+        return;
+    kdDebug() << "KPulsePlayer: the server did not answer within 3 s" << endl;
+    // reap() reports the waiting sounds as unavailable and drops the
+    // context; the next play() connects again
+    contextFailed = true;
+    schedule();
 }
 
 void KPulsePlayerPrivate::contextStateCallback( pa_context *c, void *userdata )
@@ -280,6 +305,7 @@ void KPulsePlayerPrivate::contextStateCallback( pa_context *c, void *userdata )
     KPulsePlayerPrivate *d = static_cast<KPulsePlayerPrivate *>( userdata );
     switch ( pa_context_get_state( c ) ) {
     case PA_CONTEXT_READY: {
+        d->connectTimer->stop();
         d->contextReady = true;
         const QValueList<KPulseSound *> sounds = d->sounds;
         for ( QValueList<KPulseSound *>::ConstIterator it = sounds.begin(); it != sounds.end(); ++it )
@@ -500,6 +526,7 @@ void KPulsePlayerPrivate::reap()
         }
         contextReady = false;
         contextFailed = false;
+        connectTimer->stop();
     }
 
     // unlink before emitting: the slots may call play()
@@ -590,6 +617,11 @@ uint KPulsePlayer::activeSounds() const
 void KPulsePlayer::reap()
 {
     d->reap();
+}
+
+void KPulsePlayer::connectTimeout()
+{
+    d->connectTimeout();
 }
 
 #include "kpulseplayer.moc"
