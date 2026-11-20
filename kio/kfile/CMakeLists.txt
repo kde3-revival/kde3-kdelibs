@@ -1,0 +1,127 @@
+# libkfile.la (convenience library of libkio; the target name kfile is
+# the kfile program)
+kde3_add_library(libkfile OBJECT
+  SOURCES
+    kfilefiltercombo.cpp
+    kfileview.cpp
+    kfileiconview.cpp
+    krecentdocument.cpp
+    kfiledialog.cpp
+    kdiroperator.cpp
+    kfiledetailview.cpp
+    kcombiview.cpp
+    kurlrequester.cpp
+    kfilepreview.cpp
+    kurlcombobox.cpp
+    kurlrequesterdlg.cpp
+    kopenwith.cpp
+    kpropertiesdialog.cpp
+    kicondialog.cpp
+    kdirsize.cpp
+    krecentdirs.cpp
+    kdiskfreesp.cpp
+    kimagefilepreview.cpp
+    kfilesharedlg.cpp
+    kurlbar.cpp
+    kmetaprops.cpp
+    kpreviewprops.cpp
+    kfiletreeview.cpp
+    kfiletreeviewitem.cpp
+    kfiletreebranch.cpp
+    kdirselectdialog.cpp
+    kfilebookmarkhandler.cpp
+    kfilemetainfowidget.cpp
+    kcustommenueditor.cpp
+    knotifywidgetbase.ui
+    knotifydialog.cpp
+    kfilespeedbar.cpp
+    kpreviewwidgetbase.cpp
+    kfilemetapreview.cpp
+    kpropertiesdesktopbase.ui
+    kpropertiesdesktopadvbase.ui
+    kpropertiesmimetypebase.ui
+    kencodingfiledialog.cpp
+    kacleditwidget.cpp
+  MOC
+    kacleditwidget.h
+    kacleditwidget_p.h
+    kcombiview.h
+    kcustommenueditor.h
+    kdiroperator.h
+    kdirselectdialog.h
+    kdirsize.h
+    kdiskfreesp.h
+    kencodingfiledialog.h
+    kfilebookmarkhandler.h
+    kfiledetailview.h
+    kfiledialog.h
+    kfilefiltercombo.h
+    kfileiconview.h
+    kfilemetainfowidget.h
+    kfilemetapreview.h
+    kfilepreview.h
+    kfilesharedlg.h
+    kfilespeedbar.h
+    kfiletreebranch.h
+    kfiletreeview.h
+    kfileview.h
+    kicondialog.h
+    kimagefilepreview.h
+    kmetaprops.h
+    knotifydialog.h
+    kopenwith.h
+    kopenwith_p.h
+    kpreviewprops.h
+    kpreviewwidgetbase.h
+    kpropertiesdialog.h
+    kurlbar.h
+    kurlcombobox.h
+    kurlrequester.h
+    kurlrequesterdlg.h
+  LINK
+    kdeui
+    kiocore
+    kbookmarks
+)
+target_include_directories(libkfile PRIVATE "${PROJECT_BINARY_DIR}/kio/kssl")
+if(USE_POSIX_ACL)
+  target_link_libraries(libkfile PRIVATE ${ACL_LIBS})
+endif()
+
+install(FILES
+  kfiledialog.h
+  kencodingfiledialog.h
+  kdiroperator.h
+  kfileview.h
+  kfilefiltercombo.h
+  kfiledetailview.h
+  kcombiview.h
+  kdiskfreesp.h
+  kfileiconview.h
+  krecentdocument.h
+  kurlrequester.h
+  kfilepreview.h
+  kfile.h
+  kurlcombobox.h
+  kurlrequesterdlg.h
+  kopenwith.h
+  kpropsdlg.h
+  kicondialog.h
+  kdirsize.h
+  kpreviewwidgetbase.h
+  kimagefilepreview.h
+  kfilesharedlg.h
+  kfiletreeview.h
+  kfiletreeviewitem.h
+  kfiletreebranch.h
+  kdirselectdialog.h
+  kurlbar.h
+  kpropertiesdialog.h
+  knotifydialog.h
+  kcustommenueditor.h
+  ${CMAKE_CURRENT_BINARY_DIR}/knotifywidgetbase.h
+  DESTINATION ${KDE3_INCLUDE_INSTALL_DIR})
+
+install(FILES
+  kpropsdlgplugin.desktop
+  DESTINATION ${KDE3_SERVICETYPES_INSTALL_DIR})

@@ -1,0 +1,240 @@
+# libkiocore.la and libksycoca.la (convenience libraries of libkio)
+kde3_add_library(kiocore OBJECT
+  SOURCES
+    authinfo.cpp
+    kshred.cpp
+    kprotocolmanager.cpp
+    slave.cpp
+    slaveinterface.cpp
+    observer.stub
+    sessiondata.cpp
+    scheduler.cpp
+    connection.cpp
+    job.cpp
+    global.cpp
+    slaveconfig.cpp
+    kurlpixmapprovider.cpp
+    netaccess.cpp
+    paste.cpp
+    pastedialog.cpp
+    kmimemagic.cpp
+    tcpslavebase.cpp
+    slavebase.cpp
+    passdlg.cpp
+    forwardingslavebase.cpp
+    progressbase.cpp
+    defaultprogress.cpp
+    statusbarprogress.cpp
+    kdirnotify.cpp
+    kdirnotify.skel
+    kdirnotify_stub.cpp
+    observer.cpp
+    ${PROJECT_SOURCE_DIR}/kio/misc/uiserver.stub
+    observer.skel
+    kemailsettings.cpp
+    kprotocolinfo.cpp
+    renamedlg.cpp
+    skipdlg.cpp
+    kremoteencoding.cpp
+    kmimetypechooser.cpp
+  MOC
+    connection.h
+    defaultprogress.h
+    forwardingslavebase.h
+    jobclasses.h
+    kmimetypechooser.h
+    kshred.h
+    netaccess.h
+    observer.h
+    passdlg.h
+    pastedialog.h
+    progressbase.h
+    renamedlg.h
+    scheduler.h
+    sessiondata.h
+    skipdlg.h
+    slave.h
+    slaveconfig.h
+    slaveinterface.h
+    statusbarprogress.h
+  LINK
+    kdeui
+    kdesu
+    kwalletclient
+)
+
+kde3_add_library(ksycoca OBJECT
+  SOURCES
+    kdirwatch.cpp
+    kfileshare.cpp
+    ksambashare.cpp
+    knfsshare.cpp
+    ktrader.cpp
+    ktraderparse.cpp
+    ktraderparsetree.cpp
+    kservicetypefactory.cpp
+    kservicetype.cpp
+    kmimetype.cpp
+    kservicegroup.cpp
+    kservice.cpp
+    kservicefactory.cpp
+    kuserprofile.cpp
+    kservicegroupfactory.cpp
+    kurifilter.cpp
+    kfilterbase.cpp
+    kfilterdev.cpp
+    kshellcompletion.cpp
+    kurlcompletion.cpp
+    kautomount.cpp
+    krun.cpp
+    kfileitem.cpp
+    kdirlister.cpp
+    kimageio.cpp
+    yacc.c
+    lex.c
+    chmodjob.cpp
+    kscan.cpp
+    kar.cpp
+    ktar.cpp
+    kzip.cpp
+    previewjob.cpp
+    metainfojob.cpp
+    davjob.cpp
+    kdatatool.cpp
+    karchive.cpp
+    kfilefilter.cpp
+    kfilemetainfo.cpp
+    kdcopservicestarter.cpp
+    dataslave.cpp
+    dataprotocol.cpp
+    kacl.cpp
+    posixacladdons.cpp
+  MOC
+    chmodjob.h
+    dataslave.h
+    davjob.h
+    kautomount.h
+    kdatatool.h
+    kdirlister.h
+    kdirlister_p.h
+    kdirwatch.h
+    kdirwatch_p.h
+    kfilemetainfo.h
+    kfileshare.h
+    kfilterbase.h
+    kmimetyperesolver.h
+    knfsshare.h
+    krun.h
+    ksambashare.h
+    kscan.h
+    kservice_p.h
+    kshellcompletion.h
+    ktrader.h
+    kurifilter.h
+    kurlcompletion.h
+    metainfojob.h
+    previewjob.h
+  LINK
+    kdeui
+    kdesu
+)
+
+foreach(_t kiocore ksycoca)
+  target_compile_definitions(${_t} PRIVATE _LARGEFILE64_SOURCE)
+  target_include_directories(${_t} PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    "${PROJECT_SOURCE_DIR}/interfaces"
+    "${PROJECT_BINARY_DIR}/kio/kssl")
+  target_link_libraries(${_t} PRIVATE kssl)
+endforeach()
+# kio/kio's generated headers (kdirnotify, observer, uiserver stubs) are
+# used by the rest of kio and by other modules (-I$(top_builddir)/kio/kio)
+target_include_directories(kiocore PUBLIC
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
+target_link_libraries(ksycoca PRIVATE ZLIB::ZLIB)
+if(HAVE_FAM)
+  target_link_libraries(ksycoca PRIVATE ${FAM_LIBRARY})
+  target_include_directories(ksycoca PRIVATE ${FAM_INCLUDE_DIR})
+endif()
+if(USE_POSIX_ACL)
+  target_link_libraries(ksycoca PRIVATE ${ACL_LIBS})
+endif()
+
+install(FILES
+  kservicetype.h
+  kmimetype.h
+  kmimemagic.h
+  kservice.h
+  krun.h
+  kdirwatch.h
+  kautomount.h
+  kuserprofile.h
+  kshred.h
+  kar.h
+  ktar.h
+  kzip.h
+  ktrader.h
+  kurifilter.h
+  kurlcompletion.h
+  kshellcompletion.h
+  kfileitem.h
+  kfileshare.h
+  ksambashare.h
+  knfsshare.h
+  kdirlister.h
+  kservicegroup.h
+  kimageio.h
+  kdirnotify.h
+  kdirnotify_stub.h
+  kurlpixmapprovider.h
+  kprotocolinfo.h
+  kprotocolmanager.h
+  kfilterbase.h
+  kfilterdev.h
+  kemailsettings.h
+  kscan.h
+  kdatatool.h
+  karchive.h
+  kfilefilter.h
+  kfilemetainfo.h
+  renamedlgplugin.h
+  kmimetyperesolver.h
+  kdcopservicestarter.h
+  kremoteencoding.h
+  kmimetypechooser.h
+  kacl.h
+  DESTINATION ${KDE3_INCLUDE_INSTALL_DIR})
+
+install(FILES
+  connection.h
+  slaveinterface.h
+  slave.h
+  slaveconfig.h
+  sessiondata.h
+  global.h
+  passdlg.h
+  netaccess.h
+  job.h
+  scheduler.h
+  jobclasses.h
+  paste.h
+  slavebase.h
+  progressbase.h
+  defaultprogress.h
+  statusbarprogress.h
+  tcpslavebase.h
+  forwardingslavebase.h
+  observer.h
+  chmodjob.h
+  ${CMAKE_CURRENT_BINARY_DIR}/uiserver_stub.h
+  kmdbase.h
+  authinfo.h
+  ioslave_defaults.h
+  http_slave_defaults.h
+  previewjob.h
+  thumbcreator.h
+  metainfojob.h
+  davjob.h
+  renamedlg.h
+  skipdlg.h
+  DESTINATION ${KDE3_INCLUDE_INSTALL_DIR}/kio)

@@ -1,0 +1,10 @@
+kde3_add_executable(ksendbugmail
+  SOURCES
+    main.cpp
+    smtp.cpp
+  MOC
+    main.h
+    smtp.h
+  LINK
+    kio
+)
