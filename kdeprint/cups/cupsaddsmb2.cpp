@@ -21,6 +21,7 @@
 #include "cupsinfos.h"
 #include "sidepixmap.h"
 
+#include <cups/ppd.h>
 #include <qtimer.h>
 #include <qprogressbar.h>
 #include <qlabel.h>
