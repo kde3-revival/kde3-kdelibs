@@ -155,17 +155,21 @@ static QString nameText(KOpenSSLProxy *kossl, ASN1_STRING *s)
 // ...) is not used: such names are registered domains for this.
 // Without libpsl only the rules of hostMatches() apply.  CAs must not
 // issue such names in any case.
+#ifdef HAVE_LIBPSL
+static const psl_ctx_t *loadPsl()
+{
+	const psl_ctx_t *psl = psl_latest(NULL);
+	if (!psl)
+		psl = psl_builtin();
+	return psl;
+}
+#endif
+
 static bool isPublicSuffix(const QString &suffix)
 {
 #ifdef HAVE_LIBPSL
-	static const psl_ctx_t *psl = 0;
-	static bool loaded = false;
-	if (!loaded) {
-		loaded = true;
-		psl = psl_latest(NULL);
-		if (!psl)
-			psl = psl_builtin();
-	}
+	// initialised once, thread-safely (C++11 function-local static)
+	static const psl_ctx_t *psl = loadPsl();
 	QCString s = suffix.latin1();
 	return psl && !s.isEmpty() && psl_is_public_suffix2(psl, s.data(), PSL_TYPE_ICANN);
 #else
