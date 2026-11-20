@@ -67,26 +67,10 @@
 #ifdef HAVE_INOTIFY
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/syscall.h>
-#include <linux/types.h>
-// Linux kernel headers are documented to not compile
-#define _S390_BITOPS_H
-#include <linux/inotify.h>
-
-static inline int inotify_init (void)
-{
-  return syscall (__NR_inotify_init);
-}
-
-static inline int inotify_add_watch (int fd, const char *name, __u32 mask)
-{
-  return syscall (__NR_inotify_add_watch, fd, name, mask);
-}
-
-static inline int inotify_rm_watch (int fd, __u32 wd)
-{
-  return syscall (__NR_inotify_rm_watch, fd, wd);
-}
+// inotify_init(), inotify_add_watch() and inotify_rm_watch() from the C
+// library (the kernel's <linux/inotify.h> pulls in <asm/fcntl.h>, which
+// conflicts with <fcntl.h>)
+#include <sys/inotify.h>
 
 #ifndef  IN_ONLYDIR
 #define  IN_ONLYDIR 0x01000000 
