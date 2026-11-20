@@ -86,12 +86,26 @@ static void unpremultiply(cairo_surface_t *surface, QImage *img)
 QImage *kdeRenderSvgIcon(const QString &path, int size)
 {
     GError *error = 0;
-    // Not rsvg_handle_new_from_file(): that one also takes URIs.  librsvg
-    // recognises gzip-compressed data (.svgz) itself.
-    GFile *file = g_file_new_for_path(QFile::encodeName(path).data());
-    RsvgHandle *handle = rsvg_handle_new_from_gfile_sync(
-        file, RSVG_HANDLE_FLAGS_NONE, 0, &error);
-    g_object_unref(file);
+    // The file is read here and given to librsvg as data, without a base
+    // URI: a GFile, a file name or a base URI make librsvg create a GFile,
+    // and that makes GIO load its VFS modules, e.g. gvfs, which starts
+    // threads and connects to the session bus in every application that
+    // shows an SVG icon.  Without a base URI, references to other files
+    // (<image href="x.png">, <use href="other.svg#id">) are not loaded;
+    // icons are self-contained.  librsvg recognises gzip-compressed data
+    // (.svgz) itself.
+    gchar *data = 0;
+    gsize length = 0;
+    if (!g_file_get_contents(QFile::encodeName(path).data(), &data, &length,
+                             &error))
+    {
+        if (error)
+            g_error_free(error);
+        return 0;
+    }
+    RsvgHandle *handle = rsvg_handle_new_from_data(
+        reinterpret_cast<const guint8 *>(data), length, &error);
+    g_free(data);
     if (!handle)
     {
         if (error)
