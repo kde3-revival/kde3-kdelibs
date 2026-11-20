@@ -135,10 +135,6 @@ extern "C" {
 
 #include "kpropertiesdialog.h"
 
-#ifdef Q_WS_WIN
-# include <win32_utils.h>
-#endif
-
 static QString nameFromFileName(QString nameStr)
 {
    if ( nameStr.endsWith(".desktop") )

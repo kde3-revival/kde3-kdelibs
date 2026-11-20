@@ -77,7 +77,7 @@ vsnprintf_nonpic.c:  $(srcdir)/vsnprintf.c
 
 noinst_HEADERS = kaccelaction.h kaccelbase.h kaccelprivate.h kckey.h \
 	kcompletion_private.h netwm_p.h \
-	kglobalaccel_x11.h kglobalaccel_win.h kkeyserver_x11.h kkeyserver.h \
+	kglobalaccel_x11.h kkeyserver_x11.h kkeyserver.h \
 	kregpriv.h kshortcutmenu.h ksycocadict.h ksycocafactory.h netsupp.h \
 	kcheckaccelerators.h kcalendarsystemgregorian.h \
 	kcalendarsystemhijri.h kcalendarsystemhebrew.h kcalendarsystemjalali.h \

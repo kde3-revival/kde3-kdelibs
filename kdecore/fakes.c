@@ -23,14 +23,8 @@
 
 #include <config.h>
 
-#ifdef _WIN32
-#include <kde_file_win.h>
-#define KDE_open kdewin32_open
-#define KDE_mkdir kdewin32_mkdir
-#else
 #define KDE_open open
-#define KDE_mkdir mkdir 
-#endif
+#define KDE_mkdir mkdir
 
 #ifndef HAVE_SETENV
 

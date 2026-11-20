@@ -85,7 +85,6 @@ ksockaddr.cpp		Thiago Macieira <thiago@kde.org>
 netsupp.cpp		Thiago Macieira <thiago@kde.org>
 network/		Thiago Macieira <thiago@kde.org>
 netwm.cpp       	Lubos Lunak <l.lunak@kde.org>
-kapplication_win.cpp	Jaroslaw Staniek <js@iidea.pl> (copyright)
 kcalendarsystem.cpp
 kcalendarsystemfactory.cpp
 kcalendarsystemgregorian.cpp
@@ -98,7 +97,6 @@ kconfigdialogmanager.cpp
 kconfigskeleton.cpp
 kdebugdcopiface.cpp	Andreas Beckermann (b_mann@gmx.de) (copyright)
 kdeversion.cpp
-kglobalaccel_win.cpp	Ellis Whitehead <ellis@kde.org> (copyright)
 kkeyserver_x11.cpp
 klockfile.cpp		Waldo Bastian <bastian@kde.org> (copyright)
 kmacroexpander.cpp
@@ -113,4 +111,3 @@ kshortcutmenu.cpp	Ellis Whitehead <ellis@kde.org> (copyright)
 ktempdir.cpp		Joseph Wenninger <jowenn@kde.org> (copyright)
 kuser.cpp		Tim Jansen <tim@tjansen.de> (copyright)
 kvmallocator.cpp	Waldo Bastian (bastian@kde.org) (copyright)
-netsupp_win32.cpp

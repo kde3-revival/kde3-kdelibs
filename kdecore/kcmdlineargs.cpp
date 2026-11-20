@@ -49,10 +49,6 @@
 #define DISPLAY "QWS_DISPLAY"
 #endif
 
-#ifdef Q_WS_WIN
-#include <win32_utils.h>
-#endif
-
 template class QAsciiDict<QCString>;
 template class QPtrList<KCmdLineArgs>;
 

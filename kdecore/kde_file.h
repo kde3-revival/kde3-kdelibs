@@ -31,9 +31,6 @@
  */
 
 #include <unistd.h>
-#ifdef _WIN32
-#include <kde_file_win.h>
-#endif
  
 #if (defined _LFS64_LARGEFILE) && (defined _LARGEFILE64_SOURCE)
 /*

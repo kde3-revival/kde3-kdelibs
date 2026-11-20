@@ -90,10 +90,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 #  define LT_READTEXT_MODE "r"
 #endif
 
-#if defined(_WIN32) && !defined(__CYGWIN__)
-#  include "ltdl_win.h"
-#endif
-
 
 
 /* --- MANIFEST CONSTANTS --- */

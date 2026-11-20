@@ -1783,8 +1783,4 @@ extern "C" DCOP_EXPORT int kdemain( int argc, char* argv[] )
     return ret;
 }
 
-#ifdef Q_OS_WIN
-#include "dcopserver_win.cpp"
-#endif
-
 #include "dcopserver.moc"

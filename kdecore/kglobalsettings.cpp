@@ -32,7 +32,6 @@
 #ifdef Q_WS_WIN
 #include <windows.h>
 #include "qt_windows.h"
-#include <win32_utils.h>
 static QRgb qt_colorref2qrgb(COLORREF col)
 {
     return qRgb(GetRValue(col),GetGValue(col),GetBValue(col));
