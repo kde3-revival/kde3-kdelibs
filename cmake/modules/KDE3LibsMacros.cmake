@@ -118,6 +118,27 @@ if(NOT DEFINED KDE3_UIC_PLUGIN_DIR)
   set(KDE3_UIC_PLUGIN_DIR "")
 endif()
 
+# KDE3_TOOL_LAUNCHER: prefix for running kdelibs' tools (dcopidl,
+# dcopidl2cpp, kconfig_compiler, meinproc, and uic loading the kdewidgets
+# plugin).  Inside kdelibs they are build targets and need nothing.
+# Elsewhere they are the installed programs of the kdelibs that was
+# found, possibly in a DESTDIR staging tree, and kde3-qt possibly not in
+# KDE3_QT_RPATH (a development tree): run them with the libraries and
+# data of the kdelibs and kde3-qt that were found (KDEDIRS: meinproc
+# reads its stylesheets and DTDs through KStandardDirs).  Modules may
+# use it for their own calls of the tools (KDE3::makekdewidgets, ...).
+if(NOT DEFINED KDE3_TOOL_LAUNCHER)
+  set(KDE3_TOOL_LAUNCHER "")
+  if(NOT KDE3_BUILDING_KDELIBS AND UNIX AND NOT APPLE AND KDE3_PREFIX)
+    set(_kde3_ld "${KDE3_LIB_DIR}")
+    if(KDE3Qt_LIBRARY_DIR)
+      string(APPEND _kde3_ld ":${KDE3Qt_LIBRARY_DIR}")
+    endif()
+    set(KDE3_TOOL_LAUNCHER "${CMAKE_COMMAND}" -E env
+      "LD_LIBRARY_PATH=${_kde3_ld}" "KDEDIRS=${KDE3_PREFIX}")
+  endif()
+endif()
+
 # ---------------------------------------------------------------------
 # RUNPATH of the installed libraries, modules and programs
 #
@@ -210,7 +231,7 @@ function(_kde3_kidl header kidl)
   endif()
   set_property(DIRECTORY PROPERTY _KDE3_KIDL_${kidl} TRUE)
   add_custom_command(OUTPUT "${kidl}"
-    COMMAND ${CMAKE_COMMAND}
+    COMMAND ${KDE3_TOOL_LAUNCHER} ${CMAKE_COMMAND}
       "-DDCOPIDL=$<TARGET_FILE:${KDE3_DCOPIDL_EXECUTABLE}>"
       "-DINPUT=${header}" "-DOUTPUT=${kidl}"
       -P "${KDE3_MACROS_DIR}/kde3_dcopidl.cmake"
@@ -239,7 +260,8 @@ function(_kde3_dcop_source target src kind)
   if(NOT _done)
     set_property(DIRECTORY PROPERTY _KDE3_DCOP_${_base}_${kind} TRUE)
     add_custom_command(OUTPUT ${_outputs}
-      COMMAND ${KDE3_DCOPIDL2CPP_EXECUTABLE} --c++-suffix cpp ${_flags}
+      COMMAND ${KDE3_TOOL_LAUNCHER}
+              "$<TARGET_FILE:${KDE3_DCOPIDL2CPP_EXECUTABLE}>" --c++-suffix cpp ${_flags}
               "${_base}.kidl"
       DEPENDS "${_bin}/${_base}.kidl"
               "$<TARGET_FILE:${KDE3_DCOPIDL2CPP_EXECUTABLE}>"
@@ -268,14 +290,14 @@ function(_kde3_ui_source target src)
       "-DUIC=$<TARGET_FILE:KDE3Qt::uic>" "-DUI_FILE=${_ui}"
       "-DPLUGIN_DIR=${KDE3_UIC_PLUGIN_DIR}")
     add_custom_command(OUTPUT "${_h}"
-      COMMAND ${CMAKE_COMMAND} ${_script_args} "-DHEADER=${_h}"
+      COMMAND ${KDE3_TOOL_LAUNCHER} ${CMAKE_COMMAND} ${_script_args} "-DHEADER=${_h}"
               -P "${KDE3_MACROS_DIR}/kde3_uic.cmake"
       DEPENDS "${_ui}" "$<TARGET_FILE:KDE3Qt::uic>"
               "${KDE3_MACROS_DIR}/kde3_uic.cmake"
       COMMENT "Generating ${_base}.h from ${_base}.ui"
       VERBATIM)
     add_custom_command(OUTPUT "${_cpp}"
-      COMMAND ${CMAKE_COMMAND} ${_script_args} "-DHEADER=${_h}"
+      COMMAND ${KDE3_TOOL_LAUNCHER} ${CMAKE_COMMAND} ${_script_args} "-DHEADER=${_h}"
               "-DSOURCE=${_cpp}" "-DMANGLED=${_mangled}"
               -P "${KDE3_MACROS_DIR}/kde3_uic.cmake"
       DEPENDS "${_ui}" "${_h}" "$<TARGET_FILE:KDE3Qt::uic>"
@@ -307,7 +329,8 @@ function(_kde3_kcfgc_source target src)
   if(NOT _done)
     set_property(DIRECTORY PROPERTY _KDE3_KCFGC_${_base} TRUE)
     add_custom_command(OUTPUT "${_bin}/${_base}.h" "${_bin}/${_base}.cpp"
-      COMMAND ${KDE3_KCONFIG_COMPILER_EXECUTABLE} -d "${_bin}/"
+      COMMAND ${KDE3_TOOL_LAUNCHER}
+              "$<TARGET_FILE:${KDE3_KCONFIG_COMPILER_EXECUTABLE}>" -d "${_bin}/"
               "${_kcfg}" "${_kcfgc}"
       DEPENDS "${_kcfg}" "${_kcfgc}"
               "$<TARGET_FILE:${KDE3_KCONFIG_COMPILER_EXECUTABLE}>"
@@ -646,7 +669,8 @@ function(kde3_create_handbook appname)
       set(KDE3_MEINPROC_ARGS)
     endif()
     add_custom_command(OUTPUT "${_cache}"
-      COMMAND ${KDE3_MEINPROC_EXECUTABLE} ${KDE3_MEINPROC_ARGS} --check
+      COMMAND ${KDE3_TOOL_LAUNCHER}
+              "$<TARGET_FILE:${KDE3_MEINPROC_EXECUTABLE}>" ${KDE3_MEINPROC_ARGS} --check
               --cache "${_cache}" "${CMAKE_CURRENT_SOURCE_DIR}/index.docbook"
       DEPENDS ${_srcfiles} "$<TARGET_FILE:${KDE3_MEINPROC_EXECUTABLE}>"
               ${KDE3_MEINPROC_DEPENDS}
