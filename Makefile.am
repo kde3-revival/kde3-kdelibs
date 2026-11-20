@@ -20,7 +20,7 @@
 
 COMPILE_FIRST = dcop libltdl kdefx kdecore kdeui kdesu kjs kwallet kio
 # COMPILE_BEFORE_doc = kdoctools
-# COMPILE_AFTER_kparts = kspell2 kmdi kdeprint kinit kate interfaces kcert khtml
+# COMPILE_AFTER_kparts = kspell2 kmdi kdeprint kinit kate interfaces khtml
 # COMPILE_AFTER_kdeprint = kate khtml
 # COMPILE_BEFORE_khtml = kutils
 # COMPILE_BEFORE_kabc = kab kresources

@@ -12,7 +12,6 @@ configure.in.in
 ./kdesu/configure.in.in
 ./kdoctools/configure.in.in
 ./khtml/configure.in.in
-./khtml/java/configure.in.in
 ./kimgio/configure.in.in
 ./kinit/configure.in.in
 ./kio/kio/configure.in.in

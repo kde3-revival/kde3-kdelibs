@@ -1,4 +1,3 @@
-AM_CONDITIONAL(DOJAVA, test "x$kde_use_qt_emb" != "xyes")
 
 AC_DEFUN([KDE_CHECK_LIBTHAI],
 [

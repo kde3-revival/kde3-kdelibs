@@ -38,7 +38,7 @@ noinst_HEADERS = \
 	render_style.h render_object.h render_container.h render_box.h \
 	render_flow.h render_text.h render_table.h render_replaced.h \
 	render_form.h render_list.h render_canvas.h render_frames.h \
-	render_br.h render_applet.h font.h table_layout.h render_line.h \
+	render_br.h font.h table_layout.h render_line.h \
 	render_generated.h enumerate.h
 
 INCLUDES = -I$(top_srcdir)/kimgio -I$(top_srcdir)/kio -I$(top_srcdir)/dcop \

@@ -19,12 +19,7 @@
 
 KDE_CXXFLAGS = $(WOVERLOADED_VIRTUAL)
 
-if DOJAVA
-JAVA_SUBDIR=java
-LIBKJAVA=
-endif
-
-SUBDIRS = misc dom css xml html rendering pics $(JAVA_SUBDIR) ecma . kmultipart
+SUBDIRS = misc dom css xml html rendering pics ecma . kmultipart
 
 CLEANFILES = dummy.cpp
 
@@ -52,7 +47,7 @@ endif
 libkhtml_la_LDFLAGS = -version-info 6:0:2 -no-undefined $(VSCRIPT) $(all_libraries)
 libkhtml_la_LIBADD = ./xml/libkhtmlxml.la ./html/libkhtmlhtml.la \
 	./rendering/libkhtmlrender.la ./css/libkhtmlcss.la \
-	./misc/libkhtmlmisc.la ecma/libkjs_html.la ./dom/libkhtmldom.la $(LIBKJAVA) \
+	./misc/libkhtmlmisc.la ecma/libkjs_html.la ./dom/libkhtmldom.la \
 	$(LIB_KPARTS) \
 	$(LIBTHAI) \
 	$(top_builddir)/kdeprint/libkdeprint.la  \
@@ -80,7 +75,7 @@ khtmlimagepart_la_LDFLAGS = -no-undefined -module $(KDE_PLUGIN) $(all_libraries)
 khtmlimagepart_la_LIBADD = libkhtml.la 
 
 INCLUDES = -I$(top_srcdir)/kjs -I$(top_builddir)/kjs -I$(top_srcdir)/kimgio \
-	-I$(srcdir)/java -I$(top_srcdir)/dcop -I$(srcdir)/misc \
+	-I$(top_srcdir)/dcop -I$(srcdir)/misc \
 	-I$(srcdir)/dom -I$(srcdir)/xml -I$(srcdir)/html -I$(srcdir)/css \
 	-I$(top_srcdir)/libltdl \
 	-I$(top_srcdir)/kio/kssl -I$(top_builddir)/kio/kssl \
