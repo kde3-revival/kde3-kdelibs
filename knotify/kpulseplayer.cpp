@@ -167,6 +167,7 @@ static void channelMap( SNDFILE *sndfile, const SF_INFO &info, pa_channel_map *m
         case SF_FORMAT_WAVEX:
         case SF_FORMAT_W64:
         case SF_FORMAT_RF64:
+        case SF_FORMAT_FLAC:
             def = PA_CHANNEL_MAP_WAVEEX;
             break;
         default:
@@ -323,6 +324,10 @@ void KPulsePlayerPrivate::contextStateCallback( pa_context *c, void *userdata )
     KPulsePlayerPrivate *d = static_cast<KPulsePlayerPrivate *>( userdata );
     switch ( pa_context_get_state( c ) ) {
     case PA_CONTEXT_READY: {
+        // connectTimeout() already gave up on this context: its sounds
+        // are about to be reported unavailable, so do not start them
+        if ( d->contextFailed )
+            break;
         d->connectTimer->stop();
         d->contextReady = true;
         const QValueList<KPulseSound *> sounds = d->sounds;
