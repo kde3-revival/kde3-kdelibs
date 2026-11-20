@@ -21,6 +21,9 @@ Build types (autotools ``--enable-debug`` variants):
 ``Debug``
   ``-g3 -fno-inline`` (``--enable-debug=full``).
 
+These replace CMake's defaults of ``CMAKE_<LANG>_FLAGS_<CONFIG>`` in the
+cache; values set by the user or a packager are left alone.
+
 Always: C++ ``-fno-exceptions -fno-check-new -fno-common`` (targets
 whose Makefile.am used $(USE_EXCEPTIONS) get ``-fexceptions`` from the
 KDE3 macros' ``EXCEPTIONS`` option), the warning flags of
@@ -42,10 +45,28 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     "Build type: RelWithDebInfo (default), Release, Debug" FORCE)
 endif()
 
+# The flags of the build types go into the cache once, in place of
+# CMake's own defaults only: a value given on the command line or by a
+# distribution's build macros (-DCMAKE_CXX_FLAGS_RELEASE=...), or
+# edited in the cache later, is kept.
+get_property(_kde3_langs GLOBAL PROPERTY ENABLED_LANGUAGES)
 foreach(_lang C CXX)
-  set(CMAKE_${_lang}_FLAGS_RELEASE "-O2 -DNDEBUG -DNO_DEBUG")
-  set(CMAKE_${_lang}_FLAGS_RELWITHDEBINFO "-O2 -g")
-  set(CMAKE_${_lang}_FLAGS_DEBUG "-g3 -fno-inline")
+  if(NOT _lang IN_LIST _kde3_langs)
+    continue()
+  endif()
+  foreach(_kde3_cfg
+      "RELEASE;-O2 -DNDEBUG -DNO_DEBUG"
+      "RELWITHDEBINFO;-O2 -g"
+      "DEBUG;-g3 -fno-inline")
+    list(GET _kde3_cfg 0 _cfg)
+    list(GET _kde3_cfg 1 _flags)
+    string(STRIP "${CMAKE_${_lang}_FLAGS_${_cfg}_INIT}" _init)
+    string(STRIP "${CMAKE_${_lang}_FLAGS_${_cfg}}" _cur)
+    if(_cur STREQUAL _init)
+      set(CMAKE_${_lang}_FLAGS_${_cfg} "${_flags}" CACHE STRING
+        "Flags used by the ${_lang} compiler during ${_cfg} builds." FORCE)
+    endif()
+  endforeach()
 endforeach()
 
 option(KDE3_ENABLE_WARNINGS "Compile with the warning flags of KDE 3.5 autotools" ON)
