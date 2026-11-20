@@ -51,13 +51,15 @@ bool KSSLX509V3::certTypeCA() {
 
 bool KSSLX509V3::certTypeSSLCA() {
 #ifdef KSSL_HAVE_SSL
+	// There was a second alternative, "the X509_PURPOSE_ANY CA bit and
+	// an SSL end entity purpose", with the bit as a constant instead
+	// of a test of flags, so every SSL server or client certificate
+	// counted as an SSL CA (and isSigner() was true for it).  Testing
+	// the bit would not help: X509_check_purpose() accepts any
+	// certificate for X509_PURPOSE_ANY, as a CA too.
 	return (flags & ((1 << (16+X509_PURPOSE_NS_SSL_SERVER-1))|
                          (1 << (16+X509_PURPOSE_SSL_SERVER-1))|
-                         (1 << (16+X509_PURPOSE_SSL_CLIENT-1)))) ? true : 
-		(false || ((1 << (16+X509_PURPOSE_ANY-1)) &&
-			   (certTypeSSLServer() ||
-			    certTypeSSLClient() ||
-			    certTypeNSSSLServer())));
+                         (1 << (16+X509_PURPOSE_SSL_CLIENT-1)))) ? true : false;
 #endif
 	return false;
 }
@@ -65,10 +67,9 @@ bool KSSLX509V3::certTypeSSLCA() {
 
 bool KSSLX509V3::certTypeEmailCA() {
 #ifdef KSSL_HAVE_SSL
+	// see certTypeSSLCA()
 	return (flags & ((1 << (16+X509_PURPOSE_SMIME_ENCRYPT-1))|
-                         (1 << (16+X509_PURPOSE_SMIME_SIGN-1)))) ? true : 
-		(false || ((1 << (16+X509_PURPOSE_ANY-1)) &&
-			   certTypeSMIME()));
+                         (1 << (16+X509_PURPOSE_SMIME_SIGN-1)))) ? true : false;
 #endif
 	return false;
 }
