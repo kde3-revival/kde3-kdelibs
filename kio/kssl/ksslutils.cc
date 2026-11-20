@@ -31,35 +31,46 @@
 #ifdef KSSL_HAVE_SSL
 // This code is mostly taken from OpenSSL v0.9.5a
 // by Eric Young
+//
+// Certificates use UTCTime (YYMMDDHHMM[SS]Z) for dates up to 2049 and
+// GeneralizedTime (YYYYMMDDHHMM[SS]Z) from 2050 on (RFC 5280); both
+// come as an ASN1_TIME, which is what this gets.
 QDateTime ASN1_UTCTIME_QDateTime(ASN1_UTCTIME *tm, int *isGmt) {
 QDateTime qdt;
-char *v;
+const char *v, *p;
 int gmt=0;
-int i;
+int i, len, ylen;
 int y=0,M=0,d=0,h=0,m=0,s=0;
 QDate qdate;
 QTime qtime;
- 
-  i = KOSSL::self()->ASN1_STRING_length(tm);
-  v = (char *)KOSSL::self()->ASN1_STRING_data(tm);
- 
-  if (i < 10) goto auq_err;
-  if (v[i-1] == 'Z') gmt=1;
-  for (i=0; i<10; i++)
+
+  len = KOSSL::self()->ASN1_STRING_length(tm);
+  v = (const char *)KOSSL::self()->ASN1_STRING_data(tm);
+  ylen = (KOSSL::self()->ASN1_STRING_type(tm) == V_ASN1_GENERALIZEDTIME) ? 4 : 2;
+
+  if (!v || len < ylen + 8) goto auq_err;
+  if (v[len-1] == 'Z') gmt=1;
+  for (i=0; i<ylen+8; i++)
           if ((v[i] > '9') || (v[i] < '0')) goto auq_err;
-  y = (v[0]-'0')*10+(v[1]-'0');
-  if (y < 50) y+=100;
-  M = (v[2]-'0')*10+(v[3]-'0');
+  if (ylen == 4) {
+          y = (v[0]-'0')*1000+(v[1]-'0')*100+(v[2]-'0')*10+(v[3]-'0');
+  } else {
+          y = (v[0]-'0')*10+(v[1]-'0');
+          y += (y < 50) ? 2000 : 1900;
+  }
+  p = v + ylen;
+  M = (p[0]-'0')*10+(p[1]-'0');
   if ((M > 12) || (M < 1)) goto auq_err;
-  d = (v[4]-'0')*10+(v[5]-'0');
-  h = (v[6]-'0')*10+(v[7]-'0');
-  m =  (v[8]-'0')*10+(v[9]-'0');
-  if (    (v[10] >= '0') && (v[10] <= '9') &&
-          (v[11] >= '0') && (v[11] <= '9'))
-          s = (v[10]-'0')*10+(v[11]-'0');
- 
+  d = (p[2]-'0')*10+(p[3]-'0');
+  h = (p[4]-'0')*10+(p[5]-'0');
+  m =  (p[6]-'0')*10+(p[7]-'0');
+  if (    len >= ylen + 10 &&
+          (p[8] >= '0') && (p[8] <= '9') &&
+          (p[9] >= '0') && (p[9] <= '9'))
+          s = (p[8]-'0')*10+(p[9]-'0');
+
   // localize the date and display it.
-  qdate.setYMD(y+1900, M, d);
+  qdate.setYMD(y, M, d);
   qtime.setHMS(h,m,s);
   qdt.setDate(qdate); qdt.setTime(qtime);
   auq_err:

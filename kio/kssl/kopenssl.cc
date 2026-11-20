@@ -225,6 +225,7 @@ static X509_NAME *(*K_X509_NAME_new)() = 0L;
 static int (*K_X509_REQ_set_subject_name)(X509_REQ*,X509_NAME*) = 0L;
 static const unsigned char *(*K_ASN1_STRING_get0_data)(const ASN1_STRING*) = 0L;
 static int (*K_ASN1_STRING_length)(const ASN1_STRING*) = 0L;
+static int (*K_ASN1_STRING_type)(const ASN1_STRING*) = 0L;
 static STACK_OF(SSL_CIPHER) *(*K_SSL_get_ciphers)(const SSL *ssl) = 0L;
 
 #endif
@@ -592,6 +593,7 @@ KConfig *cfg;
       // ASN1_STRING_data was replaced by ASN1_STRING_get0_data in OpenSSL 1.1.0
       K_ASN1_STRING_get0_data = (const unsigned char *(*)(const ASN1_STRING*)) _cryptoLib->symbol("ASN1_STRING_get0_data");
       K_ASN1_STRING_length = (int (*)(const ASN1_STRING*)) _cryptoLib->symbol("ASN1_STRING_length");
+      K_ASN1_STRING_type = (int (*)(const ASN1_STRING*)) _cryptoLib->symbol("ASN1_STRING_type");
 #endif
    }
 
@@ -1812,6 +1814,12 @@ unsigned char *KOpenSSLProxy::ASN1_STRING_data(ASN1_STRING *x) {
 int KOpenSSLProxy::ASN1_STRING_length(const ASN1_STRING *x) {
    if (K_ASN1_STRING_length) return (K_ASN1_STRING_length)(x);
    return 0;
+}
+
+
+int KOpenSSLProxy::ASN1_STRING_type(const ASN1_STRING *x) {
+   if (K_ASN1_STRING_type) return (K_ASN1_STRING_type)(x);
+   return -1;
 }
 
 STACK_OF(SSL_CIPHER) *KOpenSSLProxy::SSL_get_ciphers(const SSL* ssl) {

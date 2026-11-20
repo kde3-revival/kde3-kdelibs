@@ -698,6 +698,11 @@ public:
    int ASN1_STRING_length(const ASN1_STRING *x);
 
    /*
+    *  ASN1_STRING_type (V_ASN1_UTCTIME, V_ASN1_GENERALIZEDTIME, ...)
+    */
+   int ASN1_STRING_type(const ASN1_STRING *x);
+
+   /*
     *  
     */
    int OBJ_obj2nid(ASN1_OBJECT *o);
