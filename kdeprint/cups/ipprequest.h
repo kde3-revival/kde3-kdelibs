@@ -71,7 +71,12 @@ public:
 	bool keyword(const QString& name, QString& value);
 	bool keyword(const QString& name, QStringList& value);
 	bool mime(const QString& name, QString& value);
+	// Attribute iteration uses the cursor that CUPS keeps inside the
+	// request: first() rewinds it and next() advances it. Any other call
+	// that looks attributes up (last(), integer(), name(), ...) moves that
+	// cursor too, so do not use them while iterating with first()/next().
 	ipp_attribute_t* first();
+	ipp_attribute_t* next();
 	ipp_attribute_t* last();
 	QMap<QString,QString> toMap(int group = -1);
 	void setMap(const QMap<QString,QString>& opts);
@@ -179,10 +184,18 @@ inline bool IppRequest::doRequest(const QString& res)
 { return doFileRequest(res); }
 
 inline ipp_attribute_t* IppRequest::first()
-{ return (request_ ? request_->attrs : NULL); }
+{ return (request_ ? ippFirstAttribute(request_) : NULL); }
+
+inline ipp_attribute_t* IppRequest::next()
+{ return (request_ ? ippNextAttribute(request_) : NULL); }
 
 inline ipp_attribute_t* IppRequest::last()
-{ return (request_ ? request_->last : NULL); }
+{
+	ipp_attribute_t	*attr = first(), *nextAttr;
+	while (attr && (nextAttr = next()))
+		attr = nextAttr;
+	return attr;
+}
 
 inline void IppRequest::setHost(const QString& host)
 { host_ = host; }
