@@ -43,6 +43,10 @@
 #include <sys/socket.h>
 #include <errno.h>
 
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
+
 #include <qwindowdefs.h>
 #include <kglobal.h>
 #include <kinstance.h>
@@ -254,6 +258,21 @@ static int write_socket(int sock, char *buffer, int len);
 static int read_socket(int sock, char *buffer, int len);
 static int openSocket();
 
+// With the Yama LSM in mode 1 (/proc/sys/kernel/yama/ptrace_scope) only an
+// ancestor may ptrace a process.  Dr. Konqi is either started by kdeinit (a
+// sibling, or unrelated) or forked by us (a child), so neither it nor the
+// debugger it runs could attach to get a backtrace.  Declare it as our
+// tracer; Yama also accepts its descendants, i.e. the gdb it starts.
+// prctl() is a plain system call, safe in this signal handler.
+static void allowTracer( long pid )
+{
+#if defined(__linux__) && defined(PR_SET_PTRACER)
+  prctl( PR_SET_PTRACER, (unsigned long) pid, 0, 0, 0 );
+#else
+  (void) pid;
+#endif
+}
+
 void KCrash::startDrKonqi( const char* argv[], int argc )
 {
   int socket = openSocket();
@@ -302,6 +321,7 @@ void KCrash::startDrKonqi( const char* argv[], int argc )
   long pid;
   read_socket(socket, buffer, header.arg_length);
   pid = *((long *) buffer);
+  allowTracer( pid );
 
   alarm(0); // Seems we made it....
 
@@ -330,6 +350,7 @@ void KCrash::startDirectly( const char* argv[], int )
   }
   else
   {
+    allowTracer( pid );
     alarm(0); // Seems we made it....
     // wait for child to exit
     waitpid(pid, NULL, 0);
