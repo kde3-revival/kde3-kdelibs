@@ -1344,12 +1344,15 @@ void KStandardDirs::addKDEDefaults()
     {
 	xdgdirList.clear();
         xdgdirList.append("/etc/xdg");
-#ifdef Q_WS_WIN
-        xdgdirList.append(kfsstnd_defaultprefix() + "/etc/xdg");
-#else
-        xdgdirList.append(KDESYSCONFDIR "/xdg");
-#endif
     }
+    // KDE's own XDG config dir (its menu definitions) is searched even
+    // when XDG_CONFIG_DIRS is set without it, as the session's display
+    // manager sets it for a KDE installed outside /usr.
+#ifdef Q_WS_WIN
+    xdgdirList.append(kfsstnd_defaultprefix() + "/etc/xdg");
+#else
+    xdgdirList.append(KDESYSCONFDIR "/xdg");
+#endif
 
     QString localXdgDir = readEnvPath("XDG_CONFIG_HOME");
     if (!localXdgDir.isEmpty())
@@ -1377,20 +1380,23 @@ void KStandardDirs::addKDEDefaults()
     xdgdirs = readEnvPath("XDG_DATA_DIRS");
     xdgdirList.clear();
     if (!xdgdirs.isEmpty())
-    {
 	tokenize(xdgdirList, xdgdirs, QChar(KPATH_SEPARATOR));
-    }
-    else
-    {
-        for (QStringList::ConstIterator it = kdedirList.begin();
-           it != kdedirList.end(); ++it)
-        {
-           QString dir = *it;
-           if (dir[dir.length()-1] != '/')
-             dir += '/';
-           xdgdirList.append(dir+"share/");
-        }
 
+    // The share/ dirs of the KDE prefixes (applications, desktop-directories,
+    // mime) are searched even when XDG_DATA_DIRS is set without them, as the
+    // display manager sets it for a KDE installed outside /usr.  They come
+    // after the dirs XDG_DATA_DIRS names; addXdgDataPrefix() skips repeats.
+    for (QStringList::ConstIterator it = kdedirList.begin();
+       it != kdedirList.end(); ++it)
+    {
+       QString dir = *it;
+       if (dir[dir.length()-1] != '/')
+         dir += '/';
+       xdgdirList.append(dir+"share/");
+    }
+
+    if (xdgdirs.isEmpty())
+    {
         xdgdirList.append("/usr/local/share/");
         xdgdirList.append("/usr/share/");
     }
