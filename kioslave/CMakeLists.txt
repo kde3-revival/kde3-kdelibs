@@ -1,0 +1,9 @@
+add_subdirectory(file)
+add_subdirectory(http)
+add_subdirectory(ftp)
+add_subdirectory(gzip)
+if(HAVE_BZIP2_SUPPORT)
+  # include_bzip2
+  add_subdirectory(bzip2)
+endif()
+add_subdirectory(metainfo)
