@@ -50,10 +50,12 @@ Common arguments:
 
 Other functions:
 
-``kde3_install_icons([AUTO|<appname>...] [DESTINATION <dir>] [SOURCE_DIR <dir>])``
+``kde3_install_icons([AUTO|<appname>...] [DESTINATION <dir>] [SOURCE_DIR <dir>] [EXCLUDE <file>...])``
   KDE_ICON: install ``<size-or-theme>-<type>-<name>.<ext>`` files with
   the am_edit naming rules (``cr22-action-foo.png`` ->
-  ``crystalsvg/22x22/actions/foo.png``).
+  ``crystalsvg/22x22/actions/foo.png``).  A file whose name does not
+  follow them is skipped with a warning (am_edit printed "unknown icon
+  type"); EXCLUDE skips files silently.
 ``kde3_create_handbook(<appname> [LANG <lang>] [FILES ...])``
   KDE_DOCS: index.cache.bz2 via meinproc and installation into
   KDE3_HTML_INSTALL_DIR/<lang>/<appname> with the "common" symlink.
@@ -405,7 +407,7 @@ endfunction()
 # KDE_ICON (am_edit tag_ICON)
 
 function(kde3_install_icons)
-  cmake_parse_arguments(PARSE_ARGV 0 ARG "" "DESTINATION;SOURCE_DIR" "")
+  cmake_parse_arguments(PARSE_ARGV 0 ARG "" "DESTINATION;SOURCE_DIR" "EXCLUDE")
   if(NOT ARG_DESTINATION)
     set(ARG_DESTINATION "${KDE3_ICON_INSTALL_DIR}")
   endif()
@@ -421,6 +423,9 @@ function(kde3_install_icons)
     "${ARG_SOURCE_DIR}/*.png" "${ARG_SOURCE_DIR}/*.xpm"
     "${ARG_SOURCE_DIR}/*.mng" "${ARG_SOURCE_DIR}/*.svg"
     "${ARG_SOURCE_DIR}/*.svgz")
+  if(ARG_EXCLUDE)
+    list(REMOVE_ITEM _all ${ARG_EXCLUDE})
+  endif()
   set(_files)
   if(_names STREQUAL "AUTO")
     set(_files ${_all})
