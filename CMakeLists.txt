@@ -26,6 +26,8 @@ find_package(Threads REQUIRED)
 
 include(ConfigureChecks.cmake)
 configure_file(config.h.cmake "${PROJECT_BINARY_DIR}/config.h")
+# automake passes -DHAVE_CONFIG_H (DEFS); kjs, for example, tests it.
+add_compile_definitions(HAVE_CONFIG_H)
 
 # Installed libraries and modules find kde3-qt and each other.
 set(KDE3_QT_RPATH "${KDE3Qt_LIBRARY_DIR}" CACHE PATH
