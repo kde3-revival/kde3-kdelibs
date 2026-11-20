@@ -97,10 +97,6 @@ Here is an alphabetical list:
 * kwallet
     Client and backend to store values in encrypted files.
 
-* libkmid
-    MIDI file handling and midi mapper (manages output of midi files to
-    various devices).
-
 * libkscreensaver
     Library for making KDE screensavers.
 

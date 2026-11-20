@@ -23,7 +23,6 @@ configure.in.in
 ./kjs/configure.in.in
 ./kspell2/plugins/configure.in.bot
 ./kspell2/plugins/configure.in.in
-./libkmid/configure.in.in
 ./libkscreensaver/configure.in.in
 configure.in.mid
 configure.in.bot
