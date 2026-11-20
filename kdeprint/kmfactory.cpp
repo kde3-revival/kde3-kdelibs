@@ -217,9 +217,33 @@ void KMFactory::loadFactory(const QString& syst)
 		m_factory = KLibLoader::self()->factory(QFile::encodeName(libname));
                 if (!m_factory)
                 {
-                        KMessageBox::error(0,
-                            i18n("<qt>There was an error loading %1. The diagnostic is:<p>%2</p></qt>")
-                            .arg(libname).arg(KLibLoader::self()->lastErrorMessage()));
+                        QString	diagnostic = KLibLoader::self()->lastErrorMessage();
+                        // The plugin may simply be gone, e.g. a PrintSystem=lpr or rlpr
+                        // left from a version that still had those plugins: fall back to
+                        // the auto-detected print system, as for an empty PrintSystem.
+                        QString	detected = autoDetect();
+                        if (detected != sys)
+                        {
+                                kdWarning(500) << "kdeprint: cannot load " << libname << " (" << diagnostic
+                                               << "), using the auto-detected print system " << detected << endl;
+                                m_factory = KLibLoader::self()->factory(QFile::encodeName(QString::fromLatin1("kdeprint_%1").arg(detected)));
+                                if (m_factory)
+                                {
+                                        // replace the configured print system, so that
+                                        // printSystem() names the loaded plugin again
+                                        KConfig	*conf = printConfig();
+                                        conf->setGroup("General");
+                                        if (conf->readEntry("PrintSystem") == sys)
+                                        {
+                                                conf->writeEntry("PrintSystem", detected);
+                                                conf->sync();
+                                        }
+                                }
+                        }
+                        if (!m_factory)
+                                KMessageBox::error(0,
+                                    i18n("<qt>There was an error loading %1. The diagnostic is:<p>%2</p></qt>")
+                                    .arg(libname).arg(diagnostic));
                 }
 	}
 }
