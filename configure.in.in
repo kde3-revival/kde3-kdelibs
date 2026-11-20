@@ -181,15 +181,6 @@ AH_BOTTOM([
 #ifndef INT32_BASETYPE
 #define INT32_BASETYPE int
 #endif
-
-#ifndef HAVE_SETEUID
-#define HAVE_SETEUID
-#define HAVE_SETEUID_FAKE
-#ifdef __cplusplus
-extern "C"
-#endif
-int seteuid(INT32_BASETYPE euid); /* defined in fakes.c */
-#endif
 ])
 
 AC_CHECK_USLEEP

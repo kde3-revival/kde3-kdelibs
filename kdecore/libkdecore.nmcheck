@@ -48,18 +48,4 @@ kasciistricmp
 # from libtldl
 lt_dl*
 
-# from kdefakes
-setenv
-unsetenv
-usleep
-random
-srandom
-seteuid
-mkstemps
-mkstemp
-revoke
-strlcpy
-strlcat
-vsnprintf
-snprintf
 

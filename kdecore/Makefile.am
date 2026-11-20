@@ -33,8 +33,7 @@ SUBDIRS = network $(SVGICONS) . kconfig_compiler
 # into $(all_libraries) isn't better
 AM_LDFLAGS = $(LDFLAGS_AS_NEEDED) $(LDFLAGS_NEW_DTAGS)
 
-lib_LTLIBRARIES = libkdefakes.la libkdecore.la
-lib_LIBRARIES = libkdefakes_nonpic.a
+lib_LTLIBRARIES = libkdecore.la
 
 include_HEADERS = kconfig.h kconfigskeleton.h \
 	kconfigdata.h ksimpleconfig.h kconfigdialogmanager.h \
@@ -60,20 +59,6 @@ include_HEADERS = kconfig.h kconfigskeleton.h \
 	kmanagerselection.h kmountpoint.h kuser.h klockfile.h \
 	kidna.h ktempdir.h kshell.h fixx11h.h kxerrorhandler.h kdelibs_export.h \
 	kdemacros.h kde_file.h ktimezones.h
-
-libkdefakes_la_SOURCES = fakes.c vsnprintf.c
-libkdefakes_la_LDFLAGS = -version-info 6:0:2
-libkdefakes_la_LIBADD  = $(LIBSOCKET)
-
-libkdefakes_nonpic_a_SOURCES = fakes_nonpic.c vsnprintf_nonpic.c
-
-fakes_nonpic.c:$(srcdir)/fakes.c
-	-rm -f fakes_nonpic.c
-	$(LN_S) $(srcdir)/fakes.c fakes_nonpic.c
-
-vsnprintf_nonpic.c:  $(srcdir)/vsnprintf.c
-	-rm -f vsnprintf_nonpic.c
-	$(LN_S) $(srcdir)/vsnprintf.c vsnprintf_nonpic.c
 
 noinst_HEADERS = kaccelaction.h kaccelbase.h kaccelprivate.h kckey.h \
 	kcompletion_private.h netwm_p.h \
@@ -101,7 +86,7 @@ libkdecore_la_SOURCES = libintl.cpp kapplication.cpp \
 	kaudioplayer.cpp kdcoppropertyproxy.cpp \
 	ksockaddr.cpp kextsock.cpp netsupp.cpp kprocio.cpp kbufferedio.cpp \
 	kpixmapprovider.cpp kurldrag.cpp \
-	kmdcodec.cpp ksocks.cpp fakes.c vsnprintf.c \
+	kmdcodec.cpp ksocks.cpp \
 	ksycoca.cpp ksycocadict.cpp ksycocafactory.cpp ksycoca.skel \
 	kxmessages.cpp kstartupinfo.cpp kcatalogue.cpp kasyncio.cpp \
 	kmultipledrag.cpp kstaticdeleter.cpp kappdcopiface.cpp \
@@ -170,7 +155,6 @@ kde_config_LDFLAGS = $(KDE_RPATH) $(KDE_MT_LDFLAGS)
 kgrantpty_SOURCES = kgrantpty.c
 kgrantpty_CFLAGS= $(KDE_USE_FPIE)
 kgrantpty_LDFLAGS = $(KDE_USE_PIE) $(KDE_RPATH) $(all_libraries)
-kgrantpty_LDADD = ./libkdefakes.la
 
 # kgrantpty needs to be installed setuid root
 install-exec-hook:
