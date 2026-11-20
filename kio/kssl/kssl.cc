@@ -54,6 +54,38 @@
 #include <ksslsession.h>
 #include <klocale.h>
 #include <ksocks.h>
+#include "kresolver.h"
+
+#ifdef KSSL_HAVE_SSL
+#include <arpa/inet.h>
+
+// Server Name Indication (RFC 6066): tell the server which host is
+// meant, so that a server with several names presents the certificate
+// of this one.  The name is sent in ASCII (IDNA), without a trailing
+// dot, and never for an IP address.
+static void setServerName(KOpenSSLProxy *kossl, SSL *ssl, const QString &peer)
+{
+	QString host = peer.stripWhiteSpace();
+	while (host.endsWith("."))
+		host.truncate(host.length() - 1);
+	// a host name has no ':', every IPv6 address has, also one in
+	// brackets or with a zone id (fe80::1%eth0), which inet_pton()
+	// does not take
+	if (host.isEmpty() || host.contains(':'))
+		return;
+	struct in_addr a4;
+	struct in6_addr a6;
+	if (inet_pton(AF_INET, host.latin1(), &a4) == 1 ||
+	    inet_pton(AF_INET6, host.latin1(), &a6) == 1)
+		return;
+	QCString ace = KNetwork::KResolver::domainToAscii(host);
+	if (ace.isEmpty())
+		return;
+	// SSL_set_tlsext_host_name() is this macro
+	kossl->SSL_ctrl(ssl, SSL_CTRL_SET_TLSEXT_HOSTNAME,
+			TLSEXT_NAMETYPE_host_name, ace.data());
+}
+#endif
 
 #define OPENSSL_sk_dup d->kossl->OPENSSL_sk_dup
 
@@ -388,6 +420,8 @@ int rc;
 	d->m_ssl = d->kossl->SSL_new(d->m_ctx);
 	if (!d->m_ssl)
 		return -1;
+
+	setServerName(d->kossl, d->m_ssl, d->proxyPeer);
 
 	if (d->session) {
 		// OpenSSL >= 1.1.0 has no SSL_SESSION::sess_cert any more.
