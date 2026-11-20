@@ -22,6 +22,10 @@
 #include <config.h>
 #endif
 
+// usleep(); the <unistd.h> below is not reached because KSSL_HAVE_SSL
+// is only defined later by ksslconfig.h
+#include <unistd.h>
+
 // this hack provided by Malte Starostik to avoid glibc/openssl bug
 // on some systems
 #ifdef KSSL_HAVE_SSL
@@ -51,7 +55,7 @@
 #include <klocale.h>
 #include <ksocks.h>
 
-#define sk_dup d->kossl->sk_dup
+#define OPENSSL_sk_dup d->kossl->OPENSSL_sk_dup
 
 class KSSLPrivate {
 public:
@@ -216,7 +220,7 @@ bool KSSL::setSession(const KSSLSession *session) {
 	}
 
 	// Obtain a reference by incrementing the reference count.  Yuck.
-	static_cast<SSL_SESSION*>(session->_session)->references++;
+	d->kossl->SSL_SESSION_up_ref(static_cast<SSL_SESSION*>(session->_session));
 
 	d->session = new KSSLSession;
 	d->session->_session = session->_session;
@@ -284,7 +288,13 @@ int rc;
 		return -1;
 
 	if (d->session) {
-		if (static_cast<SSL_SESSION*>(d->session->_session)->sess_cert == 0)
+		// OpenSSL >= 1.1.0 has no SSL_SESSION::sess_cert any more.
+		// It held the peer's certificate chain, which
+		// d2i_SSL_SESSION() did not (and still does not) restore;
+		// KSSLSession::fromString() is the only source of sessions
+		// here, so this branch was always taken.  Keep that: a
+		// resumed session has no peer chain to verify against.
+		if (true)
 		{
 			kdDebug(7029) << "Can't reuse session, no certificate." << endl;
 			delete d->session;
@@ -308,7 +318,12 @@ int rc;
 	}
 */
 
-	int off = SSL_OP_ALL;
+	// SSL_OP_ALL includes bit 31 now; an int would sign-extend into
+	// the upper half of the 64-bit options.  OpenSSL >= 3.0 reports a
+	// peer that closes the connection without close_notify as an
+	// error; read() returned 0 (EOF) for it before, and HTTP/1.0
+	// servers that end the body by closing rely on that.
+	uint64_t off = SSL_OP_ALL | SSL_OP_IGNORE_UNEXPECTED_EOF;
 	if (!d->lastInitTLS && !m_cfg->tlsv1())
 		off |= SSL_OP_NO_TLSv1;
 	if (!m_cfg->sslv3())
@@ -375,7 +390,13 @@ int rc;
 		return -1;
 
 	if (d->session) {
-		if (static_cast<SSL_SESSION*>(d->session->_session)->sess_cert == 0)
+		// OpenSSL >= 1.1.0 has no SSL_SESSION::sess_cert any more.
+		// It held the peer's certificate chain, which
+		// d2i_SSL_SESSION() did not (and still does not) restore;
+		// KSSLSession::fromString() is the only source of sessions
+		// here, so this branch was always taken.  Keep that: a
+		// resumed session has no peer chain to verify against.
+		if (true)
 		{
 			kdDebug(7029) << "Can't reuse session, no certificate." << endl;
 			delete d->session;
@@ -399,7 +420,12 @@ int rc;
 	}
 */
 
-	int off = SSL_OP_ALL;
+	// SSL_OP_ALL includes bit 31 now; an int would sign-extend into
+	// the upper half of the 64-bit options.  OpenSSL >= 3.0 reports a
+	// peer that closes the connection without close_notify as an
+	// error; read() returned 0 (EOF) for it before, and HTTP/1.0
+	// servers that end the body by closing rely on that.
+	uint64_t off = SSL_OP_ALL | SSL_OP_IGNORE_UNEXPECTED_EOF;
 	if (!d->lastInitTLS && !m_cfg->tlsv1())
 		off |= SSL_OP_NO_TLSv1;
 	if (!m_cfg->sslv3())
@@ -613,7 +639,10 @@ void KSSL::setPeerInfo() {
 	m_pi.m_cert.setCert(d->kossl->SSL_get_peer_certificate(d->m_ssl));
 	STACK_OF(X509) *xs = d->kossl->SSL_get_peer_cert_chain(d->m_ssl);
 	if (xs)
-		xs = sk_X509_dup(xs);   // Leak? 
+		// not sk_X509_dup(): with OpenSSL 4 it also calls
+		// OPENSSL_sk_set_*thunks(), which this proxy does not
+		// provide; the copy inherits the thunks of xs anyway
+		xs = (STACK_OF(X509) *)OPENSSL_sk_dup((OPENSSL_STACK *)xs);   // Leak?
 	m_pi.m_cert.setChain((void *)xs);
 #endif
 }
@@ -671,7 +700,7 @@ EVP_PKEY *k = pkcs->getPrivateKey();
 #endif
 }
 
-#undef sk_dup
+#undef OPENSSL_sk_dup
 
 const KSSLSession* KSSL::session() const {
 	return d->session;

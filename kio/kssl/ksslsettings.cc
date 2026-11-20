@@ -47,13 +47,13 @@
 #include <kopenssl.h>
 
 #ifdef KSSL_HAVE_SSL
-#define sk_new d->kossl->sk_new
-#define sk_push d->kossl->sk_push
-#define sk_free d->kossl->sk_free
-#define sk_value d->kossl->sk_value
-#define sk_num d->kossl->sk_num
-#define sk_dup d->kossl->sk_dup
-#define sk_pop d->kossl->sk_pop
+#define OPENSSL_sk_new d->kossl->OPENSSL_sk_new
+#define OPENSSL_sk_push d->kossl->OPENSSL_sk_push
+#define OPENSSL_sk_free d->kossl->OPENSSL_sk_free
+#define OPENSSL_sk_value d->kossl->OPENSSL_sk_value
+#define OPENSSL_sk_num d->kossl->OPENSSL_sk_num
+#define OPENSSL_sk_dup d->kossl->OPENSSL_sk_dup
+#define OPENSSL_sk_pop d->kossl->OPENSSL_sk_pop
 #endif
 
       class CipherNode {
@@ -156,7 +156,7 @@ QString KSSLSettings::getCipherList() {
 	STACK_OF(SSL_CIPHER)* sk = d->kossl->SSL_get_ciphers(ssl);
 	int cnt = sk_SSL_CIPHER_num(sk);
 	for (int i=0; i< cnt; i++) {
-		SSL_CIPHER *sc = sk_SSL_CIPHER_value(sk,i);
+		const SSL_CIPHER *sc = sk_SSL_CIPHER_value(sk,i);
 		if (!sc)
 			break;
 
@@ -165,10 +165,10 @@ QString KSSLSettings::getCipherList() {
 		else
 			m_cfg->setGroup("SSLv3");
 
-		tcipher.sprintf("cipher_%s", sc->name);
+		tcipher.sprintf("cipher_%s", d->kossl->SSL_CIPHER_get_name(sc));
 		int bits = d->kossl->SSL_CIPHER_get_bits(sc, NULL);
 		if (m_cfg->readBoolEntry(tcipher, bits >= 56)) {
-			CipherNode *xx = new CipherNode(sc->name,bits);
+			CipherNode *xx = new CipherNode(d->kossl->SSL_CIPHER_get_name(sc),bits);
 			if (!cipherList.contains(xx))
 				cipherList.prepend(xx);
 			else
@@ -345,12 +345,12 @@ void KSSLSettings::setSSLv3(bool enabled) { m_bUseSSLv3 = enabled; }
 QString& KSSLSettings::getEGDPath()       { return d->m_EGDPath; }
 
 #ifdef KSSL_HAVE_SSL
-#undef sk_new
-#undef sk_push
-#undef sk_free
-#undef sk_value
-#undef sk_num
-#undef sk_pop
-#undef sk_dup
+#undef OPENSSL_sk_new
+#undef OPENSSL_sk_push
+#undef OPENSSL_sk_free
+#undef OPENSSL_sk_value
+#undef OPENSSL_sk_num
+#undef OPENSSL_sk_pop
+#undef OPENSSL_sk_dup
 #endif
 
