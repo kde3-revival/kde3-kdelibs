@@ -515,7 +515,11 @@ cups_local_auth(http_t *http)	/* I - Connection */
 #if CUPS_VERSION_MAJOR == 1 && CUPS_VERSION_MINOR >= 2
         if (!httpAddrLocalhost(http))
 #else
-	if (ntohl(httpGetAddress(http)->ipv4.sin_addr.s_addr) != 0x7f000001 &&
+  /*
+   * httpGetAddress() is NULL while the connection has no address;
+   * httpAddrLocalhost() also knows ::1 and AF_LOCAL sockets.
+   */
+	if ((!httpGetAddress(http) || !httpAddrLocalhost(httpGetAddress(http))) &&
       strcasecmp(httpGetHostname(http, NULL, 0), "localhost") != 0)
 #endif
    return (0);
