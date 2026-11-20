@@ -345,6 +345,15 @@ endif()
 # libart (svgicons): not ported, libart_lgpl is not available any more
 set(HAVE_LIBART "")
 
+# SVG icons (KIconLoader), rendered with librsvg into a cairo surface
+option(KDE3_WITH_SVG "SVG and SVGZ icons, rendered with librsvg" ON)
+if(KDE3_WITH_SVG)
+  pkg_check_modules(LIBRSVG IMPORTED_TARGET "librsvg-2.0 >= 2.52" cairo)
+  if(LIBRSVG_FOUND)
+    set(HAVE_LIBRSVG 1)
+  endif()
+endif()
+
 # XRender (kdefx)
 if(X11_Xrender_FOUND)
   set(HAVE_XRENDER 1)

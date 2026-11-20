@@ -229,6 +229,8 @@
 #cmakedefine HAVE_LIBPSL 1
 /* Defines if your system has the libart library */
 #cmakedefine HAVE_LIBART 1
+/* Define if SVG icons are rendered with librsvg */
+#cmakedefine HAVE_LIBRSVG 1
 /* Defined if your system has XRender support */
 #cmakedefine HAVE_XRENDER 1
 /* assembler support for IA32 extensions / AltiVec */

@@ -9,7 +9,8 @@ install(TARGETS kdemacros EXPORT KDE3LibsTargets)
 add_library(KDE3::kdemacros ALIAS kdemacros)
 
 add_subdirectory(network)
-# svgicons needs libart_lgpl (HAVE_LIBART), which is not available.
+# svgicons needs libart_lgpl (HAVE_LIBART), which is not available;
+# KIconLoader renders SVG icons with librsvg instead (ksvgiconrender.cpp).
 
 set(_kdecore_idn)
 if(HAVE_LIBIDN)
@@ -173,6 +174,11 @@ kde3_add_library(kdecore SHARED
     ${KDE3_LIBUTEMPTER}
     ${_kdecore_idn}
 )
+
+if(HAVE_LIBRSVG)
+  target_sources(kdecore PRIVATE ksvgiconrender.cpp)
+  target_link_libraries(kdecore PRIVATE PkgConfig::LIBRSVG)
+endif()
 
 # all_includes: -I$(top_builddir)/kdecore -I$(top_srcdir)/kdecore
 # -I$(top_srcdir)/kdecore/network

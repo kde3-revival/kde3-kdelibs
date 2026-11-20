@@ -44,11 +44,6 @@
 #include <qtoolbutton.h>
 #include <qwhatsthis.h>
 
-#ifdef HAVE_LIBART
-#include <svgicons/ksvgiconengine.h>
-#include <svgicons/ksvgiconpainter.h>
-#endif
-
 class KIconCanvas::KIconCanvasPrivate
 {
   public:
@@ -124,10 +119,6 @@ void KIconCanvas::slotLoadFiles()
     // disable updates to not trigger paint events when adding child items
     setUpdatesEnabled( false );
 
-#ifdef HAVE_LIBART
-    KSVGIconEngine *svgEngine = new KSVGIconEngine();
-#endif
-
     d->m_bLoading = true;
     int i;
     QStringList::ConstIterator it;
@@ -157,11 +148,15 @@ void KIconCanvas::slotLoadFiles()
 
 	if (ext != "SVG" && ext != "VGZ")
 	    img.load(*it);
-#ifdef HAVE_LIBART
 	else
-	    if (svgEngine->load(60, 60, *it))
-		img = *svgEngine->painter()->image();
-#endif
+	{
+	    // Rendered at 60x60 by KIconLoader if kdelibs has SVG support,
+	    // null otherwise.
+	    QPixmap svg = KGlobal::iconLoader()->loadIcon(path, KIcon::NoGroup,
+		    60, KIcon::DefaultState, 0L, true);
+	    if (!svg.isNull())
+		img = svg.convertToImage();
+	}
 
 	if (img.isNull())
 	    continue;
@@ -185,10 +180,6 @@ void KIconCanvas::slotLoadFiles()
 	item->setDragEnabled(false);
 	item->setDropEnabled(false);
     }
-
-#ifdef HAVE_LIBART
-    delete svgEngine;
-#endif
 
     // enable updates since we have to draw the whole view now
     setUpdatesEnabled( true );

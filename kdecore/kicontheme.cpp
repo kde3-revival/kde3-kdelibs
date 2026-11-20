@@ -592,7 +592,7 @@ QString KIconThemeDir::iconPath(const QString& name) const
 QStringList KIconThemeDir::iconList() const
 {
     QDir dir(mDir);
-#ifdef HAVE_LIBART
+#ifdef HAVE_LIBRSVG
     QStringList lst = dir.entryList("*.png;*.svg;*.svgz;*.xpm", QDir::Files);
 #else
     QStringList lst = dir.entryList("*.png;*.xpm", QDir::Files);

@@ -46,15 +46,15 @@
 #include <config.h>
 #include <assert.h>
 
-#ifdef HAVE_LIBART
-#include "svgicons/ksvgiconengine.h"
-#include "svgicons/ksvgiconpainter.h"
+#ifdef HAVE_LIBRSVG
+#include "ksvgiconrender_p.h"
 #endif
 
 #include "kiconloader_p.h"
 
 /*
- * Loads the icon file at @p path; SVG icons are rendered at @p size.
+ * Loads the icon file at @p path; SVG icons are rendered at @p size
+ * (their own size if @p size is 0).
  * Returns a new non-null image, or 0 if the file cannot be loaded (missing,
  * broken, or an SVG icon without SVG support).  The caller owns the image.
  */
@@ -71,17 +71,9 @@ static QImage *loadIconImage(const QString &path, int size)
 	if (img->isNull())
 	    img->load(path);
     }
-#ifdef HAVE_LIBART
+#ifdef HAVE_LIBRSVG
     else
-    {
-	// Special stuff for SVG icons
-	KSVGIconEngine *svgEngine = new KSVGIconEngine();
-
-	if (svgEngine->load(size, size, path))
-	    img = svgEngine->painter()->image();
-
-	delete svgEngine;
-    }
+	img = kdeRenderSvgIcon(path, size);
 #else
     Q_UNUSED(size);
 #endif
@@ -449,7 +441,7 @@ QString KIconLoader::removeIconExtension(const QString &name) const
     static const QString &xpm_ext = KGlobal::staticQString(".xpm");
     if (ext == png_ext || ext == xpm_ext)
       extensionLength=4;
-#ifdef HAVE_LIBART
+#ifdef HAVE_LIBRSVG
     else
     {
 	static const QString &svgz_ext = KGlobal::staticQString(".svgz");
@@ -492,7 +484,7 @@ KIcon KIconLoader::findMatchingIcon(const QString& name, int size) const
     int count=0;
     static const QString &png_ext = KGlobal::staticQString(".png");
     ext[count++]=&png_ext;
-#ifdef HAVE_LIBART
+#ifdef HAVE_LIBRSVG
     static const QString &svgz_ext = KGlobal::staticQString(".svgz");
     ext[count++]=&svgz_ext;
     static const QString &svg_ext = KGlobal::staticQString(".svg");
@@ -566,7 +558,7 @@ QString KIconLoader::iconPath(const QString& _name, int group_or_size,
 	static const QString &xpm_ext = KGlobal::staticQString(".xpm");
 	path = d->mpDirs->findResource("appicon", name + png_ext);
 
-#ifdef HAVE_LIBART
+#ifdef HAVE_LIBRSVG
 	static const QString &svgz_ext = KGlobal::staticQString(".svgz");
 	static const QString &svg_ext = KGlobal::staticQString(".svg");
 	if (path.isEmpty())

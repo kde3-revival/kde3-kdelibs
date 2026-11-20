@@ -412,8 +412,8 @@ public:
      * Currently supported:
      *   - png
      *   - xpm
-     *   - svg  (if libart is being used)
-     *   - svgz (if libart is being used)
+     *   - svg  (if kdelibs is built with SVG support)
+     *   - svgz (if kdelibs is built with SVG support)
      *
      * TODO: KDE 4 make public & static
      * @since 3.1
