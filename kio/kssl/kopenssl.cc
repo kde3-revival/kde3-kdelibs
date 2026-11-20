@@ -87,6 +87,10 @@ static void (*K_X509_free) (X509 *) = 0L;
 static char *(*K_X509_NAME_oneline) (X509_NAME *,char *,int) = 0L;
 static X509_NAME *(*K_X509_get_subject_name) (X509 *) = 0L;
 static X509_NAME *(*K_X509_get_issuer_name) (X509 *) = 0L;
+static int (*K_X509_NAME_get_index_by_NID) (const X509_NAME *, int, int) = 0L;
+static X509_NAME_ENTRY *(*K_X509_NAME_get_entry) (const X509_NAME *, int) = 0L;
+static ASN1_STRING *(*K_X509_NAME_ENTRY_get_data) (const X509_NAME_ENTRY *) = 0L;
+static int (*K_ASN1_STRING_to_UTF8) (unsigned char **, const ASN1_STRING *) = 0L;
 static X509_LOOKUP *(*K_X509_STORE_add_lookup) (X509_STORE *, X509_LOOKUP_METHOD *) = 0L;
 static X509_LOOKUP_METHOD *(*K_X509_LOOKUP_file)(void) = 0L;
 static void (*K_X509_LOOKUP_free)(X509_LOOKUP *) = 0L;
@@ -467,6 +471,10 @@ KConfig *cfg;
       K_X509_NAME_oneline = (char * (*) (X509_NAME *,char *,int)) _cryptoLib->symbol("X509_NAME_oneline");
       K_X509_get_subject_name = (X509_NAME * (*) (X509 *)) _cryptoLib->symbol("X509_get_subject_name");
       K_X509_get_issuer_name = (X509_NAME * (*) (X509 *)) _cryptoLib->symbol("X509_get_issuer_name");
+      K_X509_NAME_get_index_by_NID = (int (*) (const X509_NAME *, int, int)) _cryptoLib->symbol("X509_NAME_get_index_by_NID");
+      K_X509_NAME_get_entry = (X509_NAME_ENTRY * (*) (const X509_NAME *, int)) _cryptoLib->symbol("X509_NAME_get_entry");
+      K_X509_NAME_ENTRY_get_data = (ASN1_STRING * (*) (const X509_NAME_ENTRY *)) _cryptoLib->symbol("X509_NAME_ENTRY_get_data");
+      K_ASN1_STRING_to_UTF8 = (int (*) (unsigned char **, const ASN1_STRING *)) _cryptoLib->symbol("ASN1_STRING_to_UTF8");
       K_X509_STORE_add_lookup = (X509_LOOKUP *(*) (X509_STORE *, X509_LOOKUP_METHOD *)) _cryptoLib->symbol("X509_STORE_add_lookup");
       K_X509_LOOKUP_file = (X509_LOOKUP_METHOD *(*)(void)) _cryptoLib->symbol("X509_LOOKUP_file");
       K_X509_LOOKUP_free = (void (*)(X509_LOOKUP *)) _cryptoLib->symbol("X509_LOOKUP_free");
@@ -1004,6 +1012,30 @@ X509_NAME *KOpenSSLProxy::X509_get_subject_name(X509 *a) {
 X509_NAME *KOpenSSLProxy::X509_get_issuer_name(X509 *a) {
    if (K_X509_get_issuer_name) return (K_X509_get_issuer_name)(a);
    return 0L;
+}
+
+
+int KOpenSSLProxy::X509_NAME_get_index_by_NID(X509_NAME *name, int nid, int lastpos) {
+   if (K_X509_NAME_get_index_by_NID) return (K_X509_NAME_get_index_by_NID)(name,nid,lastpos);
+   return -1;
+}
+
+
+X509_NAME_ENTRY *KOpenSSLProxy::X509_NAME_get_entry(X509_NAME *name, int loc) {
+   if (K_X509_NAME_get_entry) return (K_X509_NAME_get_entry)(name,loc);
+   return 0L;
+}
+
+
+ASN1_STRING *KOpenSSLProxy::X509_NAME_ENTRY_get_data(X509_NAME_ENTRY *ne) {
+   if (K_X509_NAME_ENTRY_get_data) return (K_X509_NAME_ENTRY_get_data)(ne);
+   return 0L;
+}
+
+
+int KOpenSSLProxy::ASN1_STRING_to_UTF8(unsigned char **out, ASN1_STRING *in) {
+   if (K_ASN1_STRING_to_UTF8) return (K_ASN1_STRING_to_UTF8)(out,in);
+   return -1;
 }
 
 

@@ -434,6 +434,32 @@ public:
 
 
    /*
+    *   X509_NAME_get_index_by_NID - find the next entry of a type
+    *   (e.g. NID_commonName) after lastpos in an X509_NAME
+    */
+   int X509_NAME_get_index_by_NID(X509_NAME *name, int nid, int lastpos);
+
+
+   /*
+    *   X509_NAME_get_entry - return an entry of an X509_NAME
+    */
+   X509_NAME_ENTRY *X509_NAME_get_entry(X509_NAME *name, int loc);
+
+
+   /*
+    *   X509_NAME_ENTRY_get_data - return the value of an X509_NAME entry
+    */
+   ASN1_STRING *X509_NAME_ENTRY_get_data(X509_NAME_ENTRY *ne);
+
+
+   /*
+    *   ASN1_STRING_to_UTF8 - convert an ASN1_STRING to UTF-8 in a buffer
+    *   to be freed with OPENSSL_free() (CRYPTO_free()); returns its length
+    */
+   int ASN1_STRING_to_UTF8(unsigned char **out, ASN1_STRING *in);
+
+
+   /*
     *   X509_STORE_add_lookup - add a lookup file/method to an X509 store
     */
    X509_LOOKUP *X509_STORE_add_lookup(X509_STORE *v, X509_LOOKUP_METHOD *m);
