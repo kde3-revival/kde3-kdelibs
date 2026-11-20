@@ -7,11 +7,8 @@
 *
 * Documented interfaces are:
 *
-* - KSpeech (speech services interface)
 * - TerminalInterface
-* - KHE (hexa editor interface)
 * - KTextEditor (a generic text-editor interface)
-* - KScriptInterface (script engine interface)
 * - KRegExpEditorInterface (regular expression editor interface)
 * - KIMProxy, KIMIface (instant messenger interfaces)
 */

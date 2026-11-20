@@ -9,6 +9,7 @@ configure.in.in
 ./kdeprint/configure.in.in
 ./kdeprint/cups/configure.in.in
 ./kdesu/configure.in.in
+./kdeui/configure.in.in
 ./kdoctools/configure.in.in
 ./khtml/configure.in.in
 ./kimgio/configure.in.in
@@ -21,8 +22,6 @@ configure.in.in
 ./kioslave/http/configure.in.bot
 ./kioslave/http/configure.in.in
 ./kjs/configure.in.in
-./kspell2/plugins/configure.in.bot
-./kspell2/plugins/configure.in.in
 ./libkscreensaver/configure.in.in
 configure.in.mid
 configure.in.bot
