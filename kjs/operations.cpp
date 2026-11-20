@@ -80,7 +80,9 @@ bool KJS::isInf(double d)
 bool KJS::isPosInf(double d)
 {
 #if defined(HAVE_FUNC_ISINF)
-  return (isinf(d) == 1);
+  // isinf() only promises a non-zero value; glibc's used to be -1 for
+  // -Infinity, the C99 macro and C++'s std::isinf() give 1 or true
+  return isinf(d) && d > 0;
 #elif HAVE_FUNC_FINITE
   return finite(d) == 0 && d == d; // ### can we distinguish between + and - ?
 #elif HAVE_FUNC__FINITE
@@ -93,7 +95,7 @@ bool KJS::isPosInf(double d)
 bool KJS::isNegInf(double d)
 {
 #if defined(HAVE_FUNC_ISINF)
-  return (isinf(d) == -1);
+  return isinf(d) && d < 0;
 #elif HAVE_FUNC_FINITE
   return finite(d) == 0 && d == d; // ###
 #elif HAVE_FUNC__FINITE
