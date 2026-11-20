@@ -31,27 +31,11 @@
 #include "kdebug.h"
 #include "klocale.h"
 
-#include "ltdl.h"
+#include "kdlopen_p.h"
 
 template class QAsciiDict<KLibrary>;
 
 #include <stdlib.h> //getenv
-
-
-#if HAVE_DLFCN_H
-#  include <dlfcn.h>
-#endif
-
-#ifdef RTLD_GLOBAL
-#  define LT_GLOBAL             RTLD_GLOBAL
-#else
-#  ifdef DL_GLOBAL
-#    define LT_GLOBAL           DL_GLOBAL
-#  endif
-#endif /* !RTLD_GLOBAL */
-#ifndef LT_GLOBAL
-#  define LT_GLOBAL             0
-#endif /* !LT_GLOBAL */
 
 
 class KLibLoaderPrivate
@@ -178,10 +162,10 @@ KLibFactory* KLibrary::factory()
 
 void* KLibrary::symbol( const char* symname ) const
 {
-    void* sym = lt_dlsym( (lt_dlhandle) m_handle, symname );
+    void* sym = dlsym( m_handle, symname );
     if ( !sym )
     {
-        KLibLoader::self()->d->errorMessage = "KLibrary: " + QString::fromLocal8Bit( lt_dlerror() );
+        KLibLoader::self()->d->errorMessage = "KLibrary: " + QString::fromLocal8Bit( dlerror() );
         kdWarning(150) << KLibLoader::self()->d->errorMessage << endl;
         return 0;
     }
@@ -191,7 +175,7 @@ void* KLibrary::symbol( const char* symname ) const
 
 bool KLibrary::hasSymbol( const char* symname ) const
 {
-    void* sym = lt_dlsym( (lt_dlhandle) m_handle, symname );
+    void* sym = dlsym( m_handle, symname );
     return (sym != 0L );
 }
 
@@ -261,24 +245,24 @@ void KLibrary::slotTimeout()
 class KLibWrapPrivate
 {
 public:
-    KLibWrapPrivate(KLibrary *l, lt_dlhandle h);
+    KLibWrapPrivate(KLibrary *l, void *h);
 
     KLibrary *lib;
     enum {UNKNOWN, UNLOAD, DONT_UNLOAD} unload_mode;
     int ref_count;
-    lt_dlhandle handle;
+    void *handle;
     QString name;
     QString filename;
 };
 
-KLibWrapPrivate::KLibWrapPrivate(KLibrary *l, lt_dlhandle h)
+KLibWrapPrivate::KLibWrapPrivate(KLibrary *l, void *h)
  : lib(l), ref_count(1), handle(h), name(l->name()), filename(l->fileName())
 {
     unload_mode = UNKNOWN;
-    if (lt_dlsym(handle, "__kde_do_not_unload") != 0) {
+    if (dlsym(handle, "__kde_do_not_unload") != 0) {
 //        kdDebug(150) << "Will not unload " << name << endl;
         unload_mode = DONT_UNLOAD;
-    } else if (lt_dlsym(handle, "__kde_do_unload") != 0) {
+    } else if (dlsym(handle, "__kde_do_unload") != 0) {
         unload_mode = UNLOAD;
     }
 }
@@ -304,7 +288,6 @@ KLibLoader::KLibLoader( QObject* parent, const char* name )
 {
     s_self = this;
     d = new KLibLoaderPrivate;
-    lt_dlinit();
     d->unload_mode = KLibLoaderPrivate::UNKNOWN;
     if (getenv("KDE_NOUNLOAD") != 0)
         d->unload_mode = KLibLoaderPrivate::DONT_UNLOAD;
@@ -334,14 +317,18 @@ KLibLoader::~KLibLoader()
 static inline QCString makeLibName( const char* name )
 {
     QCString libname(name);
-    // only append ".la" if there is no extension
-    // this allows to load non-libtool libraries as well
+    // only append ".so" if there is no extension
+    // this allows to load libraries with other extensions as well
     // (mhk, 20000228)
+    // libtool library names ("foo.la") still in use by callers and
+    // configuration files are mapped to the shared object ("foo.so").
     int pos = libname.findRev('/');
     if (pos < 0)
       pos = 0;
     if (libname.find('.', pos) < 0)
-      libname += ".la";
+      libname += ".so";
+    else if (libname.right(3) == ".la")
+      libname.replace(libname.length() - 3, 3, ".so");
     return libname;
 }
 
@@ -374,14 +361,14 @@ QString KLibLoader::findLibrary( const char * name, const KInstance * instance )
 KLibrary* KLibLoader::globalLibrary( const char *name )
 {
 KLibrary *tmp;
-int olt_dlopen_flag = lt_dlopen_flag;
+int olt_dlopen_flag = kde_dlopen_flags;
 
-   lt_dlopen_flag |= LT_GLOBAL;
+   kde_dlopen_flags |= RTLD_GLOBAL;
    kdDebug(150) << "Loading the next library global with flag "
-                << lt_dlopen_flag
+                << kde_dlopen_flags
                 << "." << endl;
    tmp = library(name);
-   lt_dlopen_flag = olt_dlopen_flag;
+   kde_dlopen_flags = olt_dlopen_flag;
 
 return tmp;
 }
@@ -426,10 +413,10 @@ KLibrary* KLibLoader::library( const char *name )
         return 0;
       }
 
-      lt_dlhandle handle = lt_dlopen( QFile::encodeName(libfile) );
+      void *handle = kde_dlopen( QFile::encodeName(libfile) );
       if ( !handle )
       {
-        const char* errmsg = lt_dlerror();
+        const char* errmsg = dlerror();
         if(errmsg)
             d->errorMessage = QString::fromLocal8Bit(errmsg);
         else
@@ -564,7 +551,7 @@ void KLibLoader::close_pending(KLibWrapPrivate *wrap)
     }
 
     deleted_one = true;
-    lt_dlclose(wrap->handle);
+    dlclose(wrap->handle);
     d->pending_close.removeRef(wrap);
     /* loaded_stack is AutoDelete, so wrap is freed */
     d->loaded_stack.remove();

@@ -270,7 +270,8 @@ public:
      * wants to open modules.
      * @param name of the library. If it is not a path, the function searches in
      *             the "module" and "lib" resources. If there is no extension,
-     *             ".la" will be appended.
+     *             ".so" will be appended; a ".la" extension is replaced
+     *             by ".so".
      * @param instance a KInstance used to get the standard paths
      */
     static QString findLibrary( const char * name, const KInstance * instance = KGlobal::instance() );
