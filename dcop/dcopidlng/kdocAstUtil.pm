@@ -438,8 +438,10 @@ sub dumpAst
 		dumpAst( $kid );
 	}
 
-	print "\t" x $depth, "Documentation nodes:\n" if defined 
-		@{ $node->{Doc}->{ "Text" }};
+	# was "if defined @{ ... }", which perl >= 5.22 rejects; that was
+	# true when the array existed and had been filled
+	print "\t" x $depth, "Documentation nodes:\n" if defined
+		$node->{Doc}->{ "Text" } && @{ $node->{Doc}->{ "Text" }};
 
 	foreach $kid ( @{ $node->{Doc}->{ "Text" }} ) {
 		dumpAst( $kid );
