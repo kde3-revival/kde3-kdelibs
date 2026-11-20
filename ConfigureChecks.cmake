@@ -298,14 +298,21 @@ if(KDE3_WITH_UTEMPTER)
       # strings "add" and "del") is run as "utempter add [<host>]" and
       # "utempter del"; the old one of Red Hat's utempter package as
       # "utempter -a <tty> <host>" and "utempter -d <tty>".
-      file(STRINGS "${UTEMPTER_HELPER}" _kde3_utempter_words
-        LENGTH_MINIMUM 3 REGEX "^(add|del)$")
-      if(UTEMPTER_HELPER MATCHES "/utempter/utempter$"
-         OR ("add" IN_LIST _kde3_utempter_words
-             AND "del" IN_LIST _kde3_utempter_words))
+      # The helper may not be readable (setgid, mode 2711): look into it
+      # only if it is, which CMake < 3.29 cannot tell.
+      if(UTEMPTER_HELPER MATCHES "/utempter/utempter$")
         set(UTEMPTER_HELPER_ADD_DEL 1)
+      elseif(CMAKE_VERSION VERSION_GREATER_EQUAL 3.29)
+        if(IS_READABLE "${UTEMPTER_HELPER}")
+          file(STRINGS "${UTEMPTER_HELPER}" _kde3_utempter_words
+            LENGTH_MINIMUM 3 REGEX "^(add|del)$")
+          if("add" IN_LIST _kde3_utempter_words
+             AND "del" IN_LIST _kde3_utempter_words)
+            set(UTEMPTER_HELPER_ADD_DEL 1)
+          endif()
+          unset(_kde3_utempter_words)
+        endif()
       endif()
-      unset(_kde3_utempter_words)
     endif()
   endif()
 endif()
