@@ -27,7 +27,9 @@ cache; values set by the user or a packager are left alone.
 Always: C++ ``-fno-exceptions -fno-check-new -fno-common`` (targets
 whose Makefile.am used $(USE_EXCEPTIONS) get ``-fexceptions`` from the
 KDE3 macros' ``EXCEPTIONS`` option), the warning flags of
-``kde_use_warnings`` unless ``KDE3_ENABLE_WARNINGS`` is OFF, and
+``kde_use_warnings`` unless ``KDE3_ENABLE_WARNINGS`` is OFF,
+``-fmacro-prefix-map`` for the project's source and build directories
+(GCC >= 8, Clang >= 10: ``__FILE__`` holds no build machine paths), and
 ``-Wl,--no-undefined`` for shared libraries (libtool's -no-undefined
 is a no-op on Linux; this only turns missing symbols, like a missing
 moc file, into link errors).
@@ -85,6 +87,16 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(
       "$<$<COMPILE_LANGUAGE:CXX>:-Wall;-W;-Wpointer-arith;-Wundef;-Wno-long-long;-Wcast-align;-Wchar-subscripts;-Wformat-security;-Wmissing-format-attribute;-Wno-non-virtual-dtor>"
       "$<$<COMPILE_LANGUAGE:C>:-W;-Wall;-Wchar-subscripts;-Wshadow;-Wpointer-arith;-Wmissing-prototypes;-Wwrite-strings;-Wformat-security;-Wmissing-format-attribute>")
+  endif()
+  # __FILE__ (kdDebug(), Q_ASSERT, ...) without the build machine's
+  # source and build directories of the project being built (the one
+  # that includes this file: kdelibs, or the module that finds
+  # KDE3Libs).  Paths below them become relative; a build directory
+  # inside the source directory keeps its relative name at worst.
+  if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8)
+     OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 10))
+    add_compile_options("-fmacro-prefix-map=${PROJECT_SOURCE_DIR}/="
+                        "-fmacro-prefix-map=${PROJECT_BINARY_DIR}/=")
   endif()
   # Modules are left alone: kded modules, for example, resolve
   # KDEDModule from the kded process (LIB_KDED is empty on Linux).
