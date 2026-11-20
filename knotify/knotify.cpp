@@ -136,13 +136,16 @@ void KNotify::loadConfig() {
     // load external player settings
     KConfig *kc = KGlobal::config();
     kc->setGroup("Misc");
-    d->useExternal = kc->readBoolEntry( "Use external player", false );
+    // The external player is the only way to play sounds, so it is used
+    // unless the user explicitly switched it off. Without a configured
+    // or auto-detected player sounds stay silent (see notifyBySound()).
+    d->useExternal = kc->readBoolEntry( "Use external player", true );
     d->externalPlayer = kc->readPathEntry("External player");
 
     // try to locate a suitable player if none is configured
     if ( d->externalPlayer.isEmpty() ) {
         QStringList players;
-        players << "wavplay" << "aplay" << "auplay";
+        players << "pw-play" << "paplay" << "aplay" << "wavplay" << "auplay";
         QStringList::Iterator it = players.begin();
         while ( d->externalPlayer.isEmpty() && it != players.end() ) {
             d->externalPlayer = KStandardDirs::findExe( *it );
@@ -334,7 +337,19 @@ bool KNotify::notifyBySound( const QString &sound, const QString &appname, int e
            return false; // Skip
         }
         proc->clearArguments();
-        (*proc) << d->externalPlayer << QFile::encodeName( soundFile );
+        (*proc) << d->externalPlayer;
+        // pass the volume to the players known to take it
+        const int volume = QMIN( QMAX( d->volume, 0 ), 100 );
+        const QString player = QFileInfo( d->externalPlayer ).fileName();
+        if ( player == "pw-play" ) {      // linear, 0.0 .. 1.0
+            // built by hand: the decimal point must not depend on the locale
+            QString frac = QString::number( volume % 100 );
+            if ( frac.length() < 2 )
+                frac.prepend( '0' );
+            (*proc) << QString::fromLatin1( "--volume=%1.%2" ).arg( volume / 100 ).arg( frac );
+        } else if ( player == "paplay" )    // linear, 0 .. 65536 (100%)
+            (*proc) << QString::fromLatin1( "--volume=%1" ).arg( volume * 65536 / 100 );
+        (*proc) << QFile::encodeName( soundFile );
         d->externalPlayerEventId = eventId;
         proc->start(KProcess::NotifyOnExit);
         return true;
