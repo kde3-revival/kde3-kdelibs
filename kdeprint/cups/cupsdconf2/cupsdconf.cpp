@@ -629,26 +629,26 @@ bool CupsdConf::loadAvailableResources()
 	cups_lang_t*	lang = cupsLangDefault();
 	ippAddString(request_, IPP_TAG_OPERATION, IPP_TAG_CHARSET, "attributes-charset", NULL, cupsLangEncoding(lang));
 	ippAddString(request_, IPP_TAG_OPERATION, IPP_TAG_LANGUAGE, "attributes-natural-language", NULL, lang->language);
-	request_->request.op.operation_id = CUPS_GET_PRINTERS;
+	ippSetOperation(request_, CUPS_GET_PRINTERS);
 	request_ = cupsDoRequest(http_, request_, "/printers/");
 	if (request_)
 	{
 		QString	name;
 		int	type(0);
-		ipp_attribute_t	*attr = request_->attrs;
+		ipp_attribute_t	*attr = ippFirstAttribute(request_);
 		while (attr)
 		{
 			// check new printer (keep only local non-implicit printers)
-			if (!attr->name)
+			if (!ippGetName(attr))
 			{
 				if (!(type & CUPS_PRINTER_REMOTE) && !(type & CUPS_PRINTER_IMPLICIT) && !name.isEmpty())
 					resources_.append(new CupsResource("/printers/"+name));
 				name = "";
 				type = 0;
 			}
-			else if (strcmp(attr->name, "printer-name") == 0) name = attr->values[0].string.text;
-			else if (strcmp(attr->name, "printer-type") == 0) type = attr->values[0].integer;
-			attr = attr->next;
+			else if (strcmp(ippGetName(attr), "printer-name") == 0) name = ippGetString(attr, 0, NULL);
+			else if (strcmp(ippGetName(attr), "printer-type") == 0) type = ippGetInteger(attr, 0);
+			attr = ippNextAttribute(request_);
 		}
 		if (!(type & CUPS_PRINTER_REMOTE) && !(type & CUPS_PRINTER_IMPLICIT) && !name.isEmpty())
 			resources_.append(new CupsResource("/printers/"+name));
@@ -658,26 +658,26 @@ bool CupsdConf::loadAvailableResources()
 	request_ = ippNew();
 	ippAddString(request_, IPP_TAG_OPERATION, IPP_TAG_CHARSET, "attributes-charset", NULL, cupsLangEncoding(lang));
 	ippAddString(request_, IPP_TAG_OPERATION, IPP_TAG_LANGUAGE, "attributes-natural-language", NULL, lang->language);
-	request_->request.op.operation_id = CUPS_GET_CLASSES;
+	ippSetOperation(request_, CUPS_GET_CLASSES);
 	request_ = cupsDoRequest(http_, request_, "/classes/");
 	if (request_)
 	{
 		QString	name;
 		int	type(0);
-		ipp_attribute_t	*attr = request_->attrs;
+		ipp_attribute_t	*attr = ippFirstAttribute(request_);
 		while (attr)
 		{
 			// check new class (keep only local classes)
-			if (!attr->name)
+			if (!ippGetName(attr))
 			{
 				if (!(type & CUPS_PRINTER_REMOTE) && !name.isEmpty())
 					resources_.append(new CupsResource("/classes/"+name));
 				name = "";
 				type = 0;
 			}
-			else if (strcmp(attr->name, "printer-name") == 0) name = attr->values[0].string.text;
-			else if (strcmp(attr->name, "printer-type") == 0) type = attr->values[0].integer;
-			attr = attr->next;
+			else if (strcmp(ippGetName(attr), "printer-name") == 0) name = ippGetString(attr, 0, NULL);
+			else if (strcmp(ippGetName(attr), "printer-type") == 0) type = ippGetInteger(attr, 0);
+			attr = ippNextAttribute(request_);
 		}
 		if (!(type & CUPS_PRINTER_REMOTE) && !name.isEmpty())
 			resources_.append(new CupsResource("/classes/"+name));
