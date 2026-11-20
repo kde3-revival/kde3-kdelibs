@@ -1,0 +1,5 @@
+add_subdirectory(interfaces)
+add_subdirectory(part)
+add_subdirectory(data)
+add_subdirectory(scripts)
+add_subdirectory(plugins)
