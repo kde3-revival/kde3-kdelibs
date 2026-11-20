@@ -221,7 +221,7 @@ void KMFactory::loadFactory(const QString& syst)
                         // The plugin may simply be gone, e.g. a PrintSystem=lpr or rlpr
                         // left from a version that still had those plugins: fall back to
                         // the auto-detected print system, as for an empty PrintSystem.
-                        // Only if its kdeprint/<sys>.print file is gone too: an installed
+                        // Only if its kdeprint/plugins/<sys>.print file is gone too: an installed
                         // plugin that fails to load is reported, not silently replaced.
                         bool	installed = !locate("data", QString::fromLatin1("kdeprint/plugins/%1.print").arg(sys)).isEmpty();
                         QString	detected = (installed ? QString::null : autoDetect());
