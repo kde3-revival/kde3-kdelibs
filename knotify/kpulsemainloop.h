@@ -99,6 +99,7 @@ private:
     friend class KPulseIoNotifier;
     void dispatchIo( KPulseIoEvent *e, pa_io_event_flags_t flag );
     void armTimer( KPulseTimeEvent *e, const struct timeval *tv );
+    void startDueTimer( KPulseTimeEvent *e );
     void disarmTimer( KPulseTimeEvent *e );
     void dispatchTimer( KPulseTimeEvent *e );
     void dispatchDefers();

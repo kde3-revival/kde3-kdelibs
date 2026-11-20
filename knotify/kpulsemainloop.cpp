@@ -289,7 +289,12 @@ void KPulseMainloop::armTimer( KPulseTimeEvent *e, const struct timeval *tv )
         return;
     e->tv = *tv;
     e->due = monotonicDue( tv );
+    startDueTimer( e );
+}
 
+// Start the Qt timer of e for its monotonic deadline e->due.
+void KPulseMainloop::startDueTimer( KPulseTimeEvent *e )
+{
     const pa_usec_t now = pa_rtclock_now();
     // round up: Qt timers have millisecond resolution and the event must
     // never be dispatched before it is due
@@ -319,11 +324,13 @@ void KPulseMainloop::dispatchTimer( KPulseTimeEvent *e )
     if ( e->dead )
         return;
     if ( pa_rtclock_now() < e->due ) {
-        // early (coarse Qt timer): wait for the rest
-        struct timeval tv = e->tv;
-        const pa_usec_t due = e->due;
-        armTimer( e, &tv );
-        e->due = due;
+        // early (coarse Qt timer, or the wall clock that Qt3 timers run on
+        // stepped forward, e.g. on resume from suspend): wait for the rest
+        // of the monotonic deadline. Not via armTimer( e->tv ): that
+        // converts from the wall clock again, which after a forward step
+        // gives a deadline in the past, the timer fires at once and this
+        // would spin until e->due.
+        startDueTimer( e );
         return;
     }
     // like pa_mainloop: the event is disabled before the callback, which
