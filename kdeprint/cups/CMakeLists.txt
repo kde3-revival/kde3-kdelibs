@@ -83,7 +83,23 @@ option(KDE3_INSTALL_CUPS_PPD "Install postscript.ppd.gz into CUPS' model directo
 if(KDE3_INSTALL_CUPS_PPD)
   foreach(_d /usr/share/cups /usr/local/share/cups /opt/share/cups /opt/local/share/cups)
     if(IS_DIRECTORY "${_d}/model")
-      install(FILES postscript.ppd.gz DESTINATION "${_d}/model" OPTIONAL)
+      # "$(INSTALL_DATA) ... || true": a user installing into his own
+      # prefix without DESTDIR cannot write there; note it and go on.
+      set(_ppd "${CMAKE_CURRENT_SOURCE_DIR}/postscript.ppd.gz")
+      install(CODE "
+        set(_dir \"\$ENV{DESTDIR}${_d}/model\")
+        execute_process(COMMAND \"\${CMAKE_COMMAND}\" -E make_directory \"\${_dir}\"
+          RESULT_VARIABLE _r OUTPUT_QUIET ERROR_QUIET)
+        if(_r EQUAL 0)
+          execute_process(COMMAND \"\${CMAKE_COMMAND}\" -E copy \"${_ppd}\" \"\${_dir}/\"
+            RESULT_VARIABLE _r OUTPUT_QUIET ERROR_QUIET)
+        endif()
+        if(_r EQUAL 0)
+          message(STATUS \"Installing: \${_dir}/postscript.ppd.gz\")
+          list(APPEND CMAKE_INSTALL_MANIFEST_FILES \"\${_dir}/postscript.ppd.gz\")
+        else()
+          message(STATUS \"Not installed (no permission): \${_dir}/postscript.ppd.gz\")
+        endif()")
       break()
     endif()
   endforeach()
