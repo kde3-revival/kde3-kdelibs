@@ -15,7 +15,9 @@ Functions that replace the KDE 3 automake extensions (admin/am_edit):
   ``KDE3::<name>`` with the alias ``KDE3::<name>`` in the build as well
   (other modules pass their own EXPORT set).  OBJECT libraries replace
   libtool convenience libraries (noinst_LTLIBRARIES): link them into the
-  library that used them in LIBADD.
+  library that used them in LIBADD; nested ones (an OBJECT library in
+  the LINK of another) reach the final targets automatically, see
+  kde3_resolve_convenience_libraries().
 ``kde3_add_module(<name> ...)``
   A plugin loaded with KLibLoader (``kde_module_LTLIBRARIES``,
   ``-module -avoid-version``): ``<name>.so`` without ``lib`` prefix and
@@ -744,6 +746,84 @@ function(kde3_create_handbook appname)
         \"\$ENV{DESTDIR}${_destx}/common\" SYMBOLIC)")
   endif()
 endfunction()
+
+# ---------------------------------------------------------------------
+# kde3_resolve_convenience_libraries()
+#
+# libtool convenience libraries nest: one with another in its LIBADD
+# contains that one's objects, and so does every library or program
+# linking it.  CMake links the objects of an OBJECT library only into
+# the targets that name it directly, so this adds the OBJECT libraries
+# reached through other OBJECT libraries to the shared libraries,
+# modules and programs that link them.  It runs by itself at the end of
+# the top-level directory of every project that includes these macros
+# (once; calling it explicitly earlier does the work then instead).
+
+function(_kde3_collect_targets dir out)
+  get_property(_t DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
+  get_property(_subdirs DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
+  foreach(_d IN LISTS _subdirs)
+    _kde3_collect_targets("${_d}" _sub)
+    list(APPEND _t ${_sub})
+  endforeach()
+  set(${out} ${_t} PARENT_SCOPE)
+endfunction()
+
+function(_kde3_object_deps target out)
+  # the OBJECT libraries linked by the OBJECT library <target>, recursively
+  set(_result)
+  get_target_property(_libs ${target} LINK_LIBRARIES)
+  foreach(_l IN LISTS _libs)
+    if(TARGET "${_l}")
+      get_target_property(_type "${_l}" TYPE)
+      if(_type STREQUAL "OBJECT_LIBRARY")
+        list(APPEND _result "${_l}")
+        _kde3_object_deps("${_l}" _sub)
+        list(APPEND _result ${_sub})
+      endif()
+    endif()
+  endforeach()
+  list(REMOVE_DUPLICATES _result)
+  set(${out} ${_result} PARENT_SCOPE)
+endfunction()
+
+function(kde3_resolve_convenience_libraries)
+  get_property(_done GLOBAL PROPERTY _KDE3_CONVENIENCE_RESOLVED)
+  if(_done)
+    return()
+  endif()
+  set_property(GLOBAL PROPERTY _KDE3_CONVENIENCE_RESOLVED TRUE)
+  _kde3_collect_targets("${CMAKE_SOURCE_DIR}" _targets)
+  foreach(_t IN LISTS _targets)
+    get_target_property(_type ${_t} TYPE)
+    if(NOT _type MATCHES "^(SHARED_LIBRARY|MODULE_LIBRARY|EXECUTABLE)$")
+      continue()
+    endif()
+    get_target_property(_libs ${_t} LINK_LIBRARIES)
+    set(_direct)
+    set(_nested)
+    foreach(_l IN LISTS _libs)
+      if(TARGET "${_l}")
+        get_target_property(_ltype "${_l}" TYPE)
+        if(_ltype STREQUAL "OBJECT_LIBRARY")
+          list(APPEND _direct "${_l}")
+          _kde3_object_deps("${_l}" _sub)
+          list(APPEND _nested ${_sub})
+        endif()
+      endif()
+    endforeach()
+    if(_nested)
+      list(REMOVE_DUPLICATES _nested)
+      list(REMOVE_ITEM _nested ${_direct})
+      if(_nested)
+        message(DEBUG "${_t}: nested convenience libraries ${_nested}")
+        target_link_libraries(${_t} PRIVATE ${_nested})
+      endif()
+    endif()
+  endforeach()
+endfunction()
+cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}"
+  CALL kde3_resolve_convenience_libraries)
 
 # ---------------------------------------------------------------------
 # kde3_generate_stdout(<output> COMMAND <cmd> <args>... [INPUT <file>]
