@@ -25,6 +25,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <config.h>
 
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <errno.h>
 #include <pwd.h>
 #include <unistd.h>
 #include <ctype.h>
@@ -389,25 +391,39 @@ static UserList userList()
 
 /**
  * Return the ICE authority file of a session of @p user.
- * libICE uses $XDG_RUNTIME_DIR/ICEauthority when XDG_RUNTIME_DIR is set
- * (by logind/elogind: /run/user/<uid>), else $HOME/.ICEauthority.
- * The runtime file is preferred when it exists; for the current user
- * $XDG_RUNTIME_DIR is used, for other users /run/user/<uid>.
+ * For the current user it is the file DCOP itself uses (the libICE rules:
+ * $ICEAUTHORITY, else $XDG_RUNTIME_DIR/ICEauthority, else
+ * $HOME/.ICEauthority).  For other users it is /run/user/<uid>/ICEauthority
+ * (their XDG_RUNTIME_DIR, set by logind/elogind) when that exists, else
+ * ~user/.ICEauthority.
+ * Sets @p unreadableDir when the file may be in /run/user/<uid>, but that
+ * directory cannot be searched by us (it is private to its owner).
  */
-static QString iceAuthFileForUser( const QString &user, const QString &home )
+static QString iceAuthFileForUser( const QString &user, const QString &home,
+                                   bool *unreadableDir )
 {
+    *unreadableDir = false;
     passwd *pw = getpwnam( user.local8Bit() );
-    if( pw )
+    if( pw && pw->pw_uid == getuid() )
     {
-	QString runtimeDir;
-	const char *xdgRuntimeDir = getenv( "XDG_RUNTIME_DIR" );
-	if( pw->pw_uid == getuid() && xdgRuntimeDir && *xdgRuntimeDir )
-	    runtimeDir = QFile::decodeName( xdgRuntimeDir );
-	else
-	    runtimeDir = QString( "/run/user/%1" ).arg( pw->pw_uid );
-	QString runtimeFile = runtimeDir + "/ICEauthority";
-	if( QFileInfo( runtimeFile ).exists() )
+	QCString file = DCOPClient::iceauthFile();
+	if( !file.isEmpty() )
+	    return QFile::decodeName( file );
+    }
+    else if( pw )
+    {
+	QString runtimeFile =
+	    QString( "/run/user/%1/ICEauthority" ).arg( pw->pw_uid );
+	// Not QFileInfo::exists(): it cannot tell a missing file from one
+	// in a directory we may not search.
+	struct stat st;
+	if( stat( QFile::encodeName( runtimeFile ), &st ) == 0 )
 	    return runtimeFile;
+	if( errno == EACCES )
+	{
+	    *unreadableDir = true;
+	    return runtimeFile;
+	}
     }
     if( home.isEmpty() )
 	return QString::null;
@@ -621,13 +637,26 @@ int runDCOP( QCStringList args, UserList users, Session session,
 	    ( getenv( "ICEAUTHORITY" ) == 0 || getenv( "DISPLAY" ) == 0 ) ) )
 	{
 	    // Check for ICE authority file and if the file can be read by us
-	    QString iceFile = iceAuthFileForUser( it.key(), it.data() );
+	    bool unreadableDir;
+	    QString iceFile = iceAuthFileForUser( it.key(), it.data(),
+						  &unreadableDir );
 	    QFileInfo fi( iceFile );
 	    if( iceFile.isEmpty() )
 	    {
 		cerr_ << "WARNING: Cannot determine home directory for user "
 		     << it.key() << "!" << endl
 		     << "Please check permissions or set the $ICEAUTHORITY variable manually before" << endl
+		     << "calling dcop." << endl;
+	    }
+	    else if( unreadableDir )
+	    {
+		// Not ~user/.ICEauthority: a session with a runtime
+		// directory does not use it, it would only be stale.
+		cerr_ << "WARNING: The ICE authority file of user " << it.key()
+		     << " is " << iceFile << " if the session has" << endl
+		     << "a runtime directory, which only that user can read." << endl
+		     << "Please run dcop as root or as " << it.key()
+		     << ", or set the $ICEAUTHORITY variable manually before" << endl
 		     << "calling dcop." << endl;
 	    }
 	    else if( fi.exists() )
@@ -641,7 +670,7 @@ int runDCOP( QCStringList args, UserList users, Session session,
 		else
 		{
 		    cerr_ << "WARNING: ICE authority file " << iceFile
-			 << "is not readable by you!" << endl
+			 << " is not readable by you!" << endl
 			 << "Please check permissions or set the $ICEAUTHORITY variable manually before" << endl
 			 << "calling dcop." << endl;
 		}
