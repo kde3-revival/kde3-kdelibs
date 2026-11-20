@@ -96,6 +96,9 @@ add_subdirectory(pics)
 add_subdirectory(kdewidgets)
 add_subdirectory(kate)
 
+# potdir = $(kde_includes): the message template of common_texts.cpp
+install(FILES kde.pot DESTINATION ${KDE3_INCLUDE_INSTALL_DIR})
+
 # ---------------------------------------------------------------------
 # CMake package for the other KDE 3 modules
 

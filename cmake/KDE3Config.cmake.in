@@ -1,7 +1,10 @@
 # KDE3Config.cmake: kdelibs @KDELIBS_VERSION@ for other KDE 3 modules
 # (kdebase, kdepim, ...).
 #
-#   find_package(KDE3 REQUIRED)
+#   find_package(KDE3 3.5 CONFIG REQUIRED)
+#
+# (CONFIG is needed: CMake ships an unrelated FindKDE3.cmake module for
+# its own old KDE 3 support, which module mode would pick first.)
 #
 # provides the imported targets KDE3::<library> (KDE3::kdecore,
 # KDE3::kdeui, KDE3::kio, KDE3::kparts, ...), the tools KDE3::dcopidl,
