@@ -47,7 +47,7 @@ KPFilterPage::KPFilterPage(QWidget *parent, const char *name)
 						" checks your filtering chain and will warn you if you fail to do so.</p> "
 						" <p><b>Note 2:</b> The filters you define here are applied to your jobfile "
 						" <em><b>before</b></em> it is handed downstream to your spooler and print "
-						" subsystem (e.g. CUPS, LPRng, LPD).</p>"
+						" subsystem (CUPS).</p>"
 						" </ul>"
 						" </qt>" );
 
@@ -104,8 +104,8 @@ KPFilterPage::KPFilterPage(QWidget *parent, const char *name)
 						" through this interface. </p> "
 						" <p>KDEPrint ships preconfigured with support for a selection of common filters. These "
 						" filters however need to be "
-						" installed independently from KDEPrint. These pre-filters work <em>for all</em> print subsystems"
-						" supported by KDEPrint (such as CUPS, LPRng and LPD), because they are not depending on these.</p> "
+						" installed independently from KDEPrint. These pre-filters do not depend on the print"
+						" subsystem.</p> "
 						".<p> Amongst the pre-configured filters shipping with KDEPrint are: </p> "
 						" <ul> "
 						" <li>the <em>Enscript text filter</em>  </li> "

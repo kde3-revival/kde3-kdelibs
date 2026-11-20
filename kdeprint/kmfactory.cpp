@@ -218,9 +218,10 @@ void KMFactory::loadFactory(const QString& syst)
                 if (!m_factory)
                 {
                         QString	diagnostic = KLibLoader::self()->lastErrorMessage();
-                        // The plugin may simply be gone, e.g. a PrintSystem=lpr or rlpr
-                        // left from a version that still had those plugins: fall back to
-                        // the auto-detected print system, as for an empty PrintSystem.
+                        // The plugin may simply be gone, e.g. a PrintSystem=lpdunix, ext,
+                        // lpr or rlpr left from a version that still had those plugins
+                        // (CUPS is the only one now): fall back to the auto-detected
+                        // print system, as for an empty PrintSystem.
                         // Only if its kdeprint/plugins/<sys>.print file is gone too: an installed
                         // plugin that fails to load is reported, not silently replaced.
                         bool	installed = !locate("data", QString::fromLatin1("kdeprint/plugins/%1.print").arg(sys)).isEmpty();
@@ -268,16 +269,16 @@ QString KMFactory::printSystem()
 	KConfig	*conf = printConfig();
 	conf->setGroup("General");
 	QString	sys = conf->readEntry("PrintSystem");
-	if (sys.isEmpty())
+	// an old-style numeric setting (KDE 2) meant the generic LPD print
+	// system, which is gone: discard it like an empty one
+	if (sys.isEmpty() || (sys.length()==1 && sys[0].isDigit()))
 	{
-		// perform auto-detection (will at least return "lpdunix")
+		// perform auto-detection (will at least return "cups")
 		sys = autoDetect();
 		// save the result
 		conf->writeEntry("PrintSystem", sys);
 		conf->sync();
 	}
-	else if ( sys.length()==1 && sys[0].isDigit() ) // discard old-style settings
-        	sys = "lpdunix";
 	return sys;
 }
 
@@ -390,7 +391,9 @@ QString KMFactory::autoDetect()
 			currentPrecedence = plugins[i].detectPrecedence;
 		}
 	}
-	return (pluginIndex == -1 ? QString::fromLatin1("lpdunix") : plugins[pluginIndex].name);
+	// CUPS is the only print system kdeprint has: it is the default even
+	// when its DetectUris do not match (no CUPS server running right now)
+	return (pluginIndex == -1 ? QString::fromLatin1("cups") : plugins[pluginIndex].name);
 }
 
 void KMFactory::slot_pluginChanged(pid_t pid)
