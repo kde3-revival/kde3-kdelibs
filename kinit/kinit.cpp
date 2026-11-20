@@ -1750,7 +1750,11 @@ int main(int argc, char **argv, char **envp)
 #ifndef __CYGWIN__
    if (!d.suicide && !getenv("KDE_IS_PRELINKED"))
    {
-      QString konq = locate("lib", "libkonq.so", s_instance);
+      // libkonq.so is only the development symlink, which packages
+      // put into a -devel package; the runtime has the soname
+      QString konq = locate("lib", "libkonq.so.4", s_instance);
+      if (konq.isEmpty())
+         konq = locate("lib", "libkonq.so", s_instance);
       if (!konq.isEmpty())
 	  (void) kde_dlopen(QFile::encodeName(konq).data());
    }
