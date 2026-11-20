@@ -680,11 +680,18 @@ function(kde3_create_handbook appname)
     string(MAKE_C_IDENTIFIER "handbook_${ARG_LANG}_${appname}" _t)
     add_custom_target(${_t} ALL DEPENDS "${_cache}")
     install(FILES "${_cache}" DESTINATION "${_dest}")
-    # "common" -> $(kde_libs_htmldir)/<lang>/common
+    # "common" -> $(kde_libs_htmldir)/<lang>/common: the handbook
+    # stylesheets and images installed by kdelibs, also when the module
+    # is installed into another prefix
+    if(DEFINED KDE3_LIBS_HTML_DIR)
+      set(_common "${KDE3_LIBS_HTML_DIR}/${ARG_LANG}/common")
+    else()
+      set(_common "${KDE3_FULL_HTML_INSTALL_DIR}/${ARG_LANG}/common")
+    endif()
     install(CODE "
       file(MAKE_DIRECTORY \"\$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${_dest}\")
       file(REMOVE \"\$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${_dest}/common\")
-      file(CREATE_LINK \"${KDE3_FULL_HTML_INSTALL_DIR}/${ARG_LANG}/common\"
+      file(CREATE_LINK \"${_common}\"
         \"\$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${_dest}/common\" SYMBOLIC)")
   endif()
 endfunction()
