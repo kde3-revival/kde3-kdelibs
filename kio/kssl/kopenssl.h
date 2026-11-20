@@ -354,6 +354,23 @@ public:
    void X509_STORE_set_verify_cb(X509_STORE *v, int (*verify_cb)(int, X509_STORE_CTX *));
 
    /*
+    *   X509_STORE_set_default_paths - use the system's trusted
+    *   certificates (OpenSSL's default CA file and directory, or
+    *   SSL_CERT_FILE/SSL_CERT_DIR)
+    */
+   int X509_STORE_set_default_paths(X509_STORE *v);
+
+   /*
+    *   X509_STORE_add_cert - add a trusted certificate
+    */
+   int X509_STORE_add_cert(X509_STORE *v, X509 *x);
+
+   /*
+    *   X509_STORE_CTX_get0_chain - the chain X509_verify_cert() built
+    */
+   STACK_OF(X509) *X509_STORE_CTX_get0_chain(X509_STORE_CTX *v);
+
+   /*
     *   X509_STORE_CTX_set_purpose - set the purpose of the certificate 
     */
    void X509_STORE_CTX_set_purpose(X509_STORE_CTX *v, int purpose);

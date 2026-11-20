@@ -617,57 +617,26 @@ return false;
 
 ///////////////////////////////////////////////////////////////////////////
 
-void KSSLD::caVerifyUpdate() {
+// kssld used to write the CAs of ksslcalist that are trusted for SSL to
+// $KDEHOME/share/apps/kssl/ca-bundle.crt, which KSSLCertificate then
+// verified against instead of kdelibs' bundled ca-bundle.crt.  Both
+// bundles are gone: KSSLCertificate trusts the system's CA store and
+// reads the CAs added in KDE from ksslcalist itself.  Remove a
+// generated bundle left over from an older kdelibs.
+static void caRemoveGeneratedBundle() {
 	QString path = KGlobal::dirs()->saveLocation("kssl") + "/ca-bundle.crt";
-	if (!QFile::exists(path))
-		return;
-	
-	cfg->setGroup(QString::null);
-	Q_UINT32 newStamp = KGlobal::dirs()->calcResourceHash("config", "ksslcalist", true);
-	Q_UINT32 oldStamp = cfg->readUnsignedNumEntry("ksslcalistStamp");
-	if (oldStamp != newStamp)
-	{
-		caRegenerate();
-		cfg->writeEntry("ksslcalistStamp", newStamp);
-		cfg->sync();
-	}
+	if (QFile::exists(path))
+		QFile::remove(path);
 }
 
+void KSSLD::caVerifyUpdate() {
+	caRemoveGeneratedBundle();
+}
+
+// DCOP: KSSLSigners::regenerate().  Nothing to generate any more.
 bool KSSLD::caRegenerate() {
-QString path = KGlobal::dirs()->saveLocation("kssl") + "/ca-bundle.crt";
-
-QFile out(path);
-
-	if (!out.open(IO_WriteOnly))
-		return false;
-
-KConfig cfg("ksslcalist", true, false);
-
-QStringList x = cfg.groupList();
-
-	for (QStringList::Iterator i = x.begin();
-				   i != x.end();
-				   ++i) {
-		if ((*i).isEmpty() || *i == "<default>") continue;
-
-		cfg.setGroup(*i);
-
-		if (!cfg.readBoolEntry("site", false)) continue;
-
-		QString cert = cfg.readEntry("x509", "");
-		if (cert.length() <= 0) continue;
-
-		unsigned int xx = cert.length() - 1;
-		for (unsigned int j = 0; j < xx/64; j++) {
-			cert.insert(64*(j+1)+j, '\n');
-		}
-		out.writeBlock("-----BEGIN CERTIFICATE-----\n", 28);
-		out.writeBlock(cert.latin1(), cert.length());
-		out.writeBlock("\n-----END CERTIFICATE-----\n\n", 28);
-		out.flush();
-	}
-
-return true;
+	caRemoveGeneratedBundle();
+	return true;
 }
 
 

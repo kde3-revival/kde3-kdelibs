@@ -131,6 +131,9 @@ static void (*K_X509_STORE_CTX_set_error) (X509_STORE_CTX *, int) = 0L;
 static int (*K_X509_STORE_CTX_get_error_depth) (X509_STORE_CTX *) = 0L;
 static X509* (*K_X509_STORE_CTX_get_current_cert) (X509_STORE_CTX *) = 0L;
 static void (*K_X509_STORE_set_verify_cb) (X509_STORE *, int (*)(int, X509_STORE_CTX *)) = 0L;
+static int (*K_X509_STORE_set_default_paths) (X509_STORE *) = 0L;
+static int (*K_X509_STORE_add_cert) (X509_STORE *, X509 *) = 0L;
+static STACK_OF(X509) *(*K_X509_STORE_CTX_get0_chain) (X509_STORE_CTX *) = 0L;
 static void (*K_sk_free) (OPENSSL_STACK*) = 0L;
 static int (*K_sk_num) (const OPENSSL_STACK*) = 0L;
 static char* (*K_sk_pop) (OPENSSL_STACK*) = 0L;
@@ -499,6 +502,9 @@ KConfig *cfg;
       K_X509_STORE_CTX_get_error_depth = (int (*)(X509_STORE_CTX *)) _cryptoLib->symbol("X509_STORE_CTX_get_error_depth");
       K_X509_STORE_CTX_get_current_cert = (X509* (*)(X509_STORE_CTX *)) _cryptoLib->symbol("X509_STORE_CTX_get_current_cert");
       K_X509_STORE_set_verify_cb = (void (*)(X509_STORE *, int (*)(int, X509_STORE_CTX *))) _cryptoLib->symbol("X509_STORE_set_verify_cb");
+      K_X509_STORE_set_default_paths = (int (*)(X509_STORE *)) _cryptoLib->symbol("X509_STORE_set_default_paths");
+      K_X509_STORE_add_cert = (int (*)(X509_STORE *, X509 *)) _cryptoLib->symbol("X509_STORE_add_cert");
+      K_X509_STORE_CTX_get0_chain = (STACK_OF(X509) *(*)(X509_STORE_CTX *)) _cryptoLib->symbol("X509_STORE_CTX_get0_chain");
       // the sk_* functions were renamed to OPENSSL_sk_* in OpenSSL 1.1.0
       K_sk_free = (void (*) (OPENSSL_STACK *)) _cryptoLib->symbol("OPENSSL_sk_free");
       K_sk_num = (int (*) (const OPENSSL_STACK *)) _cryptoLib->symbol("OPENSSL_sk_num");
@@ -1245,6 +1251,24 @@ X509 *KOpenSSLProxy::X509_STORE_CTX_get_current_cert(X509_STORE_CTX *v) {
 
 void KOpenSSLProxy::X509_STORE_set_verify_cb(X509_STORE *v, int (*verify_cb)(int, X509_STORE_CTX *)) {
    if (K_X509_STORE_set_verify_cb) (K_X509_STORE_set_verify_cb)(v, verify_cb);
+}
+
+
+int KOpenSSLProxy::X509_STORE_set_default_paths(X509_STORE *v) {
+   if (K_X509_STORE_set_default_paths) return (K_X509_STORE_set_default_paths)(v);
+   return 0;
+}
+
+
+int KOpenSSLProxy::X509_STORE_add_cert(X509_STORE *v, X509 *x) {
+   if (K_X509_STORE_add_cert) return (K_X509_STORE_add_cert)(v, x);
+   return 0;
+}
+
+
+STACK_OF(X509) *KOpenSSLProxy::X509_STORE_CTX_get0_chain(X509_STORE_CTX *v) {
+   if (K_X509_STORE_CTX_get0_chain) return (K_X509_STORE_CTX_get0_chain)(v);
+   return 0L;
 }
 
 

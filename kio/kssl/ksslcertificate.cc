@@ -36,6 +36,7 @@
 #include "ksslutils.h"
 
 #include <kstandarddirs.h>
+#include <kconfig.h>
 #include <kmdcodec.h>
 #include <klocale.h>
 #include <qdatetime.h>
@@ -614,8 +615,49 @@ KSSLCertificate::KSSLValidation KSSLCertificate::validate(KSSLCertificate::KSSLP
 // See apps/verify.c in OpenSSL for the source of most of this logic.
 //
 
+#ifdef KSSL_HAVE_SSL
+// The CAs added in KDE (the crypto KControl module, KSSLD::caAdd()):
+// the groups of ksslcalist are named after the subject and hold the
+// certificate (x509) and what it is trusted for (site, email, code).
+// As with the ca-bundle.crt kssld used to generate from it, the CAs
+// trusted for SSL ("site") are trusted for every purpose; they are
+// added to store.  The subjects of those with site=false are returned
+// in distrusted.  A group without x509 only holds the flags the user
+// gave a CA of the bundled list kdelibs no longer has: such a CA is
+// trusted only if the system store has it, unless site=false.
+static void addUserCAs(X509_STORE *store, QStringList &distrusted)
+{
+	KConfig cfg("ksslcalist", true, false);
+	QStringList groups = cfg.groupList();
+
+	for (QStringList::Iterator i = groups.begin(); i != groups.end(); ++i) {
+		if ((*i).isEmpty() || *i == "<default>")
+			continue;
+		cfg.setGroup(*i);
+		if (!cfg.readBoolEntry("site", false)) {
+			if (cfg.hasKey("site"))
+				distrusted << *i;
+			continue;
+		}
+		QString x509 = cfg.readEntry("x509");
+		if (x509.isEmpty())
+			continue;
+		// base64 DER, as KSSLCertificate::toString() writes it
+		QByteArray der, b64 = x509.local8Bit().copy();
+		KCodecs::base64Decode(b64, der);
+		unsigned char *p = reinterpret_cast<unsigned char *>(der.data());
+		X509 *c = KOSSL::self()->d2i_X509(NULL, &p, der.size());
+		if (c) {
+			// the store takes its own reference
+			KOSSL::self()->X509_STORE_add_cert(store, c);
+			KOSSL::self()->X509_free(c);
+		}
+	}
+}
+#endif
+
 // CRL files?  we don't do that yet
-KSSLCertificate::KSSLValidationList KSSLCertificate::validateVerbose(KSSLCertificate::KSSLPurpose purpose) 
+KSSLCertificate::KSSLValidationList KSSLCertificate::validateVerbose(KSSLCertificate::KSSLPurpose purpose)
 {
 	return validateVerbose(purpose, 0);
 }
@@ -632,7 +674,6 @@ KSSLCertificate::KSSLValidationList KSSLCertificate::validateVerbose(KSSLCertifi
 
 #ifdef KSSL_HAVE_SSL
 	X509_STORE *certStore;
-	X509_LOOKUP *certLookup;
 	X509_STORE_CTX *certStoreCTX;
 	int rc = 0;
 
@@ -647,22 +688,10 @@ KSSLCertificate::KSSLValidationList KSSLCertificate::validateVerbose(KSSLCertifi
 		return errors;
 	}
 
-	QStringList qsl = KGlobal::dirs()->resourceDirs("kssl");
-
-	if (qsl.isEmpty()) {
-		errors << KSSLCertificate::NoCARoot;
-		return errors;
-	}
-
 	KSSLCertificate::KSSLValidation ksslv = Unknown;
 
-	for (QStringList::Iterator j = qsl.begin(); j != qsl.end(); ++j) {
-		struct stat sb;
-		QString _j = (*j) + "ca-bundle.crt";
-		if (-1 == stat(_j.ascii(), &sb)) {
-			continue;
-		}
-
+	// A single pass; "continue" and "break" leave it.
+	for (int pass = 0; pass < 1; ++pass) {
 		certStore = d->kossl->X509_STORE_new();
 		if (!certStore) {
 			errors << KSSLCertificate::Unknown;
@@ -671,21 +700,14 @@ KSSLCertificate::KSSLValidationList KSSLCertificate::validateVerbose(KSSLCertifi
 
 		d->kossl->X509_STORE_set_verify_cb(certStore, X509Callback);
 
-		certLookup = d->kossl->X509_STORE_add_lookup(certStore, d->kossl->X509_LOOKUP_file());
-		if (!certLookup) {
-			ksslv = KSSLCertificate::Unknown;
-			d->kossl->X509_STORE_free(certStore);
-			continue;
+		// The trusted CAs are the system's (OpenSSL's default CA
+		// file and directory, i.e. the distribution's store, or
+		// SSL_CERT_FILE/SSL_CERT_DIR) and the ones added in KDE.
+		if (!d->kossl->X509_STORE_set_default_paths(certStore)) {
+			kdDebug(7029) << "KSSL couldn't use the system's CA certificates" << endl;
 		}
-
-		if (!d->kossl->X509_LOOKUP_load_file(certLookup, _j.ascii(), X509_FILETYPE_PEM)) {
-			// error accessing directory and loading pems
-			kdDebug(7029) << "KSSL couldn't read CA root: " 
-					<< _j << endl;
-			ksslv = KSSLCertificate::ErrorReadingRoot;
-			d->kossl->X509_STORE_free(certStore);
-			continue;
-		}
+		QStringList distrusted;
+		addUserCAs(certStore, distrusted);
 
 		// This is the checking code
 		certStoreCTX = d->kossl->X509_STORE_CTX_new();
@@ -739,6 +761,22 @@ KSSLCertificate::KSSLValidationList KSSLCertificate::validateVerbose(KSSLCertifi
 			rc = d->kossl->X509_verify_cert(certStoreCTX);
 			errcode = d->kossl->X509_STORE_CTX_get_error(certStoreCTX);
 			ksslv = processError(errcode);
+		}
+		// A CA the user has taken the SSL trust from in KDE stays
+		// untrusted even if the system store has it.
+		if (ksslv == KSSLCertificate::Ok && !distrusted.isEmpty()) {
+			STACK_OF(X509) *chain = d->kossl->X509_STORE_CTX_get0_chain(certStoreCTX);
+			int n = chain ? d->kossl->OPENSSL_sk_num((OPENSSL_STACK *)chain) : 0;
+			for (int i = 0; i < n; i++) {
+				X509 *c = (X509 *)d->kossl->OPENSSL_sk_value((OPENSSL_STACK *)chain, i);
+				KSSLCertificate *kc = KSSLCertificate::fromX509(c);
+				bool untrusted = kc && distrusted.contains(kc->getSubject());
+				delete kc;
+				if (untrusted) {
+					ksslv = KSSLCertificate::Untrusted;
+					break;
+				}
+			}
 		}
 		d->kossl->X509_STORE_CTX_free(certStoreCTX);
 		d->kossl->X509_STORE_free(certStore);

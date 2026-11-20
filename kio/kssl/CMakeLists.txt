@@ -69,5 +69,3 @@ install(FILES
   ksslx509map.h
   ksmimecrypto.h
   DESTINATION ${KDE3_INCLUDE_INSTALL_DIR})
-
-add_subdirectory(kssl)
