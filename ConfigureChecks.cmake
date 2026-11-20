@@ -15,7 +15,6 @@ include(CheckCSourceRuns)
 include(TestBigEndian)
 include(CMakePushCheckState)
 
-set(KDELIBSUFF "" CACHE STRING "Suffix of the library directories (lib<suffix>)")
 set(KDE_DISTRIBUTION_TEXT "compiled sources" CACHE STRING
   "Distribution text appended to the OS in bug reports")
 
