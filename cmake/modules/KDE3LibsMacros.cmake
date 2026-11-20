@@ -72,6 +72,13 @@ Other functions:
 ``kde3_create_handbook(<appname> [LANG <lang>] [FILES ...])``
   KDE_DOCS: index.cache.bz2 via meinproc and installation into
   KDE3_HTML_INSTALL_DIR/<lang>/<appname> with the "common" symlink.
+``kde3_install_time_path(<var> <dir>)``
+  ``<dir>`` as a path to write into ``install(CODE)``/``install(SCRIPT)``
+  code: an absolute one as it is, a relative one below
+  ``${CMAKE_INSTALL_PREFIX}`` as it is at install time (escaped, so that
+  ``cmake --install --prefix`` applies as with ``install(FILES)``; the
+  code still has to put ``$ENV{DESTDIR}`` in front).  Also available as
+  ``_kde3_install_time_path``.
 #]=======================================================================]
 
 # Once per directory (and its subdirectories): the variables set here
@@ -714,17 +721,23 @@ function(kde3_install_icons)
 endfunction()
 
 # ---------------------------------------------------------------------
-# _kde3_install_time_path(<var> <dir>): <dir> as it is to be written into
+# kde3_install_time_path(<var> <dir>): <dir> as it is to be written into
 # install(CODE): absolute dirs as they are, relative ones below
 # ${CMAKE_INSTALL_PREFIX} of the installation, which
 # "cmake --install --prefix" may change, like install(FILES) does.
 
-function(_kde3_install_time_path var dir)
+function(kde3_install_time_path var dir)
   if(IS_ABSOLUTE "${dir}")
     set(${var} "${dir}" PARENT_SCOPE)
   else()
     set(${var} "\${CMAKE_INSTALL_PREFIX}/${dir}" PARENT_SCOPE)
   endif()
+endfunction()
+
+# the name it had before it was public
+function(_kde3_install_time_path var dir)
+  kde3_install_time_path(_path "${dir}")
+  set(${var} "${_path}" PARENT_SCOPE)
 endfunction()
 
 # ---------------------------------------------------------------------
@@ -783,7 +796,7 @@ function(kde3_create_handbook appname)
     else()
       set(_common "${KDE3_FULL_HTML_INSTALL_DIR}/${ARG_LANG}/common")
     endif()
-    _kde3_install_time_path(_destx "${_dest}")
+    kde3_install_time_path(_destx "${_dest}")
     install(CODE "
       file(MAKE_DIRECTORY \"\$ENV{DESTDIR}${_destx}\")
       file(REMOVE \"\$ENV{DESTDIR}${_destx}/common\")
@@ -901,7 +914,7 @@ endfunction()
 # a note (packagers set the mode themselves).
 
 function(kde3_install_setuid_root name)
-  _kde3_install_time_path(_bindir "${KDE3_BIN_INSTALL_DIR}")
+  kde3_install_time_path(_bindir "${KDE3_BIN_INSTALL_DIR}")
   install(CODE "
     set(_f \"\$ENV{DESTDIR}${_bindir}/${name}\")
     execute_process(COMMAND chown 0 \"\${_f}\" RESULT_VARIABLE _r
@@ -919,7 +932,7 @@ endfunction()
 # <target> ($(LN_S) in install hooks).
 
 function(kde3_install_symlink target link)
-  _kde3_install_time_path(link "${link}")
+  kde3_install_time_path(link "${link}")
   install(CODE "
     set(_l \"\$ENV{DESTDIR}${link}\")
     get_filename_component(_d \"\${_l}\" DIRECTORY)
