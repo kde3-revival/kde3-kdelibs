@@ -23,6 +23,7 @@
 
 // C headers
 #include <fcntl.h>
+#include <math.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -400,8 +401,13 @@ bool KNotify::playExternal( const QString &soundFile, int eventId )
             if ( frac.length() < 2 )
                 frac.prepend( '0' );
             (*proc) << QString::fromLatin1( "--volume=%1.%2" ).arg( volume / 100 ).arg( frac );
-        } else if ( player == "paplay" )    // linear, 0 .. 65536 (100%)
-            (*proc) << QString::fromLatin1( "--volume=%1" ).arg( volume * 65536 / 100 );
+        } else if ( player == "paplay" ) {  // pa_volume_t, 0 .. 65536 (100%)
+            // a PulseAudio volume is cubic: give the value for the same linear
+            // amplitude as above, i.e. pa_sw_volume_from_linear( volume / 100.0 )
+            int paVolume = (int)( 65536 * cbrt( volume / 100.0 ) + 0.5 );
+            paVolume = QMIN( QMAX( paVolume, 0 ), 65536 );
+            (*proc) << QString::fromLatin1( "--volume=%1" ).arg( paVolume );
+        }
         (*proc) << QFile::encodeName( soundFile );
         d->externalPlayerEventId = eventId;
         proc->start(KProcess::NotifyOnExit);
