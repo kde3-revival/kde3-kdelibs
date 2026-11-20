@@ -4,6 +4,12 @@
 #   project(kdebase VERSION 3.5.10 LANGUAGES C CXX)
 #   find_package(KDE3Libs 3.5 REQUIRED)
 #
+# Call find_package(KDE3Libs) in the top-level CMakeLists.txt: the
+# imported targets, the variables below and the compiler settings
+# (add_compile_options()) apply to the directory it is called in and
+# its subdirectories only.  Sibling subdirectories that each call it
+# get the same setup each.
+#
 # (The package is not called KDE3: CMake ships an unrelated FindKDE3
 # module and KDE3Macros.cmake for its own old KDE 3 support.  Loading
 # those in the same project is an error.)

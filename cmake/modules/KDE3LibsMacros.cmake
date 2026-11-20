@@ -74,7 +74,11 @@ Other functions:
   KDE3_HTML_INSTALL_DIR/<lang>/<appname> with the "common" symlink.
 #]=======================================================================]
 
-include_guard(GLOBAL)
+# Once per directory (and its subdirectories): the variables set here
+# (KDE3_TOOL_LAUNCHER, KDE3_*_EXECUTABLE, ...), which the functions use,
+# are directory-scoped, so a sibling directory that finds KDE3Libs
+# again needs them as well.
+include_guard(DIRECTORY)
 
 # CMake's Modules/KDE3Macros.cmake (included by Modules/FindKDE3.cmake)
 # defines kde3_add_executable(), kde3_add_kdeinit_executable(),

@@ -38,7 +38,10 @@ glibc feature set are used), ``-fvisibility=hidden`` (autotools only
 used it with --enable-gcc-hidden-visibility, default off).
 #]=======================================================================]
 
-include_guard(GLOBAL)
+# Once per directory (and its subdirectories): add_compile_options()
+# and the variables set here only apply to the current directory, so a
+# sibling directory that finds KDE3Libs again needs them as well.
+include_guard(DIRECTORY)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING
