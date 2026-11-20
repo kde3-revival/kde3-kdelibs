@@ -266,11 +266,47 @@ if(KDE3_WITH_ACL)
 endif()
 
 # utempter
+# KPty registers its sessions in utmp through libutempter's
+# utempter_add_record()/utempter_remove_record() (the library runs its
+# setgid helper, wherever the distribution installed it).  Without the
+# library API, KPty runs the helper program itself: UTEMPTER_HELPER.
 option(KDE3_WITH_UTEMPTER "Use utempter for utmp management" ON)
+set(KDE3_LIBUTEMPTER "")
 if(KDE3_WITH_UTEMPTER)
+  find_path(UTEMPTER_INCLUDE_DIR utempter.h)
   find_library(UTEMPTER_LIBRARY utempter)
-  if(UTEMPTER_LIBRARY)
-    check_library_exists(utempter addToUtmp "" HAVE_UTEMPTER)
+  mark_as_advanced(UTEMPTER_INCLUDE_DIR UTEMPTER_LIBRARY)
+  if(UTEMPTER_INCLUDE_DIR AND UTEMPTER_LIBRARY)
+    cmake_push_check_state(RESET)
+    set(CMAKE_REQUIRED_INCLUDES ${UTEMPTER_INCLUDE_DIR})
+    set(CMAKE_REQUIRED_LIBRARIES ${UTEMPTER_LIBRARY})
+    check_symbol_exists(utempter_add_record utempter.h HAVE_UTEMPTER_RECORD)
+    cmake_pop_check_state()
+  endif()
+  if(HAVE_UTEMPTER_RECORD)
+    set(HAVE_UTEMPTER 1)
+    set(KDE3_LIBUTEMPTER ${UTEMPTER_LIBRARY})
+  else()
+    find_program(UTEMPTER_HELPER utempter
+      PATHS /usr/libexec/utempter /usr/lib/utempter /usr/lib64/utempter
+            /usr/libexec /usr/sbin
+      NO_DEFAULT_PATH)
+    mark_as_advanced(UTEMPTER_HELPER)
+    if(UTEMPTER_HELPER)
+      set(HAVE_UTEMPTER 1)
+      # libutempter's helper (in a utempter/ directory, with the
+      # strings "add" and "del") is run as "utempter add [<host>]" and
+      # "utempter del"; the old one of Red Hat's utempter package as
+      # "utempter -a <tty> <host>" and "utempter -d <tty>".
+      file(STRINGS "${UTEMPTER_HELPER}" _kde3_utempter_words
+        LENGTH_MINIMUM 3 REGEX "^(add|del)$")
+      if(UTEMPTER_HELPER MATCHES "/utempter/utempter$"
+         OR ("add" IN_LIST _kde3_utempter_words
+             AND "del" IN_LIST _kde3_utempter_words))
+        set(UTEMPTER_HELPER_ADD_DEL 1)
+      endif()
+      unset(_kde3_utempter_words)
+    endif()
   endif()
 endif()
 

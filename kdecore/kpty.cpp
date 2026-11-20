@@ -127,6 +127,12 @@ extern "C" {
 #include <kdebug.h>
 #include <kstandarddirs.h>	// locate
 
+#ifdef HAVE_UTEMPTER_RECORD
+extern "C" {
+# include <utempter.h>
+}
+#endif
+
 #ifndef CINTR
 #define CINTR	0x03
 #endif
@@ -143,7 +149,8 @@ extern "C" {
 // private functions //
 ///////////////////////
 
-#ifdef HAVE_UTEMPTER
+#if defined(HAVE_UTEMPTER) && !defined(HAVE_UTEMPTER_RECORD)
+// runs the utempter helper with the pty master as stdin/stdout/fd 3
 class KProcess_Utmp : public KProcess
 {
 public:
@@ -403,10 +410,20 @@ void KPty::setCTty()
 
 void KPty::login(const char *user, const char *remotehost)
 {
-#ifdef HAVE_UTEMPTER
+#if defined(HAVE_UTEMPTER_RECORD)
+    // no host, as the helper was called with ""
+    utempter_add_record(d->masterFd, 0);
+    Q_UNUSED(user);
+    Q_UNUSED(remotehost);
+#elif defined(HAVE_UTEMPTER)
     KProcess_Utmp utmp;
     utmp.cmdFd = d->masterFd;
-    utmp << "/usr/sbin/utempter" << "-a" << d->ttyName << "";
+# ifdef UTEMPTER_HELPER_ADD_DEL
+    // libutempter's helper finds the tty from the pty master (stdin)
+    utmp << UTEMPTER_HELPER << "add";
+# else
+    utmp << UTEMPTER_HELPER << "-a" << d->ttyName << "";
+# endif
     utmp.start(KProcess::Block);
     Q_UNUSED(user);
     Q_UNUSED(remotehost);
@@ -446,10 +463,16 @@ void KPty::login(const char *user, const char *remotehost)
 
 void KPty::logout()
 {
-#ifdef HAVE_UTEMPTER
+#if defined(HAVE_UTEMPTER_RECORD)
+    utempter_remove_record(d->masterFd);
+#elif defined(HAVE_UTEMPTER)
     KProcess_Utmp utmp;
     utmp.cmdFd = d->masterFd;
-    utmp << "/usr/sbin/utempter" << "-d" << d->ttyName;
+# ifdef UTEMPTER_HELPER_ADD_DEL
+    utmp << UTEMPTER_HELPER << "del";
+# else
+    utmp << UTEMPTER_HELPER << "-d" << d->ttyName;
+# endif
     utmp.start(KProcess::Block);
 #elif defined(USE_LOGIN)
     const char *str_ptr = d->ttyName.data();

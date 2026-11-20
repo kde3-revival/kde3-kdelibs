@@ -217,6 +217,12 @@
 #cmakedefine HAVE_NON_POSIX_ACL_EXTENSIONS 1
 /* Define if you have the utempter helper for utmp managment */
 #cmakedefine HAVE_UTEMPTER 1
+/* Define if libutempter has utempter_add_record() (else the helper below is run) */
+#cmakedefine HAVE_UTEMPTER_RECORD 1
+/* The utempter helper program, without HAVE_UTEMPTER_RECORD */
+#cmakedefine UTEMPTER_HELPER "@UTEMPTER_HELPER@"
+/* UTEMPTER_HELPER is libutempter's: "add [<host>]" and "del" (else "-a <tty> <host>" and "-d <tty>") */
+#cmakedefine UTEMPTER_HELPER_ADD_DEL 1
 /* Defined if you have libidn in your system */
 #cmakedefine HAVE_LIBIDN 1
 /* Defines if your system has the libart library */
