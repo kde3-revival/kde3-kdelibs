@@ -28,9 +28,6 @@ include(ConfigureChecks.cmake)
 configure_file(config.h.cmake "${PROJECT_BINARY_DIR}/config.h")
 # automake passes -DHAVE_CONFIG_H (DEFS); kjs, for example, tests it.
 add_compile_definitions(HAVE_CONFIG_H)
-# configure.in.mid: CXXFLAGS="$CXXFLAGS $KDE_DEFAULT_CXXFLAGS" (C++ only)
-add_compile_definitions(
-  "$<$<COMPILE_LANGUAGE:CXX>:QT_CLEAN_NAMESPACE;QT_NO_ASCII_CAST;QT_NO_STL;QT_NO_COMPAT;QT_NO_TRANSLATION>")
 
 # -I$(top_builddir) of every Makefile (config.h) and all_includes of
 # configure.in.mid: every directory of kdelibs is compiled with these

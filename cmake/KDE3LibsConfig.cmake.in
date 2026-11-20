@@ -1,6 +1,7 @@
 # KDE3LibsConfig.cmake: kdelibs @KDELIBS_VERSION@ for other KDE 3 modules
 # (kdebase, kdepim, ...).
 #
+#   project(kdebase VERSION 3.5.10 LANGUAGES C CXX)
 #   find_package(KDE3Libs 3.5 REQUIRED)
 #
 # (The package is not called KDE3: CMake ships an unrelated FindKDE3
@@ -10,16 +11,54 @@
 # provides the imported targets KDE3::<library> (KDE3::kdecore,
 # KDE3::kdeui, KDE3::kio, KDE3::kparts, ...), the tools KDE3::dcopidl,
 # KDE3::dcopidl2cpp, KDE3::kconfig_compiler, KDE3::meinproc and
-# KDE3::makekdewidgets, kde3-qt as KDE3Qt::* (FindKDE3Qt), the install
-# layout (KDE3InstallDirs) and the kde3_* functions (KDE3LibsMacros).
-# The compiler settings of the KDE 3 autotools build are not applied
-# automatically: include(KDE3CompilerSettings) for them.
+# KDE3::makekdewidgets, kde3-qt as KDE3Qt::* (FindKDE3Qt) and the kde3_*
+# functions (KDE3LibsMacros), and sets the module up like kdelibs:
+#
+# - CMAKE_INSTALL_PREFIX defaults to the prefix of kdelibs
+#   (KDE3_LIBS_PREFIX) when the module does not set one,
+# - KDELIBSUFF is the one of kdelibs (a different one is an error), and
+#   the KDE3_*_INSTALL_DIR layout (KDE3InstallDirs) has the same
+#   defaults, relative to the module's own CMAKE_INSTALL_PREFIX,
+# - the compiler settings of kdelibs (KDE3CompilerSettings: build types,
+#   warnings, KDE_DEFAULT_CXXFLAGS, ...), unless
+#   KDE3LIBS_NO_COMPILER_SETTINGS is set before find_package(),
+# - installed binaries get a RUNPATH with the module's and kdelibs'
+#   library directories and KDE3_QT_RPATH (default: kdelibs' value).
+#
+# Variables: KDE3_VERSION, KDE3_PREFIX/KDE3_INCLUDE_DIR/KDE3_LIB_DIR
+# (where this kdelibs was found, which may be a staging directory),
+# KDE3_LIBS_PREFIX/KDE3_LIBS_LIB_INSTALL_DIR (where kdelibs is installed
+# for running, compiled into RUNPATHs).
 
 @PACKAGE_INIT@
 
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 
 include(CMakeFindDependencyMacro)
+
+set(KDE3_VERSION "@KDELIBS_VERSION@")
+set(KDE3_LIBS_PREFIX "@CMAKE_INSTALL_PREFIX@")
+set(KDE3_LIBS_LIB_INSTALL_DIR "@KDE3_FULL_LIB_INSTALL_DIR@")
+
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  set(CMAKE_INSTALL_PREFIX "${KDE3_LIBS_PREFIX}" CACHE PATH
+    "Install path prefix" FORCE)
+endif()
+
+# KStandardDirs of this kdelibs looks for lib@KDELIBSUFF@ in every prefix
+if(NOT DEFINED KDELIBSUFF)
+  set(KDELIBSUFF "@KDELIBSUFF@" CACHE STRING
+    "Suffix of the library directories (lib<suffix>); must be the one of kdelibs")
+elseif(NOT KDELIBSUFF STREQUAL "@KDELIBSUFF@")
+  message(FATAL_ERROR "KDELIBSUFF is \"${KDELIBSUFF}\", but kdelibs was "
+    "built with \"@KDELIBSUFF@\" and only finds libraries and modules "
+    "in lib@KDELIBSUFF@.")
+endif()
+
+if(NOT DEFINED KDE3_QT_RPATH)
+  set(KDE3_QT_RPATH "@KDE3_QT_RPATH@" CACHE PATH
+    "Library directory of the installed kde3-qt, put into the RUNPATH of installed KDE binaries")
+endif()
 
 # kde3-qt is searched at configure time of the module: QT_DIR (-D or
 # environment), QTDIR, pkg-config kde3-qt, /opt/kde3-qt, and only then
@@ -36,12 +75,25 @@ find_dependency(PNG)
 
 include("${CMAKE_CURRENT_LIST_DIR}/KDE3LibsTargets.cmake")
 
-set(KDE3_VERSION "@KDELIBS_VERSION@")
 set_and_check(KDE3_PREFIX "${PACKAGE_PREFIX_DIR}")
 set_and_check(KDE3_INCLUDE_DIR "@PACKAGE_KDE3_INCLUDE_INSTALL_DIR@")
 set_and_check(KDE3_LIB_DIR "@PACKAGE_KDE3_LIB_INSTALL_DIR@")
 
 include(KDE3InstallDirs)
+if(NOT KDE3LIBS_NO_COMPILER_SETTINGS)
+  include(KDE3CompilerSettings)
+endif()
+
+# For installed targets not made with the kde3_* functions (those set
+# their own, $ORIGIN-relative RUNPATH).
+if(NOT DEFINED CMAKE_INSTALL_RPATH)
+  set(CMAKE_INSTALL_RPATH "${KDE3_FULL_LIB_INSTALL_DIR}")
+  foreach(_kde3_dir "${KDE3_LIBS_LIB_INSTALL_DIR}" "${KDE3_QT_RPATH}")
+    if(_kde3_dir AND NOT _kde3_dir IN_LIST CMAKE_INSTALL_RPATH)
+      list(APPEND CMAKE_INSTALL_RPATH "${_kde3_dir}")
+    endif()
+  endforeach()
+endif()
 
 # uic finds the installed KDE designer plugins (kdewidgets) here
 if(NOT DEFINED KDE3_UIC_PLUGIN_DIR)

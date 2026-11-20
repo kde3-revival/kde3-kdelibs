@@ -4,9 +4,13 @@ KDE3CompilerSettings
 
 The compiler and linker settings of the KDE 3.5 autotools build
 (admin/acinclude.m4.in: AC_CHECK_COMPILERS, KDE_CHECK_THREADING,
-KDE_CHECK_CLOSURE) for GCC and Clang.  kdelibs includes it; other KDE 3
-modules may include it after ``find_package(KDE3Libs)`` to get the same
-settings (it is not applied to them automatically).
+KDE_CHECK_CLOSURE, configure.in.mid's KDE_DEFAULT_CXXFLAGS) for GCC and
+Clang.  kdelibs includes it, and ``find_package(KDE3Libs)`` applies it
+to the other KDE 3 modules as well (unless ``KDE3LIBS_NO_COMPILER_SETTINGS``
+is set before).
+
+C++ is compiled with the KDE_DEFAULT_CXXFLAGS defines ``QT_CLEAN_NAMESPACE
+QT_NO_ASCII_CAST QT_NO_STL QT_NO_COMPAT QT_NO_TRANSLATION``.
 
 Build types (autotools ``--enable-debug`` variants):
 
@@ -45,6 +49,10 @@ foreach(_lang C CXX)
 endforeach()
 
 option(KDE3_ENABLE_WARNINGS "Compile with the warning flags of KDE 3.5 autotools" ON)
+
+# configure.in.mid: CXXFLAGS="$CXXFLAGS $KDE_DEFAULT_CXXFLAGS" (C++ only)
+add_compile_definitions(
+  "$<$<COMPILE_LANGUAGE:CXX>:QT_CLEAN_NAMESPACE;QT_NO_ASCII_CAST;QT_NO_STL;QT_NO_COMPAT;QT_NO_TRANSLATION>")
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   add_compile_options(

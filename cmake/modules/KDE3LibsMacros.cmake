@@ -160,7 +160,8 @@ function(_kde3_set_install_rpath target destination)
   else()
     set(_rpath "$ORIGIN/${_rel}")
   endif()
-  foreach(_dir "${KDE3_FULL_LIB_INSTALL_DIR}" "${KDE3_QT_RPATH}")
+  # KDE3_LIBS_LIB_INSTALL_DIR: kdelibs' own, when building other modules
+  foreach(_dir "${KDE3_FULL_LIB_INSTALL_DIR}" "${KDE3_LIBS_LIB_INSTALL_DIR}" "${KDE3_QT_RPATH}")
     if(_dir AND NOT _dir IN_LIST _rpath
        AND NOT _dir IN_LIST CMAKE_C_IMPLICIT_LINK_DIRECTORIES
        AND NOT _dir IN_LIST CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES)
