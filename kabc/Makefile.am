@@ -1,7 +1,7 @@
 SUBDIRS = vcard vcardparser . formats plugins scripts
 
 # Make sure $(all_includes) remains last!
-INCLUDES = -I$(top_builddir)/kabc -I$(top_srcdir)/kabc -I$(top_srcdir)/kab \
+INCLUDES = -I$(top_builddir)/kabc -I$(top_srcdir)/kabc \
            -I$(srcdir)/vcard/include -I$(srcdir)/vcardparser/ \
            -I$(srcdir)/vcard/include/generated \
            -I$(srcdir)/vcardparser $(all_includes)
@@ -49,15 +49,6 @@ kabcinclude_HEADERS = address.h addressbook.h addressee.h addresseedialog.h \
   ldapurl.h ldapconfigwidget.h sortmode.h
 
 METASOURCES = AUTO
-
-bin_PROGRAMS = kab2kabc
-
-kab2kabc_LDFLAGS = $(all_libraries) $(KDE_RPATH)
-kab2kabc_LDADD = libkabc.la ../kab/libkab.la
-kab2kabc_SOURCES = kab2kabc.cpp
-
-autostart_DATA = kab2kabc.desktop
-autostartdir = $(datadir)/autostart
 
 manager_DATA = kabc_manager.desktop
 managerdir = $(kde_servicesdir)/kresources

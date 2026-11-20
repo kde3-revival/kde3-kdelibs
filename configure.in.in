@@ -246,7 +246,6 @@ AC_SUBST(LIBUTIL)
 AC_SUBST(LIBRESOLV)
 AC_SUBST(LIBICE)
 
-AC_SUBST(LIB_KAB, '$(top_builddir)/kab/libkab.la')
 AC_SUBST(LIB_KABC, '$(top_builddir)/kabc/libkabc.la')
 AC_SUBST(LIB_KDECORE, '$(top_builddir)/kdecore/libkdecore.la')
 AC_SUBST(LIB_KDEUI, '$(top_builddir)/kdeui/libkdeui.la')

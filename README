@@ -24,10 +24,6 @@ Here is an alphabetical list:
 * interfaces
     kparts interface for text editors and scripting.
 
-* kab
-    OBSOLETE, see kabc: Used to be the address book library, but now only
-    used to convert kab-Addressbooks into kabc format.
-
 * kabc
     The address book library.
 
