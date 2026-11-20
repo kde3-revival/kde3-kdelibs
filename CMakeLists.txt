@@ -95,3 +95,31 @@ add_subdirectory(mimetypes)
 add_subdirectory(pics)
 add_subdirectory(kdewidgets)
 add_subdirectory(kate)
+
+# ---------------------------------------------------------------------
+# CMake package for the other KDE 3 modules
+
+include(CMakePackageConfigHelpers)
+get_filename_component(KDE3_QT_PREFIX "${KDE3Qt_INCLUDE_DIR}" DIRECTORY)
+configure_package_config_file(cmake/KDE3Config.cmake.in
+  "${PROJECT_BINARY_DIR}/KDE3Config.cmake"
+  INSTALL_DESTINATION "${KDE3_CMAKE_INSTALL_DIR}"
+  PATH_VARS KDE3_INCLUDE_INSTALL_DIR KDE3_LIB_INSTALL_DIR KDE3_MODULE_INSTALL_DIR)
+write_basic_package_version_file("${PROJECT_BINARY_DIR}/KDE3ConfigVersion.cmake"
+  VERSION "${KDELIBS_VERSION}"
+  COMPATIBILITY SameMinorVersion)
+install(EXPORT KDE3Targets
+  NAMESPACE KDE3::
+  DESTINATION "${KDE3_CMAKE_INSTALL_DIR}"
+  FILE KDE3Targets.cmake)
+install(FILES
+  "${PROJECT_BINARY_DIR}/KDE3Config.cmake"
+  "${PROJECT_BINARY_DIR}/KDE3ConfigVersion.cmake"
+  cmake/modules/FindKDE3Qt.cmake
+  cmake/modules/KDE3InstallDirs.cmake
+  cmake/modules/KDE3CompilerSettings.cmake
+  cmake/modules/KDE3Macros.cmake
+  cmake/modules/kde3_dcopidl.cmake
+  cmake/modules/kde3_uic.cmake
+  cmake/modules/kde3_run_to_file.cmake
+  DESTINATION "${KDE3_CMAKE_INSTALL_DIR}")

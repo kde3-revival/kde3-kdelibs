@@ -1,0 +1,46 @@
+# KDE3Config.cmake: kdelibs @KDELIBS_VERSION@ for other KDE 3 modules
+# (kdebase, kdepim, ...).
+#
+#   find_package(KDE3 REQUIRED)
+#
+# provides the imported targets KDE3::<library> (KDE3::kdecore,
+# KDE3::kdeui, KDE3::kio, KDE3::kparts, ...), the tools KDE3::dcopidl,
+# KDE3::dcopidl2cpp, KDE3::kconfig_compiler, KDE3::meinproc and
+# KDE3::makekdewidgets, kde3-qt as KDE3Qt::* (FindKDE3Qt), the install
+# layout (KDE3InstallDirs) and the kde3_* functions (KDE3Macros).  The
+# compiler settings of the KDE 3 autotools build are not applied
+# automatically: include(KDE3CompilerSettings) for them.
+
+@PACKAGE_INIT@
+
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+
+include(CMakeFindDependencyMacro)
+
+# kdelibs was built against this kde3-qt; use the same unless the caller
+# points elsewhere.  FindKDE3Qt rejects anything that is not kde3-qt.
+if(NOT QT_DIR AND NOT DEFINED ENV{QT_DIR} AND NOT DEFINED ENV{QTDIR})
+  set(QT_DIR "@KDE3_QT_PREFIX@")
+endif()
+find_dependency(KDE3Qt)
+find_dependency(X11)
+find_dependency(Threads)
+find_dependency(ZLIB)
+find_dependency(PNG)
+
+include("${CMAKE_CURRENT_LIST_DIR}/KDE3Targets.cmake")
+
+set(KDE3_VERSION "@KDELIBS_VERSION@")
+set_and_check(KDE3_PREFIX "${PACKAGE_PREFIX_DIR}")
+set_and_check(KDE3_INCLUDE_DIR "@PACKAGE_KDE3_INCLUDE_INSTALL_DIR@")
+set_and_check(KDE3_LIB_DIR "@PACKAGE_KDE3_LIB_INSTALL_DIR@")
+
+include(KDE3InstallDirs)
+
+# uic finds the installed KDE designer plugins (kdewidgets) here
+if(NOT DEFINED KDE3_UIC_PLUGIN_DIR)
+  set(KDE3_UIC_PLUGIN_DIR "@PACKAGE_KDE3_MODULE_INSTALL_DIR@/plugins")
+endif()
+include(KDE3Macros)
+
+check_required_components(KDE3)
