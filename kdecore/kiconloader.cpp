@@ -53,6 +53,47 @@
 
 #include "kiconloader_p.h"
 
+/*
+ * Loads the icon file at @p path; SVG icons are rendered at @p size.
+ * Returns a new non-null image, or 0 if the file cannot be loaded (missing,
+ * broken, or an SVG icon without SVG support).  The caller owns the image.
+ */
+static QImage *loadIconImage(const QString &path, int size)
+{
+    QImage *img = 0;
+
+    // Use the extension as the format. Works for XPM and PNG, but not for SVG
+    QString ext = path.right(3).upper();
+    if (ext != "SVG" && ext != "VGZ")
+    {
+	img = new QImage(path, ext.latin1());
+	// Not a known format name (e.g. ".jpg"): let Qt detect the format.
+	if (img->isNull())
+	    img->load(path);
+    }
+#ifdef HAVE_LIBART
+    else
+    {
+	// Special stuff for SVG icons
+	KSVGIconEngine *svgEngine = new KSVGIconEngine();
+
+	if (svgEngine->load(size, size, path))
+	    img = svgEngine->painter()->image();
+
+	delete svgEngine;
+    }
+#else
+    Q_UNUSED(size);
+#endif
+
+    if (img && img->isNull())
+    {
+	delete img;
+	img = 0;
+    }
+    return img;
+}
+
 /*** KIconThemeNode: A node in the icon theme dependancy tree. ***/
 
 KIconThemeNode::KIconThemeNode(KIconTheme *_theme)
@@ -620,15 +661,36 @@ QPixmap KIconLoader::loadIcon(const QString& _name, KIcon::Group group, int size
 	    }
 	}
 
+	if (inCache)
+	{
+	    *path_store = path;
+	    return pix;
+	}
+
+	// An icon file that cannot be loaded counts as not found.
+	QImage *img = loadIconImage(path, size);
+	if (!img && !canReturnNull)
+	{
+	    path = iconPath(str_unknown, KIcon::Small, true);
+	    if (!path.isEmpty())
+		img = loadIconImage(path, size);
+	    if (!img)
+		kdDebug(264) << "Warning: Cannot load \"unknown\" icon." << endl;
+	}
+	if (!img)
+	{
+	    if (path_store != 0L)
+		*path_store = QString::null;
+	    return pix;
+	}
 	if (path_store != 0L)
 	    *path_store = path;
-	if (inCache)
-	    return pix;
-	QImage img(path);
-	if (size != 0)
-	    img=img.smoothScale(size,size);
 
-	pix.convertFromImage(img);
+	if (size != 0)
+	    *img=img->smoothScale(size,size);
+
+	pix.convertFromImage(*img);
+	delete img;
 	QPixmapCache::insert(key, pix);
 	return pix;
     }
@@ -741,30 +803,27 @@ QPixmap KIconLoader::loadIcon(const QString& _name, KIcon::Group group, int size
         if (inCache)
             return pix;
 
-	// Use the extension as the format. Works for XPM and PNG, but not for SVG
-	QString ext = icon.path.right(3).upper();
-	if(ext != "SVG" && ext != "VGZ")
-	{
-	    img = new QImage(icon.path, ext.latin1());
-	    if (img->isNull()) {
-                delete img;
-		return pix;
+        img = loadIconImage(icon.path, size);
+        if (!img)
+        {
+            // A file that cannot be loaded (e.g. an SVG icon without SVG
+            // support) counts as not found: fall back to the "unknown" icon.
+            kdDebug(264) << "Cannot load icon " << icon.path << endl;
+            KIcon unknown;
+            if (!canReturnNull && name != str_unknown)
+                unknown = findMatchingIcon(str_unknown, size);
+            if (unknown.isValid() && unknown.path != icon.path)
+                img = loadIconImage(unknown.path, size);
+            if (!img)
+            {
+                if (path_store != 0L)
+                    *path_store = QString::null;
+                return pix;
             }
-	}
-#ifdef HAVE_LIBART
-	else
-	{
-	    // Special stuff for SVG icons
-	    KSVGIconEngine *svgEngine = new KSVGIconEngine();
-
-	    if(svgEngine->load(size, size, icon.path))
-		img = svgEngine->painter()->image();
-	    else
-		img = new QImage();
-
-	    delete svgEngine;
-	}
-#endif
+            icon = unknown;
+            if (path_store != 0L)
+                *path_store = icon.path;
+        }
 
         iconType = icon.type;
         iconThreshold = icon.threshold;
@@ -876,7 +935,12 @@ QImage *KIconLoader::loadOverlay(const QString &name, int size) const
 	kdDebug(264) << "Overlay " << name << "not found." << endl;
 	return 0L;
     }
-    image = new QImage(icon.path);
+    image = loadIconImage(icon.path, size);
+    if (image == 0L)
+    {
+	kdDebug(264) << "Overlay " << icon.path << " cannot be loaded." << endl;
+	return 0L;
+    }
     // In some cases (since size in findMatchingIcon() is more a hint than a
     // constraint) image->size can be != size. If so perform rescaling.
     if ( size != image->width() )
