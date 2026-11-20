@@ -1,0 +1,132 @@
+# INCLUDES
+include_directories("${PROJECT_SOURCE_DIR}/kdeprint" "${PROJECT_BINARY_DIR}/kdeprint")
+
+kde3_add_library(kdeprint_management SHARED
+  VERSION_INFO 6:0:2
+  SOURCES
+    kmdbcreator.cpp
+    kmdriverdb.cpp
+    kmdriverdbwidget.cpp
+    kmiconview.cpp
+    kminfopage.cpp
+    kmmainview.cpp
+    kmpages.cpp
+    kmprinterview.cpp
+    kmjobviewer.cpp
+    jobitem.cpp
+    kmpropwidget.cpp
+    kmpropcontainer.cpp
+    kmpropertypage.cpp
+    kmpropgeneral.cpp
+    cjanuswidget.cpp
+    kmpropmembers.cpp
+    kmpropbackend.cpp
+    kmpropdriver.cpp
+    kmlistview.cpp
+    kminstancepage.cpp
+    kmtimer.cpp
+    kmwizard.cpp
+    kmwizardpage.cpp
+    kmwinfopage.cpp
+    kmwpassword.cpp
+    kmwsocketutil.cpp
+    kmwbackend.cpp
+    kmwsocket.cpp
+    kmwdriver.cpp
+    kmwdriverselect.cpp
+    kmwdrivertest.cpp
+    kmwinfobase.cpp
+    kmwname.cpp
+    kmwend.cpp
+    kmwclass.cpp
+    kmwlpd.cpp
+    kmwfile.cpp
+    kmdriverdialog.cpp
+    kmwsmb.cpp
+    smbview.cpp
+    kmconfigdialog.cpp
+    kmconfigpage.cpp
+    kmconfiggeneral.cpp
+    kmspecialprinterdlg.cpp
+    kmwlocal.cpp
+    kiconselectaction.cpp
+    kmconfigpreview.cpp
+    sidepixmap.cpp
+    pluginaction.cpp
+    kxmlcommanddlg.cpp
+    kxmlcommandselector.cpp
+    kmconfigcommand.cpp
+    kmconfigfilter.cpp
+    kmconfigfonts.cpp
+    kmconfigjobs.cpp
+    networkscanner.cpp
+  MOC
+    cjanuswidget.h
+    kiconselectaction.h
+    kmconfigdialog.h
+    kmconfigfilter.h
+    kmconfigfonts.h
+    kmconfiggeneral.h
+    kmconfigjobs.h
+    kmconfigpage.h
+    kmdbcreator.h
+    kmdriverdb.h
+    kmdriverdbwidget.h
+    kmdriverdialog.h
+    kmiconview.h
+    kminstancepage.h
+    kmjobviewer.h
+    kmlistview.h
+    kmmainview.h
+    kmprinterview.h
+    kmpropcontainer.h
+    kmpropertypage.h
+    kmpropwidget.h
+    kmspecialprinterdlg.h
+    kmtimer.h
+    kmwclass.h
+    kmwdriverselect.h
+    kmwdrivertest.h
+    kmwizard.h
+    kmwizardpage.h
+    kmwlocal.h
+    kmwsmb.h
+    kmwsocket.h
+    kmwsocketutil.h
+    kxmlcommanddlg.h
+    kxmlcommandselector.h
+    networkscanner.h
+    pluginaction.h
+    smbview.h
+  LINK
+    kdeprint
+)
+
+kde3_add_module(libkdeprint_management_module
+  SOURCES
+    kdeprint_management_module.cpp
+  LINK
+    kdeprint_management
+)
+
+kde3_add_kdeinit_executable(kaddprinterwizard
+  SOURCES
+    kaddprinterwizard.cpp
+  LINK
+    kdeprint_management
+)
+
+install(FILES
+  kmmainview.h
+  kmjobviewer.h
+  kmprinterpage.h
+  kiconselectaction.h
+  kmtimer.h
+  DESTINATION ${KDE3_INCLUDE_INSTALL_DIR}/kdeprint)
+
+install(FILES
+  tileup.png
+  tiledown.png
+  side.png
+  DESTINATION ${KDE3_DATA_INSTALL_DIR}/kdeprint)
+

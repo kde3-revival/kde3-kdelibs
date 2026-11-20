@@ -434,3 +434,11 @@ if(KDE3_WITH_PULSEAUDIO)
     set(HAVE_PULSEAUDIO 1)
   endif()
 endif()
+
+# kdeprint: CUPS is the only print system (kdeprint/configure.in.in)
+find_package(Cups 1.1.9 REQUIRED)
+set(HAVE_CUPS 1)
+if(Cups_VERSION VERSION_GREATER_EQUAL 1.1.20)
+  # CUPS doesn't have password caching
+  set(HAVE_CUPS_NO_PWD_CACHE 1)
+endif()

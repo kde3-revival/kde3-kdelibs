@@ -265,6 +265,10 @@
 #cmakedefine KDEINIT_OOM_PROTECT 1
 /* Define if knotify plays sounds with libpulse and libsndfile */
 #cmakedefine HAVE_PULSEAUDIO 1
+/* Defines if you have CUPS (Common UNIX Printing System) */
+#cmakedefine HAVE_CUPS 1
+/* CUPS doesn't have password caching */
+#cmakedefine HAVE_CUPS_NO_PWD_CACHE 1
 /* Defined if compiling without arts */
 #define WITHOUT_ARTS 1
 

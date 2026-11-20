@@ -1,0 +1,48 @@
+kde3_add_kdeinit_executable(cupsdconf
+  SOURCES
+    cupsdconf.cpp
+    cupsddialog.cpp
+    cupsdpage.cpp
+    cupsdcomment.cpp
+    cupsdsplash.cpp
+    cupsdserverpage.cpp
+    cupsdlogpage.cpp
+    cupsdjobspage.cpp
+    cupsdfilterpage.cpp
+    qdirlineedit.cpp
+    cupsddirpage.cpp
+    portdialog.cpp
+    cupsdnetworkpage.cpp
+    editlist.cpp
+    cupsdbrowsingpage.cpp
+    browsedialog.cpp
+    cupsdsecuritypage.cpp
+    locationdialog.cpp
+    addressdialog.cpp
+    cups-util.c
+    qdirmultilineedit.cpp
+    sizewidget.cpp
+    main.cpp
+  MOC
+    browsedialog.h
+    cupsdbrowsingpage.h
+    cupsddialog.h
+    cupsdjobspage.h
+    cupsdnetworkpage.h
+    cupsdpage.h
+    cupsdsecuritypage.h
+    cupsdserverpage.h
+    editlist.h
+    locationdialog.h
+    qdirlineedit.h
+    qdirmultilineedit.h
+  LINK
+    kio
+    Cups::Cups
+)
+
+install(FILES
+  kde_logo.png
+  cups_logo.png
+  cupsd.conf.template
+  DESTINATION ${KDE3_DATA_INSTALL_DIR}/kdeprint)
