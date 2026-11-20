@@ -732,6 +732,14 @@ class DCOP_EXPORT DCOPClient : public QObject
    */
   static QCString iceauthPath();
 
+  /**
+   * Return the path of the ICE authority file DCOP uses: $ICEAUTHORITY,
+   * else $XDG_RUNTIME_DIR/ICEauthority, else $HOME/.ICEauthority (the
+   * rules of the system libICE). Pass it to iceauth with -f.
+   * Returns an empty string if it cannot be determined.
+   */
+  static QCString iceauthFile();
+
 signals:
   /**
    * Indicates that the application @p appId has been registered with

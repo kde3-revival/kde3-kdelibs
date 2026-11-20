@@ -43,6 +43,9 @@
 #include <pwd.h>
 #include <signal.h>
 
+#include <KDE-ICE/ICElib.h>
+#include <KDE-ICE/ICEutil.h>
+
 #define BUFFER_SIZE 4096
 
 static char *getDisplay()
@@ -131,10 +134,40 @@ static void getDCOPFile(char *dcop_file, char *dcop_file_old, int max_length)
   return;
 }
 
+/* Append str to the BUFFER_SIZE sized command buffer cmd.
+   Returns 0 if it does not fit. */
+static int appendCommand(char *cmd, const char *str)
+{
+   size_t l = strlen(cmd);
+   size_t n = strlen(str);
+   if (l + n >= BUFFER_SIZE)
+      return 0;
+   memcpy(cmd + l, str, n + 1);
+   return 1;
+}
+
+/* Append str single-quoted for /bin/sh: 'foo'\''bar'
+   Returns 0 if it does not fit. */
+static int appendQuoted(char *cmd, const char *str)
+{
+   if (!appendCommand(cmd, "'"))
+      return 0;
+   for (; *str; str++)
+   {
+      char c[2];
+      c[0] = *str;
+      c[1] = '\0';
+      if (!appendCommand(cmd, *str == '\'' ? "'\\''" : c))
+         return 0;
+   }
+   return appendCommand(cmd, "'");
+}
+
 static void cleanupDCOPsocket(char *buffer)
 {
    char cmd[BUFFER_SIZE];
    const char *socket_file;
+   const char *auth_file;
    int l; 
 
    l = strlen(buffer);
@@ -149,7 +182,17 @@ static void cleanupDCOPsocket(char *buffer)
    if (socket_file)
       unlink(socket_file);
 
-   snprintf(cmd, BUFFER_SIZE, "iceauth remove netid='%s'", buffer);
+   /* Remove the entries from the file dcopserver wrote them to
+      (KDE-ICE's IceAuthFileName()), not from iceauth's default. */
+   auth_file = IceAuthFileName();
+   strcpy(cmd, "iceauth");
+   if (auth_file && *auth_file)
+   {
+      if (!appendCommand(cmd, " -f ") || !appendQuoted(cmd, auth_file))
+         return;
+   }
+   if (!appendCommand(cmd, " remove netid=") || !appendQuoted(cmd, buffer))
+      return;
    system(cmd);
 }
 

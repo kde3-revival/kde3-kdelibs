@@ -34,6 +34,8 @@ kde3_add_kdeinit_executable(dcopserver
 kde3_add_executable(dcopserver_shutdown
   SOURCES
     dcopserver_shutdown.c
+  LINK
+    DCOP
 )
 
 install(FILES

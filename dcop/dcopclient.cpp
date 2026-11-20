@@ -239,6 +239,13 @@ QCString DCOPClient::iceauthPath()
     return 0;
 }
 
+QCString DCOPClient::iceauthFile()
+{
+    // The ICE authority file DCOP reads, by the rules of the system libICE.
+    // Pass it to iceauth with -f, never rely on iceauth's own default.
+    return QCString(IceAuthFileName());
+}
+
 static QCString dcopServerFile(const QCString &hostname, bool old)
 {
     QCString fName = ::getenv("DCOPAUTHORITY");

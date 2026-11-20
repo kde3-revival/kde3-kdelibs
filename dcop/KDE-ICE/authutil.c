@@ -77,68 +77,56 @@ static Status write_counted_string (FILE *file, unsigned short count, char *stri
  * ICE library specification.
  */
 
+/*
+ * Same rule as libICE (>= 1.0.10) and iceauth: $ICEAUTHORITY if set,
+ * else $XDG_RUNTIME_DIR/ICEauthority if $XDG_RUNTIME_DIR is set,
+ * else $HOME/.ICEauthority.  This must match the system libICE exactly,
+ * otherwise DCOP clients read a different file than the one iceauth
+ * (and the system libICE/libSM users) write.  libICE does not check
+ * that the directory exists.  An empty $XDG_RUNTIME_DIR falls back to
+ * $HOME, but (as in libICE) still with the non-dot file name.
+ */
 char *
-IceAuthFileName ()
-
+IceAuthFileName (void)
 {
-#ifdef _WIN32
-    static char slashDotICEauthority[] = "\\.ICEauthority";
-#else
-    static char slashDotICEauthority[] = "/.ICEauthority";
-#endif
+    const char	*ICEauthority_name = ".ICEauthority";
     char    	*name;
     static char	*buf;
-    static int	bsize;
-    int	    	size;
-#if defined(_WIN32) || defined(__EMX__)
-    char    	dir[128];
-#endif
+    static size_t bsize;
+    size_t    	size;
 
-    name = getenv ("ICEAUTHORITY");
-    if ( name )
+    if ((name = getenv ("ICEAUTHORITY")))
 	return (name);
 
-    name = getenv ("HOME");
+    /* If it's in the XDG_RUNTIME_DIR, don't use a dotfile */
+    if ((name = getenv ("XDG_RUNTIME_DIR")))
+	ICEauthority_name++;
 
-    if (!name)
-    {
-#ifdef _WIN32
-		if(name = getenv ("HOMEDRIVE"))
-	{
-			strcpy (dir, name);
-			if(name = getenv ("HOMEPATH"))
-	    strcat (dir, name);
-	}
-		else
-		{
-			if(name = getenv ("USERPROFILE"))
-				strcpy (dir, name);
-    }
-	    name = dir;
-	if (!name)
-#endif
-#ifdef __EMX__
-	strcpy (dir,"c:");
-	name = dir;
-	if (!name)
-#endif
+    if (!name || !name[0])
+	name = getenv ("HOME");
+
+    if (!name || !name[0])
 	return (NULL);
-    }
 
-    size = strlen (name) + strlen (&slashDotICEauthority[1]) + 2;
+    /* Special case for "/".  We will add our own '/' later. */
+    if (name[1] == '\0')
+	name++;
+
+    size = strlen (name) + 1 + strlen (ICEauthority_name) + 1;
 
     if (size > bsize)
     {
-	if (buf)
-	    free (buf);
-	buf = malloc ((unsigned) size);
+	free (buf);
+	buf = malloc (size);
 	if (!buf)
+	{
+	    bsize = 0;
 	    return (NULL);
+	}
 	bsize = size;
     }
 
-    strcpy (buf, name);
-    strcat (buf, slashDotICEauthority + (name[1] == '\0' ? 1 : 0));
+    snprintf (buf, bsize, "%s/%s", name, ICEauthority_name);
 
     return (buf);
 }

@@ -572,6 +572,21 @@ static char *unique_filename (const char *path, const char *prefix, int *pFd)
 
 #define MAGIC_COOKIE_LEN 16
 
+// Quote a string for /bin/sh: 'foo'\''bar'
+static QCString shellQuote(const char *str)
+{
+    QCString result = "'";
+    for (const char *p = str; *p; ++p)
+    {
+        if (*p == '\'')
+            result += "'\\''";
+        else
+            result += *p;
+    }
+    result += '\'';
+    return result;
+}
+
 Status
 SetAuthentication (int count, IceListenObj *_listenObjs,
 		   IceAuthDataEntry **_authDataEntries)
@@ -581,6 +596,7 @@ SetAuthentication (int count, IceListenObj *_listenObjs,
     int         original_umask;
     int         i;
     QCString command;
+    QCString authFile;
     int         fd;
 
     original_umask = umask (0077);      /* disallow non-owner access */
@@ -648,8 +664,16 @@ SetAuthentication (int count, IceListenObj *_listenObjs,
        exit(1);
     }
 
+    // Write to the file the DCOP clients read (KDE-ICE's IceAuthFileName()),
+    // not to wherever this iceauth defaults to.
+    authFile = DCOPClient::iceauthFile();
+    if (!authFile.isEmpty())
+    {
+       command += " -f ";
+       command += shellQuote(authFile);
+    }
     command += " source ";
-    command += addAuthFile;
+    command += shellQuote(addAuthFile);
     system (command);
 
     unlink(addAuthFile);
