@@ -41,7 +41,18 @@ KDE3_CMAKE_INSTALL_DIR         lib/cmake/KDE3          (new)
 #]=======================================================================]
 
 function(_kde3_install_dir var default doc)
-  set(KDE3_${var}_INSTALL_DIR "${default}" CACHE PATH "${doc}")
+  # Like GNUInstallDirs: set(... CACHE PATH) would turn a relative
+  # -DKDE3_<var>_INSTALL_DIR=<dir> given without a type into an absolute
+  # path below the build directory, so only give such a value its type.
+  if(NOT DEFINED KDE3_${var}_INSTALL_DIR)
+    set(KDE3_${var}_INSTALL_DIR "${default}" CACHE PATH "${doc}")
+  else()
+    get_property(_type CACHE KDE3_${var}_INSTALL_DIR PROPERTY TYPE)
+    if(_type STREQUAL "UNINITIALIZED")
+      set_property(CACHE KDE3_${var}_INSTALL_DIR PROPERTY TYPE PATH)
+      set_property(CACHE KDE3_${var}_INSTALL_DIR PROPERTY HELPSTRING "${doc}")
+    endif()
+  endif()
   set(_dir "${KDE3_${var}_INSTALL_DIR}")
   if(IS_ABSOLUTE "${_dir}")
     set(KDE3_FULL_${var}_INSTALL_DIR "${_dir}" PARENT_SCOPE)
