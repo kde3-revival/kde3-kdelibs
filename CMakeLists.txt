@@ -58,3 +58,4 @@ set(KDE3_MEINPROC_ARGS "--srcdir=${PROJECT_SOURCE_DIR}/kdoctools")
 include(KDE3Macros)
 
 add_subdirectory(dcop)
+add_subdirectory(kdefx)
