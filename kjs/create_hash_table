@@ -180,7 +180,7 @@ sub output() {
     if (defined($entry)) {
       my $key = $keys[$entry];
       print "   \{ " . $soffset{$key};
-      print ", " . $values[$entry];
+      print ", (short int)(" . $values[$entry] . ")";
       print ", " . $attrs[$entry];
       print ", " . $params[$entry];
       print ", ";
