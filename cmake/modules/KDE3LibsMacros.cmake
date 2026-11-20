@@ -633,6 +633,20 @@ function(kde3_install_icons)
 endfunction()
 
 # ---------------------------------------------------------------------
+# _kde3_install_time_path(<var> <dir>): <dir> as it is to be written into
+# install(CODE): absolute dirs as they are, relative ones below
+# ${CMAKE_INSTALL_PREFIX} of the installation, which
+# "cmake --install --prefix" may change, like install(FILES) does.
+
+function(_kde3_install_time_path var dir)
+  if(IS_ABSOLUTE "${dir}")
+    set(${var} "${dir}" PARENT_SCOPE)
+  else()
+    set(${var} "\${CMAKE_INSTALL_PREFIX}/${dir}" PARENT_SCOPE)
+  endif()
+endfunction()
+
+# ---------------------------------------------------------------------
 # KDE_DOCS (am_edit tag_DOCFILES)
 
 function(kde3_create_handbook appname)
@@ -688,11 +702,12 @@ function(kde3_create_handbook appname)
     else()
       set(_common "${KDE3_FULL_HTML_INSTALL_DIR}/${ARG_LANG}/common")
     endif()
+    _kde3_install_time_path(_destx "${_dest}")
     install(CODE "
-      file(MAKE_DIRECTORY \"\$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${_dest}\")
-      file(REMOVE \"\$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${_dest}/common\")
+      file(MAKE_DIRECTORY \"\$ENV{DESTDIR}${_destx}\")
+      file(REMOVE \"\$ENV{DESTDIR}${_destx}/common\")
       file(CREATE_LINK \"${_common}\"
-        \"\$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${_dest}/common\" SYMBOLIC)")
+        \"\$ENV{DESTDIR}${_destx}/common\" SYMBOLIC)")
   endif()
 endfunction()
 
@@ -727,8 +742,9 @@ endfunction()
 # a note (packagers set the mode themselves).
 
 function(kde3_install_setuid_root name)
+  _kde3_install_time_path(_bindir "${KDE3_BIN_INSTALL_DIR}")
   install(CODE "
-    set(_f \"\$ENV{DESTDIR}${KDE3_FULL_BIN_INSTALL_DIR}/${name}\")
+    set(_f \"\$ENV{DESTDIR}${_bindir}/${name}\")
     execute_process(COMMAND chown 0 \"\${_f}\" RESULT_VARIABLE _r
       OUTPUT_QUIET ERROR_QUIET)
     if(_r EQUAL 0)
@@ -744,9 +760,7 @@ endfunction()
 # <target> ($(LN_S) in install hooks).
 
 function(kde3_install_symlink target link)
-  if(NOT IS_ABSOLUTE "${link}")
-    set(link "${CMAKE_INSTALL_PREFIX}/${link}")
-  endif()
+  _kde3_install_time_path(link "${link}")
   install(CODE "
     set(_l \"\$ENV{DESTDIR}${link}\")
     get_filename_component(_d \"\${_l}\" DIRECTORY)
