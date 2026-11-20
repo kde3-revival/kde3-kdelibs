@@ -1,5 +1,5 @@
 kde3_add_executable(makekdewidgets
-  EXPORT KDE3Targets
+  EXPORT KDE3LibsTargets
   SOURCES
     makekdewidgets.cpp
   LINK

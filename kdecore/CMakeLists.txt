@@ -5,7 +5,7 @@ add_library(kdemacros INTERFACE)
 target_include_directories(kdemacros INTERFACE
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR};${CMAKE_CURRENT_BINARY_DIR}>"
   "$<INSTALL_INTERFACE:${KDE3_INCLUDE_INSTALL_DIR}>")
-install(TARGETS kdemacros EXPORT KDE3Targets)
+install(TARGETS kdemacros EXPORT KDE3LibsTargets)
 add_library(KDE3::kdemacros ALIAS kdemacros)
 
 add_subdirectory(network)

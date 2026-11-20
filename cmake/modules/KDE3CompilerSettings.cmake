@@ -5,7 +5,7 @@ KDE3CompilerSettings
 The compiler and linker settings of the KDE 3.5 autotools build
 (admin/acinclude.m4.in: AC_CHECK_COMPILERS, KDE_CHECK_THREADING,
 KDE_CHECK_CLOSURE) for GCC and Clang.  kdelibs includes it; other KDE 3
-modules may include it after ``find_package(KDE3)`` to get the same
+modules may include it after ``find_package(KDE3Libs)`` to get the same
 settings (it is not applied to them automatically).
 
 Build types (autotools ``--enable-debug`` variants):

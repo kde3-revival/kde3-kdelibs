@@ -1,17 +1,18 @@
-# KDE3Config.cmake: kdelibs @KDELIBS_VERSION@ for other KDE 3 modules
+# KDE3LibsConfig.cmake: kdelibs @KDELIBS_VERSION@ for other KDE 3 modules
 # (kdebase, kdepim, ...).
 #
-#   find_package(KDE3 3.5 CONFIG REQUIRED)
+#   find_package(KDE3Libs 3.5 REQUIRED)
 #
-# (CONFIG is needed: CMake ships an unrelated FindKDE3.cmake module for
-# its own old KDE 3 support, which module mode would pick first.)
+# (The package is not called KDE3: CMake ships an unrelated FindKDE3
+# module and KDE3Macros.cmake for its own old KDE 3 support.  Loading
+# those in the same project is an error.)
 #
 # provides the imported targets KDE3::<library> (KDE3::kdecore,
 # KDE3::kdeui, KDE3::kio, KDE3::kparts, ...), the tools KDE3::dcopidl,
 # KDE3::dcopidl2cpp, KDE3::kconfig_compiler, KDE3::meinproc and
 # KDE3::makekdewidgets, kde3-qt as KDE3Qt::* (FindKDE3Qt), the install
-# layout (KDE3InstallDirs) and the kde3_* functions (KDE3Macros).  The
-# compiler settings of the KDE 3 autotools build are not applied
+# layout (KDE3InstallDirs) and the kde3_* functions (KDE3LibsMacros).
+# The compiler settings of the KDE 3 autotools build are not applied
 # automatically: include(KDE3CompilerSettings) for them.
 
 @PACKAGE_INIT@
@@ -31,7 +32,7 @@ find_dependency(Threads)
 find_dependency(ZLIB)
 find_dependency(PNG)
 
-include("${CMAKE_CURRENT_LIST_DIR}/KDE3Targets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/KDE3LibsTargets.cmake")
 
 set(KDE3_VERSION "@KDELIBS_VERSION@")
 set_and_check(KDE3_PREFIX "${PACKAGE_PREFIX_DIR}")
@@ -44,6 +45,6 @@ include(KDE3InstallDirs)
 if(NOT DEFINED KDE3_UIC_PLUGIN_DIR)
   set(KDE3_UIC_PLUGIN_DIR "@PACKAGE_KDE3_MODULE_INSTALL_DIR@/plugins")
 endif()
-include(KDE3Macros)
+include(KDE3LibsMacros)
 
-check_required_components(KDE3)
+check_required_components(KDE3Libs)

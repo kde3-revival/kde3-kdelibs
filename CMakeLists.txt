@@ -60,7 +60,7 @@ include_directories(
 # meinproc needs the stylesheets of the source tree while building.
 set(KDE3_MEINPROC_ARGS "--srcdir=${PROJECT_SOURCE_DIR}/kdoctools")
 
-include(KDE3Macros)
+include(KDE3LibsMacros)
 
 add_subdirectory(dcop)
 add_subdirectory(kdefx)
@@ -104,24 +104,27 @@ install(FILES kde.pot DESTINATION ${KDE3_INCLUDE_INSTALL_DIR})
 
 include(CMakePackageConfigHelpers)
 get_filename_component(KDE3_QT_PREFIX "${KDE3Qt_INCLUDE_DIR}" DIRECTORY)
-configure_package_config_file(cmake/KDE3Config.cmake.in
-  "${PROJECT_BINARY_DIR}/KDE3Config.cmake"
+# find_package(KDE3Libs): not "KDE3", which CMake's own FindKDE3.cmake
+# module (and its KDE3Macros.cmake) would take in module mode.
+configure_package_config_file(cmake/KDE3LibsConfig.cmake.in
+  "${PROJECT_BINARY_DIR}/KDE3LibsConfig.cmake"
   INSTALL_DESTINATION "${KDE3_CMAKE_INSTALL_DIR}"
   PATH_VARS KDE3_INCLUDE_INSTALL_DIR KDE3_LIB_INSTALL_DIR KDE3_MODULE_INSTALL_DIR)
-write_basic_package_version_file("${PROJECT_BINARY_DIR}/KDE3ConfigVersion.cmake"
+# find_package(KDE3Libs 3) and find_package(KDE3Libs 3.5) both work
+write_basic_package_version_file("${PROJECT_BINARY_DIR}/KDE3LibsConfigVersion.cmake"
   VERSION "${KDELIBS_VERSION}"
-  COMPATIBILITY SameMinorVersion)
-install(EXPORT KDE3Targets
+  COMPATIBILITY SameMajorVersion)
+install(EXPORT KDE3LibsTargets
   NAMESPACE KDE3::
   DESTINATION "${KDE3_CMAKE_INSTALL_DIR}"
-  FILE KDE3Targets.cmake)
+  FILE KDE3LibsTargets.cmake)
 install(FILES
-  "${PROJECT_BINARY_DIR}/KDE3Config.cmake"
-  "${PROJECT_BINARY_DIR}/KDE3ConfigVersion.cmake"
+  "${PROJECT_BINARY_DIR}/KDE3LibsConfig.cmake"
+  "${PROJECT_BINARY_DIR}/KDE3LibsConfigVersion.cmake"
   cmake/modules/FindKDE3Qt.cmake
   cmake/modules/KDE3InstallDirs.cmake
   cmake/modules/KDE3CompilerSettings.cmake
-  cmake/modules/KDE3Macros.cmake
+  cmake/modules/KDE3LibsMacros.cmake
   cmake/modules/kde3_dcopidl.cmake
   cmake/modules/kde3_uic.cmake
   cmake/modules/kde3_run_to_file.cmake

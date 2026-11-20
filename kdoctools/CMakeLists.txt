@@ -38,7 +38,7 @@ target_include_directories(xslt_pure PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(xslt_pure PRIVATE kio LibXslt::LibXslt LibXml2::LibXml2)
 
 kde3_add_executable(meinproc
-  EXPORT KDE3Targets
+  EXPORT KDE3LibsTargets
   SOURCES
     meinproc.cpp
   LINK

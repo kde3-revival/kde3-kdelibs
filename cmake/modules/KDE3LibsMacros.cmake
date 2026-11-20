@@ -1,6 +1,10 @@
 #[=======================================================================[.rst:
-KDE3Macros
-----------
+KDE3LibsMacros
+--------------
+
+(Not KDE3Macros: CMake ships a KDE3Macros.cmake of its own, loaded by
+its FindKDE3 module, with functions of the same names.  Using both in
+one project is an error.)
 
 Functions that replace the KDE 3 automake extensions (admin/am_edit):
 
@@ -46,7 +50,7 @@ Common arguments:
   Compile with ``-fexceptions`` (KDE_CXXFLAGS = $(USE_EXCEPTIONS)).
 ``NO_INSTALL``, ``DESTINATION <dir>``, ``OUTPUT_NAME <name>``
 ``EXPORT <set>``
-  Export set for installed libraries (default ``KDE3Targets``).
+  Export set for installed libraries (default ``KDE3LibsTargets``).
 
 Other functions:
 
@@ -62,6 +66,25 @@ Other functions:
 #]=======================================================================]
 
 include_guard(GLOBAL)
+
+# CMake's Modules/KDE3Macros.cmake (included by Modules/FindKDE3.cmake)
+# defines kde3_add_executable(), kde3_add_kdeinit_executable(),
+# kde3_install_icons() and kde3_create_handbook() with other signatures,
+# and FindKDE3 sets KDE3_*_EXECUTABLE cache variables these functions
+# use.  Whichever is loaded last silently wins, so refuse the mix: now,
+# and at the end of the top-level directory in case it comes later.
+function(_kde3libs_check_clash)
+  if(COMMAND kde3_automoc OR COMMAND kde3_add_dcop_skels
+     OR DEFINED CACHE{KDECONFIG_EXECUTABLE})
+    message(FATAL_ERROR "CMake's own FindKDE3/KDE3Macros module has been "
+      "loaded in this project (find_package(KDE3) or include(KDE3Macros)).  "
+      "It cannot be used together with kdelibs' KDE3Libs package: use "
+      "find_package(KDE3Libs) only.")
+  endif()
+endfunction()
+_kde3libs_check_clash()
+cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}"
+  CALL _kde3libs_check_clash)
 
 set(KDE3_MACROS_DIR "${CMAKE_CURRENT_LIST_DIR}")
 
@@ -321,7 +344,7 @@ function(kde3_add_library name type)
       "$<INSTALL_INTERFACE:${KDE3_INCLUDE_INSTALL_DIR}>")
     if(NOT ARG_NO_INSTALL)
       if(NOT ARG_EXPORT)
-        set(ARG_EXPORT KDE3Targets)
+        set(ARG_EXPORT KDE3LibsTargets)
       endif()
       if(NOT ARG_DESTINATION)
         set(ARG_DESTINATION "${KDE3_LIB_INSTALL_DIR}")

@@ -56,7 +56,7 @@ KDE3_SYSCONF_INSTALL_DIR       etc                       sysconfdir
 KDE3_XDG_APPS_INSTALL_DIR      share/applications/kde    xdg_appsdir
 KDE3_XDG_MENU_INSTALL_DIR      <sysconfdir>/xdg/menus    xdg_menudir
 KDE3_XDG_DIRECTORY_INSTALL_DIR share/desktop-directories xdg_directorydir
-KDE3_CMAKE_INSTALL_DIR         <libdir>/cmake/KDE3       (new)
+KDE3_CMAKE_INSTALL_DIR         <libdir>/cmake/KDE3Libs   (new)
 =============================  ========================  ===================
 #]=======================================================================]
 
@@ -117,7 +117,7 @@ _kde3_install_dir(SYSCONF        etc                        "System configuratio
 _kde3_install_dir(XDG_APPS       share/applications/kde     "XDG application .desktop files (xdg_appsdir)")
 _kde3_install_dir(XDG_MENU       ${KDE3_SYSCONF_INSTALL_DIR}/xdg/menus "XDG menus (xdg_menudir)")
 _kde3_install_dir(XDG_DIRECTORY  share/desktop-directories  "XDG menu directories (xdg_directorydir)")
-_kde3_install_dir(CMAKE          ${_kde3_libdir}/cmake/KDE3 "CMake package configuration")
+_kde3_install_dir(CMAKE          ${_kde3_libdir}/cmake/KDE3Libs "CMake package configuration")
 
 # The library directories KStandardDirs hardcodes (see above)
 foreach(_kde3_check

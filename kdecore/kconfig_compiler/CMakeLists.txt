@@ -1,5 +1,5 @@
 kde3_add_executable(kconfig_compiler
-  EXPORT KDE3Targets
+  EXPORT KDE3LibsTargets
   SOURCES
     kconfig_compiler.cpp
   LINK

@@ -1,5 +1,5 @@
 kde3_add_executable(dcopidl
-  EXPORT KDE3Targets
+  EXPORT KDE3LibsTargets
   SOURCES
     main.cpp
     yacc.cc
