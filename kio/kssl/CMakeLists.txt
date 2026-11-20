@@ -38,6 +38,9 @@ kde3_add_library(kssl OBJECT
 target_include_directories(kssl PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR};${CMAKE_CURRENT_BINARY_DIR}>")
 target_include_directories(kssl PRIVATE "${PROJECT_SOURCE_DIR}/kwallet/client")
+if(HAVE_LIBPSL)
+  target_link_libraries(kssl PRIVATE PkgConfig::LIBPSL)
+endif()
 if(OPENSSL_FOUND)
   # SSL_INCLUDES; libssl/libcrypto themselves are dlopen()ed by KOpenSSLProxy
   target_include_directories(kssl PRIVATE ${OPENSSL_INCLUDE_DIR})

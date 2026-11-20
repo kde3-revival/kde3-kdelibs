@@ -332,6 +332,16 @@ if(KDE3_WITH_LIBIDN)
   endif()
 endif()
 
+# libpsl (kssl: no wildcard certificate for a whole public suffix,
+# "*.co.uk")
+option(KDE3_WITH_LIBPSL "Refuse wildcard certificates for public suffixes (libpsl)" ON)
+if(KDE3_WITH_LIBPSL)
+  pkg_check_modules(LIBPSL IMPORTED_TARGET libpsl)
+  if(LIBPSL_FOUND)
+    set(HAVE_LIBPSL 1)
+  endif()
+endif()
+
 # libart (svgicons): not ported, libart_lgpl is not available any more
 set(HAVE_LIBART "")
 
