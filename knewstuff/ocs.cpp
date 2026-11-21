@@ -253,15 +253,17 @@ static bool jxlSize( const uchar *p, uint n, int *width, int *height )
         boxSize = n - i;
       }
       if ( boxSize < header ) return false;
+      // the codestream: up to the end of the box (or of what was read)
+      const uint payload = uint( QMIN( boxSize, Q_ULLONG( n - i ) ) ) - header;
       if ( memcmp( p + i + 4, "jxlc", 4 ) == 0 ) {
         cs = p + i + header;
-        csSize = n - i - header;
+        csSize = payload;
         break;
       }
       if ( memcmp( p + i + 4, "jxlp", 4 ) == 0 ) {
-        if ( i + header + 4 > n ) return false;
+        if ( payload < 4 ) return false;
         cs = p + i + header + 4;          // after the index of the part
-        csSize = n - i - header - 4;
+        csSize = payload - 4;
         break;
       }
       if ( boxSize > n - i ) return false;

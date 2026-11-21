@@ -97,7 +97,9 @@ KTar::KTar( const QString& filename, const QString & _mimetype )
     {
         if ( QFile::exists( filename ) )
             mimetype = KMimeType::findByFileContent( filename )->name();
-        else
+        // Content unknown (e.g. lzma data without the usual properties) or
+        // no file yet: go by the name
+        if ( !QFile::exists( filename ) || mimetype == KMimeType::defaultMimeType() )
             mimetype = KMimeType::findByPath( filename, 0, true )->name();
         kdDebug(7041) << "KTar::KTar mimetype = " << mimetype << endl;
 
