@@ -957,6 +957,8 @@ static void writeWallpaperDesktop( const QString &imagePath, const QString &capt
     cfg.writeEntry( "License", content.license );
   if ( !content.licenseUrl.isEmpty() )
     cfg.writeEntry( "LicenseUrl", content.licenseUrl );
+  if ( !content.authorUrl.isEmpty() )
+    cfg.writeEntry( "AuthorUrl", content.authorUrl );
   if ( content.detailPage.isValid() )
     cfg.writeEntry( "Url", content.detailPage.url() );
   if ( !content.source.isEmpty() )
@@ -1383,6 +1385,14 @@ QString OcsInstaller::installPicture( const QString &file, const QString &dir,
     target += '/';
 
   const char *format = installableFormat( file );
+  // kdesktop decodes it in its own process: at most 8192 pixels a side
+  if ( format ) {
+    QFile f( file );
+    int width = 0, height = 0;
+    if ( !f.open( IO_ReadOnly ) || !pictureSize( readHead( &f, headSize ), &width, &height ) ||
+         width > 8192 || height > 8192 )
+      format = 0;
+  }
   if ( !format )
     return i18n( "The downloaded file is not a picture in a supported format "
                  "(JPEG, PNG, GIF, BMP, WebP, AVIF, JPEG XL), or it is too large." );

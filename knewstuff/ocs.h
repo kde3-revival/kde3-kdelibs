@@ -81,6 +81,7 @@ struct OcsContent
   QValueList<OcsDownload> files;
   // wallpaper sources (wallpapersources.h)
   QString licenseUrl;
+  QString authorUrl;   // the author's page, as the source asks to link it
   QString source;      // the name of the source, for the attribution
   int width;           // of the picture, 0 if unknown
   int height;

@@ -25,6 +25,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include <qbuffer.h>
 #include <qdom.h>
 #include <qfile.h>
 #include <qimage.h>
@@ -57,7 +58,7 @@ const Q_ULLONG WallpaperSource::maxDownloadSize = Q_ULLONG( 200 ) * 1024 * 1024;
 
 // The user agent of all requests: generic, nothing about the user or
 // the system.
-static const char userAgent[] = "KDE/3.5 KNewStuff wallpaper downloader";
+static const char userAgent[] = "KDE3-KNewStuff/1.0 (wallpaper downloader; +https://github.com/kde3-revival)";
 
 static const char keysFile[] = "knewstuffwallpapersrc";
 
@@ -178,6 +179,8 @@ bool WallpaperSource::setApiKey( const QString &id, const QString &key )
   // The keys are private to the user: the file is written with mode 0600
   // (KConfig keeps the mode of an existing file, so it is set again).
   QString path = locateLocal( "config", keysFile );
+  if ( QFile::exists( path ) )
+    ::chmod( QFile::encodeName( path ), 0600 );
   {
     KConfig cfg( keysFile, false, false );
     cfg.setFileWriteMode( 0600 );
@@ -303,7 +306,7 @@ KURL WallpaperSource::apiUrl( int tab, int page ) const
     } else {
       q += "&generator=categorymembers&gcmtitle=Category:Featured_pictures_on_Wikimedia_Commons"
            "&gcmtype=file&gcmsort=timestamp&gcmdir=desc&gcmlimit=20"
-           "&prop=imageinfo&iiprop=url%7Csize%7Cmime%7Cextmetadata%7Ctimestamp&iiurlwidth=320"
+           "&prop=imageinfo&iiprop=url%7Csize%7Cmime%7Cextmetadata%7Ctimestamp&iiurlwidth=330"
            "&iiextmetadatafilter=Artist%7CLicenseShortName%7CLicenseUrl%7CObjectName%7CImageDescription%7CCredit";
       if ( page > 0 ) {
         QString cont = mContinue.contains( page ) ? mContinue[ page ] : QString::null;
@@ -405,6 +408,8 @@ void WallpaperSource::slotStartQueued()
   int spacing = info ? info->spacing : 0;
   while ( !mQueue.isEmpty() ) {
     long now = mClock.elapsed();
+    if ( now < mLastRequest )             // the clock was set back
+      mLastRequest = now - spacing;
     if ( spacing > 0 && now - mLastRequest < spacing ) {
       // the source limits the requests per minute
       if ( !mQueueTimer->isActive() )
@@ -652,6 +657,20 @@ static QString line( const QString &s, uint max )
   return htmlToPlainText( s, max );
 }
 
+// The format of a preview, among those of the installer (no autodetection
+// among all kimgio formats), or 0
+static const char *previewFormat( const QByteArray &data )
+{
+  QBuffer buffer( data );
+  buffer.open( IO_ReadOnly );
+  const char *format = QImageIO::imageFormat( &buffer );
+  static const char * const allowed[] = { "JPEG", "PNG", "GIF", "BMP", "WEBP", "AVIF", "JXL", 0 };
+  for ( int i = 0; format && allowed[ i ]; ++i )
+    if ( qstrcmp( format, allowed[ i ] ) == 0 )
+      return format;
+  return "none";
+}
+
 void WallpaperSource::finished( Request &r )
 {
   if ( r.kind == Preview ) {
@@ -662,7 +681,7 @@ void WallpaperSource::finished( Request &r )
     if ( imageHeaderSize( r.data, &width, &height ) &&
          width > 0 && height > 0 &&
          width <= maxPreviewDimension && height <= maxPreviewDimension &&
-         image.loadFromData( r.data ) )
+         image.loadFromData( r.data, previewFormat( r.data ) ) )
       emit previewLoaded( r.key, image );
     startPreviews();
     return;
@@ -827,7 +846,7 @@ void WallpaperSource::potdTemplates( const Request &r, const QVariant &json )
   next.apodFeed = false;
   next.potd = files;
   next.url = KURL( "https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2"
-                   "&prop=imageinfo&iiprop=url%7Csize%7Cmime%7Cextmetadata&iiurlwidth=320"
+                   "&prop=imageinfo&iiprop=url%7Csize%7Cmime%7Cextmetadata&iiurlwidth=330"
                    "&iiextmetadatafilter=Artist%7CLicenseShortName%7CLicenseUrl%7CObjectName%7CImageDescription%7CCredit"
                    "&titles=" + KURL::encode_string( QStringList( files.keys() ).join( "|" ) ) );
   queue( next );
@@ -1180,18 +1199,29 @@ bool WallpaperSource::parseUnsplash( const QVariant &json, OcsContentList &items
     c.id = jsonString( u, "id" );
     QVariant user = jsonValue( u, "user" );
     c.author = line( jsonString( user, "name" ), 200 );
+    // Unsplash asks for "Photo by <name> on Unsplash" with links to the
+    // photographer and to Unsplash, marked as referrals
+    static const char utm[] = "utm_source=kde3_wallpapers&utm_medium=referral";
+    KURL profile( jsonString( jsonValue( user, "links" ), "html" ) );
+    if ( isAllowedUrl( profile ) ) {
+      profile.setQuery( utm );
+      c.authorUrl = profile.url();
+    }
     c.summary = line( jsonString( u, "description" ), 1000 );
     QString alt = line( jsonString( u, "alt_description" ), 200 );
     c.name = alt.isEmpty() ? i18n( "Photo by %1" ).arg( c.author ) : alt;
     if ( c.name.length() > 1 )
       c.name[ 0 ] = c.name[ 0 ].upper();
-    c.license = i18n( "Unsplash License" );
+    c.license = c.author.isEmpty() ? i18n( "Unsplash License" )
+                                   : i18n( "Photo by %1 on Unsplash (Unsplash License)" ).arg( c.author );
     c.licenseUrl = "https://unsplash.com/license";
     c.width = int( jsonNumber( u, "width" ) );
     c.height = int( jsonNumber( u, "height" ) );
     c.changed = QDateTime::fromString( jsonString( u, "created_at" ).left( 19 ), Qt::ISODate );
     c.preview = KURL( jsonString( jsonValue( u, "urls" ), "small" ) );
     c.detailPage = KURL( jsonString( jsonValue( u, "links" ), "html" ) );
+    if ( c.detailPage.isValid() )
+      c.detailPage.setQuery( utm );
     c.download = KURL( jsonString( jsonValue( u, "links" ), "download_location" ) );
     if ( c.download.host() != "api.unsplash.com" )
       continue;

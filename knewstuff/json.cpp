@@ -480,6 +480,17 @@ QString KNS::htmlToPlainText( const QString &html, uint max )
     ++i;
   }
 
+  // surrogates must come in pairs (CESU-8 or escapes may leave one alone)
+  for ( uint k = 0; k < out.length(); ++k ) {
+    ushort u = out[ k ].unicode();
+    if ( u >= 0xd800 && u < 0xdc00 && k + 1 < out.length() &&
+         out[ k + 1 ].unicode() >= 0xdc00 && out[ k + 1 ].unicode() < 0xe000 ) {
+      ++k;
+      continue;
+    }
+    if ( u >= 0xd800 && u < 0xe000 )
+      out[ k ] = QChar( ushort( 0xfffd ) );
+  }
   for ( uint k = 0; k < out.length(); ++k ) {
     ushort u = out[ k ].unicode();
     if ( u < 0x20 || u == 0x7f || u == 0xa0 || ( u >= 0x80 && u < 0xa0 ) ||

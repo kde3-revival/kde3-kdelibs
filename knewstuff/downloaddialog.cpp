@@ -154,6 +154,7 @@ struct DownloadDialog::Private
     QString m_setFile;
     QMap<QWidget*, QPushButton*> m_setButtons;
     QMap<QWidget*, QPushButton*> m_keyButtons;
+    QMap<QWidget*, QLabel*> m_notes;
 };
 
 // Thumbnails in the OCS lists
@@ -336,6 +337,7 @@ void DownloadDialog::clear()
 
     d->m_setButtons.remove(it.key());
     d->m_keyButtons.remove(it.key());
+    d->m_notes.remove(it.key());
     delete it.key();
   }
   m_map.clear();
@@ -445,6 +447,7 @@ void DownloadDialog::addProvider(Provider *p)
       note->setAlignment(Qt::WordBreak | Qt::AlignLeft | Qt::AlignTop);
       note->setText(text);
       left->add(note);
+      d->m_notes[frame] = note;
     }
   }
   else
@@ -729,27 +732,18 @@ void DownloadDialog::slotDetails()
 
   QString lang = KGlobal::locale()->language();
 
-  QString info = i18n
-  (
-    "Name: %1\n"
-    "Author: %2\n"
-    "License: %3\n"
-    "Version: %4\n"
-    "Release: %5\n"
-    "Rating: %6\n"
-    "Downloads: %7\n"
-    "Release date: %8\n"
-    "Summary: %9\n"
-    ).arg(e->name(lang)
-    ).arg(e->author()
-    ).arg(e->license()
-    ).arg(e->version()
-    ).arg(e->release()
-    ).arg(e->rating()
-    ).arg(e->downloads()
-    ).arg(KGlobal::locale()->formatDate(e->releaseDate())
-    ).arg(e->summary(lang)
-  );
+  // one line at a time: a server's text with "%2" in it is not
+  // substituted by the next arg()
+  QString info;
+  info += i18n("Name: %1\n").arg(e->name(lang));
+  info += i18n("Author: %1\n").arg(e->author());
+  info += i18n("License: %1\n").arg(e->license());
+  info += i18n("Version: %1\n").arg(e->version());
+  info += i18n("Release: %1\n").arg(e->release());
+  info += i18n("Rating: %1\n").arg(e->rating());
+  info += i18n("Downloads: %1\n").arg(e->downloads());
+  info += i18n("Release date: %1\n").arg(KGlobal::locale()->formatDate(e->releaseDate()));
+  info += i18n("Summary: %1\n").arg(e->summary(lang));
 
   if(d->m_entryPage.contains(e))
   {
@@ -1506,6 +1500,8 @@ void DownloadDialog::ocsShowDetails(Entry *e)
       desc += "<br>" + i18n("Resolution: %1 x %2").arg(c.width).arg(c.height);
     if(!c.author.isEmpty())
       desc += "<br>" + i18n("Author: %1").arg(QStyleSheet::escape(c.author));
+    if(!c.authorUrl.isEmpty())
+      desc += "<br><small>" + QStyleSheet::escape(c.authorUrl) + "</small>";
     if(!c.license.isEmpty())
       desc += "<br>" + i18n("License: %1").arg(QStyleSheet::escape(c.license));
     if(!c.licenseUrl.isEmpty())
@@ -1860,8 +1856,9 @@ void DownloadDialog::slotOcsApiKey()
   // list again with the new key
   for(int i = 0; i < page->tabCount(); i++)
   {
+    // a listing in progress is cancelled by the next one
     Private::OcsTab &t = page->tabs[i];
-    if(t.busy) continue;
+    t.busy = false;
     for(QListViewItem *item = t.list->firstChild(); item; item = item->nextSibling())
       d->m_itemEntries.remove(item);
     t.list->clear();
@@ -1869,6 +1866,8 @@ void DownloadDialog::slotOcsApiKey()
     t.nextPage = 0;
     t.started = false;
   }
+  if(d->m_notes.contains(frame))
+    d->m_notes[frame]->setText(WallpaperSource::note(id));
   ocsFetch(frame, d->m_page == frame ? m_curtab : 0);
 }
 
