@@ -225,7 +225,9 @@ void KSSLInfoDlg::setup(KSSLCertificate *cert,
         ipl->hide();
     }
     layout->addWidget(new QLabel(i18n("URL:"), this), 1, 0);
-    KSqueezedTextLabel *urlLabel = new KSqueezedTextLabel(url, this);
+    KSqueezedTextLabel *urlLabel = new KSqueezedTextLabel(this);
+    urlLabel->setTextFormat(Qt::PlainText);
+    urlLabel->setText(url);
     layout->addWidget(urlLabel, 1, 1);
     layout->addWidget(new QLabel(i18n("Certificate state:"), this), 2, 0);
 
@@ -365,6 +367,17 @@ KSSLCertBox *KSSLInfoDlg::certInfoWidget(QWidget *parent, const QString &certNam
 }
 
 
+// The fields of a certificate come from its owner: show them as they
+// are, never as rich text, or a crafted name could pose as another
+// (CVE-2011-3365).
+static QLabel *plainLabel(const QString &text, QWidget *parent) {
+    QLabel *label = new QLabel(parent);
+    label->setTextFormat(Qt::PlainText);
+    label->setText(text);
+    return label;
+}
+
+
 KSSLCertBox::KSSLCertBox(QWidget *parent, const char *name, WFlags f)
 : QScrollView(parent, name, f)
 {
@@ -400,41 +413,43 @@ void KSSLCertBox::setValues(QString certName, QWidget *mailCatcher) {
     if (!(tmp = cert.getValue("O")).isEmpty()) {
         label = new QLabel(i18n("Organization:"), _frame);
         label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-        new QLabel(tmp, _frame);
+        plainLabel(tmp, _frame);
     }
     if (!(tmp = cert.getValue("OU")).isEmpty()) {
         label = new QLabel(i18n("Organizational unit:"), _frame);
         label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-        new QLabel(tmp, _frame);
+        plainLabel(tmp, _frame);
     }
     if (!(tmp = cert.getValue("L")).isEmpty()) {
         label = new QLabel(i18n("Locality:"), _frame);
         label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-        new QLabel(tmp, _frame);
+        plainLabel(tmp, _frame);
     }
     if (!(tmp = cert.getValue("ST")).isEmpty()) {
         label = new QLabel(i18n("Federal State","State:"), _frame);
         label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-        new QLabel(tmp, _frame);
+        plainLabel(tmp, _frame);
     }
     if (!(tmp = cert.getValue("C")).isEmpty()) {
         label = new QLabel(i18n("Country:"), _frame);
         label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-        new QLabel(tmp, _frame);
+        plainLabel(tmp, _frame);
     }
     if (!(tmp = cert.getValue("CN")).isEmpty()) {
         label = new QLabel(i18n("Common name:"), _frame);
         label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-        new QLabel(tmp, _frame);
+        plainLabel(tmp, _frame);
     }
     if (!(tmp = cert.getValue("Email")).isEmpty()) {
         label = new QLabel(i18n("Email:"), _frame);
         label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
         if (mailCatcher) {
-            KURLLabel *mail = new KURLLabel(tmp, tmp, _frame);
+            KURLLabel *mail = new KURLLabel(tmp, QString::null, _frame);
+            mail->setTextFormat(Qt::PlainText);
+            mail->setText(tmp);
             connect(mail, SIGNAL(leftClickedURL(const QString &)), mailCatcher, SLOT(mailClicked(const QString &)));
         } else {
-            label = new QLabel(tmp, _frame);
+            label = plainLabel(tmp, _frame);
         }
     }
     if (label && viewport()) {
