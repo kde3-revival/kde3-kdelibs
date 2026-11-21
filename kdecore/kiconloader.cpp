@@ -20,6 +20,7 @@
 #include <qpixmap.h>
 #include <qpixmapcache.h>
 #include <qimage.h>
+#include <qfile.h>
 #include <qfileinfo.h>
 #include <qdir.h>
 #include <qiconset.h>
@@ -51,6 +52,48 @@
 #endif
 
 #include "kiconloader_p.h"
+
+/*
+ * A site's icon (favicon) at @p size x @p size pixels: a larger one is
+ * scaled down, a smaller one is centred, not scaled up: favicons are
+ * drawn pixel by pixel for 16 pixels and get blurred (and look too big
+ * beside the toolbar's text) when stretched to 22.
+ */
+static QImage favIconToSize(const QImage &src, int size)
+{
+    QImage img = src.depth() == 32 ? src : src.convertDepth(32);
+    int w = img.width(), h = img.height();
+    if (w > size || h > size)
+    {
+        if (w >= h)
+        {
+            h = QMAX(1, h * size / w);
+            w = size;
+        }
+        else
+        {
+            w = QMAX(1, w * size / h);
+            h = size;
+        }
+        img = img.smoothScale(w, h);
+    }
+    if (w == size && h == size)
+        return img;
+
+    QImage dst(size, size, 32);
+    dst.fill(0);   // before the alpha buffer: fill() keeps its alpha
+    dst.setAlphaBuffer(true);
+    int x0 = (size - w) / 2, y0 = (size - h) / 2;
+    bool alpha = img.hasAlphaBuffer();
+    for (int y = 0; y < h; ++y)
+    {
+        const QRgb *s = reinterpret_cast<const QRgb *>(img.scanLine(y));
+        QRgb *d = reinterpret_cast<QRgb *>(dst.scanLine(y + y0)) + x0;
+        for (int x = 0; x < w; ++x)
+            d[x] = alpha ? s[x] : (s[x] | 0xff000000);
+    }
+    return dst;
+}
 
 /*
  * Loads the icon file at @p path; SVG icons are rendered at @p size
@@ -613,7 +656,8 @@ QPixmap KIconLoader::loadIcon(const QString& _name, KIcon::Group group, int size
     QString name = _name;
     QPixmap pix;
     QString key;
-    bool absolutePath=false, favIconOverlay=false;
+    bool absolutePath=false, favIconOverlay=false, isFavIcon=false;
+    QString favIconName;
 
     if (d->mpThemeRoot == 0L)
 	return pix;
@@ -622,6 +666,8 @@ QPixmap KIconLoader::loadIcon(const QString& _name, KIcon::Group group, int size
     if (name.startsWith("favicons/"))
     {
        favIconOverlay = true;
+       isFavIcon = true;
+       favIconName = name.mid(9);
        name = locateLocal("cache", name+".png");
     }
     if (!QDir::isRelativePath(name)) absolutePath=true;
@@ -723,6 +769,18 @@ QPixmap KIconLoader::loadIcon(const QString& _name, KIcon::Group group, int size
 	size = d->mpGroups[group].size;
     }
     favIconOverlay = favIconOverlay && size > 22;
+    // kded's favicons module keeps a site's icon at 16 pixels, and at 32
+    // pixels in favicons/32/ too if the site has one that large: that one
+    // for 23 to 32 pixels, and blended into large icons (64 and up).
+    if (favIconOverlay && (size <= 32 || size >= 64))
+    {
+        QString large = locateLocal("cache", "favicons/32/" + favIconName + ".png", false);
+        if (QFile::exists(large))
+        {
+            name = large;
+            favIconOverlay = size > 32;
+        }
+    }
 
     // Generate a unique cache key for the icon.
 
@@ -813,6 +871,7 @@ QPixmap KIconLoader::loadIcon(const QString& _name, KIcon::Group group, int size
                 return pix;
             }
             icon = unknown;
+            img->setText("X-KDE-Unknown", 0, "1");   // no favicon sizing
             if (path_store != 0L)
                 *path_store = icon.path;
         }
@@ -863,7 +922,13 @@ QPixmap KIconLoader::loadIcon(const QString& _name, KIcon::Group group, int size
     }
 
     // Scale the icon and apply effects if necessary
-    if (iconType == KIcon::Scalable && size != img->width())
+    // (not for the "unknown" icon shown when the favicon cannot be loaded)
+    if (isFavIcon && !favIconOverlay && img->text("X-KDE-Unknown").isNull())
+    {
+        if (img->width() != size || img->height() != size)
+            *img = favIconToSize(*img, size);
+    }
+    else if (iconType == KIcon::Scalable && size != img->width())
     {
         *img = img->smoothScale(size, size);
     }
@@ -884,6 +949,12 @@ QPixmap KIconLoader::loadIcon(const QString& _name, KIcon::Group group, int size
     if (favIconOverlay)
     {
         QImage favIcon(name, "PNG");
+        // too large for the icon it is blended into (e.g. a small
+        // "unknown" icon): the 16 pixel one, or none
+        if (favIcon.width() + 1 > img->width() || favIcon.height() + 1 > img->height())
+            favIcon = QImage(locateLocal("cache", "favicons/" + favIconName + ".png", false), "PNG");
+        if (favIcon.width() + 1 > img->width() || favIcon.height() + 1 > img->height())
+            favIcon = QImage();
         int x = img->width() - favIcon.width() - 1,
             y = img->height() - favIcon.height() - 1;
         if( favIcon.depth() != 32 )
