@@ -227,6 +227,9 @@
 #cmakedefine HAVE_LIBIDN 1
 /* Define if you have libpsl (the Public Suffix List) */
 #cmakedefine HAVE_LIBPSL 1
+
+/* Define if you have libsecret (the Secret Service backend of kwalletd) */
+#cmakedefine HAVE_LIBSECRET 1
 /* Defines if your system has the libart library */
 #cmakedefine HAVE_LIBART 1
 /* Define if SVG icons are rendered with librsvg */

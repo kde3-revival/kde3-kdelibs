@@ -27,7 +27,7 @@
 #include <qstring.h>
 #include <qwidget.h>
 #include <qguardedptr.h>
-#include "kwalletbackend.h"
+#include "kwalletstore.h"
 
 #include <time.h>
 #include <stdlib.h>
@@ -143,6 +143,16 @@ class KWalletD : public KDEDModule {
 
 		virtual QString localWallet();
 
+		// The Secret Service backend: import the classic wallet file
+		// (share/apps/kwallet/<wallet>.kwl) into the Secret Service;
+		// asks for its password.  The file is kept as <wallet>.kwl.migrated.
+		// 0 on success, -1 on error or if the user cancelled.
+		virtual int importClassicWallet(const QString& wallet, uint wId);
+
+		// Does the wallet live in the Secret Service (no password of its
+		// own) instead of an encrypted file?
+		virtual bool usesSecretService() const;
+
 	private slots:
 		void slotAppUnregistered(const QCString& app);
 		void emitWalletListDirty();
@@ -151,10 +161,13 @@ class KWalletD : public KDEDModule {
 		void processTransactions();
 
 	private:
+		int internalOpenSecretService(const QCString& appid, const QString& wallet, WId w, bool modal);
+		int importClassic(KWalletStore *target, const QString& wallet, WId w, bool ask);
+		bool openPrompt(const KWalletStore *w) const;
 		int internalOpen(const QCString& appid, const QString& wallet, bool isPath = false, WId w = 0, bool modal = false);
 		bool isAuthorizedApp(const QCString& appid, const QString& wallet, WId w);
 		// This also validates the handle.  May return NULL.
-		KWallet::Backend* getWallet(const QCString& appid, int handle);
+		KWalletStore* getWallet(const QCString& appid, int handle);
 		// Generate a new unique handle.
 		int generateHandle();
 		// Invalidate a handle (remove it from the QMap)
@@ -163,7 +176,7 @@ class KWalletD : public KDEDModule {
 		void doCloseSignals(int,const QString&);
 		void emitFolderUpdated(const QString&, const QString&);
 		// Internal - close this wallet.
-		int closeWallet(KWallet::Backend *w, int handle, bool force);
+		int closeWallet(KWalletStore *w, int handle, bool force);
 		// Implicitly allow access for this application
 		bool implicitAllow(const QString& wallet, const QCString& app);
 		bool implicitDeny(const QString& wallet, const QCString& app);
@@ -175,7 +188,7 @@ class KWalletD : public KDEDModule {
 		void setupDialog( QWidget* dialog, WId wId, const QCString& appid, bool modal );
 		void checkActiveDialog();
 
-		QIntDict<KWallet::Backend> _wallets;
+		QIntDict<KWalletStore> _wallets;
 		QMap<QCString,QValueList<int> > _handles;
 		QMap<QString,QCString> _passwords;
 		KDirWatch *_dw;
@@ -183,6 +196,7 @@ class KWalletD : public KDEDModule {
 
 		bool _leaveOpen, _closeIdle, _launchManager, _enabled;
 	       	bool _openPrompt, _firstUse, _showingFailureNotify;
+		bool _secretService, _ssOpenPrompt;
 		int _idleTime;
 		QMap<QString,QStringList> _implicitAllowMap, _implicitDenyMap;
 		KTimeout *_timeouts;

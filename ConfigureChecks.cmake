@@ -342,6 +342,17 @@ if(KDE3_WITH_LIBPSL)
   endif()
 endif()
 
+# libsecret (kwalletd: wallets kept in the freedesktop.org Secret Service,
+# e.g. the GNOME login keyring that the display manager unlocks)
+option(KDE3_WITH_LIBSECRET "KWallet backend on the freedesktop.org Secret Service (libsecret)" ON)
+option(KDE3_BUILD_KWALLETD_TESTS "Build the tests of the Secret Service backend of kwalletd (kio/misc/kwalletd/tests)" OFF)
+if(KDE3_WITH_LIBSECRET)
+  pkg_check_modules(LIBSECRET IMPORTED_TARGET libsecret-1)
+  if(LIBSECRET_FOUND)
+    set(HAVE_LIBSECRET 1)
+  endif()
+endif()
+
 # libart (svgicons): not ported, libart_lgpl is not available any more
 set(HAVE_LIBART "")
 

@@ -20,3 +20,48 @@ Konqueror plugin
 
 KControl module
 
+
+
+The Secret Service backend (kio/misc/kwalletd/kwalletsecretservice.*):
+
+With libsecret (KDE3_WITH_LIBSECRET), kwalletd can keep the wallets in
+the freedesktop.org Secret Service (org.freedesktop.secrets: the GNOME
+keyring, KeePassXC, ...) instead of the encrypted files.  The GNOME login
+keyring is unlocked by the display manager (pam_gnome_keyring), so the
+wallet opens without a password, as in GNOME.  kwalletrc:
+
+  [Wallet]
+  Backend=SecretService   always (opening fails if the service is gone)
+  Backend=File            the classic encrypted files
+  (unset)                 the Secret Service if org.freedesktop.secrets
+                          is on the session bus when kwalletd starts,
+                          else the files
+  Secret Service Prompt on Open=false
+                          the "allow this application" dialog for the
+                          Secret Service (off by default, like GNOME)
+
+Every entry is an item of the default collection ("login"), schema
+"org.kde.kwallet3", attributes wallet, folder, key and type
+(password | map | stream | unknown | binary | folder), label
+"KWallet: <folder>/<key>".  Passwords are UTF-8 text/plain; maps keep
+KWallet's QDataStream encoding (application/x-kde-kwallet-map); streams
+are the bytes (application/octet-stream); a folder (also an empty one)
+has a marker item with type "folder" and key "".  kwalletd only ever
+touches items of this schema.  A locked collection is unlocked through
+the service's own prompt; there is no KDE password dialog.  There is no
+wallet password to change (changePassword() says so); Seahorse shows and
+edits the items too.
+
+Migration: when a wallet is opened in the Secret Service and a classic
+file of the same name exists (share/apps/kwallet/<wallet>.kwl), kwalletd
+offers once to import it (this needs the old password once).  Entries
+that already exist in the Secret Service are kept; when everything was
+copied the file is renamed to <wallet>.kwl.migrated (never deleted).
+"Do Not Import" is remembered in kwalletrc [Secret Service Import]; the
+import can be started later with
+  dcop kded kwalletd importClassicWallet <wallet> 0
+or with KWalletManager's Import Wallet.
+
+Tests: cmake -DKDE3_BUILD_KWALLETD_TESTS=ON, then
+  kio/misc/kwalletd/tests/run-tests.sh <build dir> [xdrv]
+(a private D-Bus session and gnome-keyring, never the user's).
