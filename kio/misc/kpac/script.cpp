@@ -446,10 +446,22 @@ namespace KPAC
 	if (!findObj.isValid() || !findObj.implementsCall())
 	  throw Error( "No such function FindProxyForURL" );
 
+	// The script may come from the network (WPAD) and can send what it
+	// gets anywhere, e.g. with dnsResolve(): never give it credentials,
+	// and of a secure URL only the scheme, host and port (CVE-2017-6410).
+	KURL u( url );
+	u.setUser( QString::null );
+	u.setPass( QString::null );
+	u.setRef( QString::null );
+	if ( u.protocol() == "https" || u.protocol() == "webdavs" ) {
+	    u.setPath( "/" );
+	    u.setQuery( QString::null );
+	}
+
 	Object thisObj;
 	List args;
-	args.append(String(url.url()));
-	args.append(String(url.host()));
+	args.append(String(u.url()));
+	args.append(String(u.host()));
 	Value retval = findObj.call( exec, thisObj, args );
 
 	if ( exec->hadException() ) {
