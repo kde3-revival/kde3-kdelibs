@@ -478,6 +478,18 @@
 # Zoo archiver
 20	lelong		0xfdc4a7dc	application/x-zoo
 
+# 7-Zip archiver
+0	string		7z\274\257\047\034	application/x-7z
+
+# XZ compressed data
+0	string		\3757zXZ\0	application/x-xz
+
+# Zstandard compressed data (RFC 8878 frame)
+0	string		\050\265\057\375	application/zstd
+
+# LZ4 compressed data (frame format)
+0	lelong		0x184d2204	application/x-lz4
+
 # Shell archives
 10	string	#\ This\ is\ a\ shell\ archive	application/x-shellscript
 
