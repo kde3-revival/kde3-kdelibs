@@ -124,7 +124,8 @@ namespace
             else if ( colors == 0 )
             {
                 // high/true color requested
-                if ( lhs.colors == 0 ) return true;
+                if ( lhs.colors == 0 && rhs.colors == 0 ) return false;
+                else if ( lhs.colors == 0 ) return true;
                 else if ( rhs.colors == 0 ) return false;
                 else return lhs.colors > rhs.colors;
             }
@@ -140,6 +141,31 @@ namespace
         unsigned size;
         unsigned colors;
     };
+
+    // Orders indices of a directory by their entries.
+    struct IndexLess
+    {
+        IndexLess( const std::vector< IconRec >& icons, const LessDifference& less )
+            : icons( icons ), less( less ) {}
+        bool operator ()( unsigned lhs, unsigned rhs ) const
+        {
+            return less( icons[ lhs ], icons[ rhs ] );
+        }
+        const std::vector< IconRec >& icons;
+        LessDifference less;
+    };
+
+    // Whether a PNG file says (its IHDR chunk) it is larger than an icon.
+    bool pngTooLarge( const QByteArray& png )
+    {
+        if ( png.size() < 24 )
+            return true;
+        const unsigned char* d = reinterpret_cast< const unsigned char* >( png.data() );
+        unsigned long w = ( d[ 16 ] << 24 ) | ( d[ 17 ] << 16 ) | ( d[ 18 ] << 8 ) | d[ 19 ];
+        unsigned long h = ( d[ 20 ] << 24 ) | ( d[ 21 ] << 16 ) | ( d[ 22 ] << 8 ) | d[ 23 ];
+        // An icon entry: 256 pixels at most by the format; some room.
+        return w == 0 || h == 0 || w > 1024 || h > 1024;
+    }
 
     bool loadFromDIB( QDataStream& stream, const IconRec& rec, QImage& icon )
     {
@@ -281,6 +307,11 @@ extern "C" KDE_EXPORT void kimgio_ico_read( QImageIO* io )
             requestedColors = options[ "colors" ].toUInt();
     }
 
+    // Real icons have a handful of entries; a hostile directory of
+    // thousands would make the reader try thousands of images.
+    if ( header.count > 256 )
+        return;
+
     typedef std::vector< IconRec > IconList;
     IconList icons;
     for ( unsigned i = 0; i < header.count; ++i )
@@ -290,21 +321,19 @@ extern "C" KDE_EXPORT void kimgio_ico_read( QImageIO* io )
         stream >> rec;
         icons.push_back( rec );
     }
-    // The best match first; if it cannot be read, the next best ones.
+    // The best match first; if it cannot be read, the next best ones (a
+    // few: each may be a megabyte to decode).
     std::vector< unsigned > order;
     if ( requestedIndex >= 0 ) {
         if ( unsigned( requestedIndex ) < icons.size() )
             order.push_back( requestedIndex );
     } else {
-        IconList sorted( icons );
-        std::stable_sort( sorted.begin(), sorted.end(), LessDifference( requestedSize, requestedColors ) );
-        for ( IconList::const_iterator it = sorted.begin(); it != sorted.end(); ++it )
-            for ( unsigned i = 0; i < icons.size(); ++i )
-                if ( icons[ i ].offset == it->offset &&
-                     std::find( order.begin(), order.end(), i ) == order.end() ) {
-                    order.push_back( i );
-                    break;
-                }
+        for ( unsigned i = 0; i < icons.size(); ++i )
+            order.push_back( i );
+        std::stable_sort( order.begin(), order.end(),
+                          IndexLess( icons, LessDifference( requestedSize, requestedColors ) ) );
+        if ( order.size() > 4 )
+            order.resize( 4 );
     }
 
     for ( std::vector< unsigned >::const_iterator it = order.begin(); it != order.end(); ++it )
@@ -324,7 +353,7 @@ extern "C" KDE_EXPORT void kimgio_ico_read( QImageIO* io )
             QByteArray png( QMIN( QIODevice::Offset( rec.size ), available ) );
             io->ioDevice()->at( offset + rec.offset );
             if ( png.size() < 8 || io->ioDevice()->readBlock( png.data(), png.size() ) != Q_LONG( png.size() ) ||
-                 !icon.loadFromData( png, "PNG" ) )
+                 pngTooLarge( png ) || !icon.loadFromData( png, "PNG" ) )
                 continue;
             icon = icon.convertDepth( 32 );
         }
