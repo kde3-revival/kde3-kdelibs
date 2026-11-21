@@ -36,6 +36,8 @@
 #include <sys/socket.h>
 
 #include <unistd.h>
+#include <dlfcn.h>
+#include <link.h>
 
 #include "ksocks.h"
 
@@ -239,6 +241,27 @@ void KSocks::setConfig(KConfigBase *config)
 bool KSocks::activated() { return (_me != 0L); }
 
 
+// The file the dynamic linker loads for the library <soname> (searching
+// LD_LIBRARY_PATH, its cache and its default directories, whatever the
+// system's library directory is: /usr/lib, /usr/lib64, a multiarch
+// directory), or null if there is none.
+// The library is loaded once here and then again by KLibLoader; the
+// SOCKS client libraries (Dante, NEC) do not mind.
+static QString systemLibrary(const QString &soname)
+{
+   QString path;
+   void *h = dlopen(QFile::encodeName(soname), RTLD_LAZY | RTLD_LOCAL);
+   if (!h)
+      return path;
+   struct link_map *map = 0;
+   if (dlinfo(h, RTLD_DI_LINKMAP, &map) == 0 && map && map->l_name &&
+       map->l_name[0] == '/')
+      path = QFile::decodeName(map->l_name);
+   dlclose(h);
+   return path;
+}
+
+
 KSocks::KSocks(KConfigBase *config) : _socksLib(0L), _st(0L) {
    _hasSocks = false;
    _useSocks = false;
@@ -253,16 +276,18 @@ KSocks::KSocks(KConfigBase *config) : _socksLib(0L), _st(0L) {
    if (_disabled)
       return;
 
+   // The libraries are looked for where the dynamic linker finds them
+   // (see systemLibrary()), then in the usual SOCKS directories the
+   // dynamic linker may not search, then in those of SOCKS_lib_path.
+   // The fixed list used before started with "/usr/lib" KDELIBSUFF,
+   // where KDELIBSUFF is the layout of the KDE prefix, not of the
+   // system, and missed e.g. /usr/lib64.
    _libPaths << ""
-	     << "/usr/lib" KDELIBSUFF "/"
-             << "/usr/lib/"
-	     << "/usr/local/lib" KDELIBSUFF "/"
              << "/usr/local/lib/"
-	     << "/usr/local/socks5/lib" KDELIBSUFF "/"
              << "/usr/local/socks5/lib/"
-	     << "/opt/socks5/lib" KDELIBSUFF "/"
              << "/opt/socks5/lib/";
-   _libNames << "libsocks.so"                  // Dante
+   _libNames << "libsocks.so.0"                // Dante (run time)
+             << "libsocks.so"                  // Dante
              << "libdsocksd.so.0"              // Dante 1.1.14-2 on
                                                // Debian unstable 17-12-2003
              << "libsocks5.so"                 // ?
@@ -311,7 +336,10 @@ KSocks::KSocks(KConfigBase *config) : _socksLib(0L), _st(0L) {
    for (QStringList::Iterator it  = _libNames.begin();
                               it != _libNames.end();
                               ++it) {
-      _socksLib = ll->library((*pit + *it).latin1());
+      QString lib = (*pit).isEmpty() ? systemLibrary(*it) : *pit + *it;
+      if (lib.isEmpty())
+         continue;
+      _socksLib = ll->library(QFile::encodeName(lib));
       if (_socksLib) {
          if ((_meth == 1 || _meth == 2) &&
              _socksLib->symbol("S5LogShowThreadIDS") != 0L) {  // NEC SOCKS
