@@ -511,8 +511,37 @@ QIODevice *KArchiveFile::device() const
     return new KLimitedIODevice( archive()->device(), m_pos, m_size );
 }
 
+// An entry name from an archive must name an entry in the directory it
+// is extracted to, not ".." or a path (CVE-2016-6232).
+static bool isSafeEntryName( const QString &name )
+{
+  return !name.isEmpty() && name != "." && name != ".." && name.find( '/' ) == -1;
+}
+
+// Whether path is (inside) the directory base; both must exist.  Catches
+// a path that leads out of base through a symlink from the archive.
+static bool isInside( const QString &path, const QString &base )
+{
+  QString p = QDir( path ).canonicalPath();
+  QString b = QDir( base ).canonicalPath();
+  if ( p.isEmpty() || b.isEmpty() )
+    return false;
+  return p == b || p.startsWith( b.endsWith( "/" ) ? b : b + '/' );
+}
+
 void KArchiveFile::copyTo(const QString& dest) const
 {
+  if ( !isSafeEntryName( name() ) ) {
+    kdWarning() << "KArchiveFile::copyTo: skipping unsafe name " << name() << endl;
+    return;
+  }
+  // Do not write through a symlink, e.g. one the archive put there.
+  KDE_struct_stat st;
+  if ( KDE_lstat( QFile::encodeName( dest + "/" + name() ), &st ) == 0 &&
+       S_ISLNK( st.st_mode ) ) {
+    kdWarning() << "KArchiveFile::copyTo: not writing through symlink " << dest << "/" << name() << endl;
+    return;
+  }
   QFile f( dest + "/"  + name() );
   f.open( IO_ReadWrite | IO_Truncate );
   f.writeBlock( data() );
@@ -623,10 +652,20 @@ void KArchiveDirectory::copyTo(const QString& dest, bool recursiveCopy ) const
     curDir = dirStack.pop();
     curDirName = dirNameStack.pop();
     root.mkdir(curDirName);
+    if ( !isInside( curDirName, dest ) ) {
+      kdWarning() << "KArchiveDirectory::copyTo: skipping " << curDirName
+                  << ", it is not inside " << dest << endl;
+      continue;
+    }
 
     dirEntries = curDir->entries();
     for ( it = dirEntries.begin(); it != dirEntries.end(); ++it ) {
       curEntry = curDir->entry(*it);
+      if ( !isSafeEntryName( curEntry->name() ) ) {
+        kdWarning() << "KArchiveDirectory::copyTo: skipping unsafe name "
+                    << curEntry->name() << endl;
+        continue;
+      }
       if (!curEntry->symlink().isEmpty()) {
           const QString linkName = curDirName+'/'+curEntry->name();
           kdDebug() << "symlink(" << curEntry->symlink() << ',' << linkName << ')';
@@ -661,7 +700,9 @@ void KArchiveDirectory::copyTo(const QString& dest, bool recursiveCopy ) const
   KArchiveFile* f;
   for ( f = fileList.first(); f; f = fileList.next() ) {
     int pos = f->position();
-    f->copyTo( fileToDir[pos] );
+    // a symlink of the archive may have replaced the directory since
+    if ( isInside( fileToDir[pos], dest ) )
+      f->copyTo( fileToDir[pos] );
   }
 }
 
