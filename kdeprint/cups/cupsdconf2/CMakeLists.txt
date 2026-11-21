@@ -41,6 +41,25 @@ kde3_add_kdeinit_executable(cupsdconf
     Cups::Cups
 )
 
+# The directories CUPS was built with (cups.pc); the CUPS defaults
+# without it.  ServerBin is <prefix>/lib/cups even on systems whose
+# libraries are in lib64.
+pkg_get_variable(CUPS_SERVERBIN cups cups_serverbin)
+pkg_get_variable(CUPS_SERVERROOT cups cups_serverroot)
+pkg_get_variable(CUPS_DATADIR cups cups_datadir)
+foreach(_v SERVERBIN:/usr/lib/cups SERVERROOT:/etc/cups DATADIR:/usr/share/cups)
+  string(REPLACE ":" ";" _v "${_v}")
+  list(GET _v 0 _n)
+  list(GET _v 1 _d)
+  if(NOT CUPS_${_n})
+    set(CUPS_${_n} "${_d}")
+  endif()
+endforeach()
+target_compile_definitions(kdeinit_cupsdconf PRIVATE
+  "KDE3_CUPS_SERVERBIN=\"${CUPS_SERVERBIN}\""
+  "KDE3_CUPS_SERVERROOT=\"${CUPS_SERVERROOT}\""
+  "KDE3_CUPS_DATADIR=\"${CUPS_DATADIR}\"")
+
 install(FILES
   kde_logo.png
   cups_logo.png

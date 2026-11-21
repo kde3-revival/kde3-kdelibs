@@ -61,8 +61,10 @@ void splitSizeSpec(const QString& s, int& sz, int& suff)
 
 CupsdConf::CupsdConf()
 {
-	// start by trying to find CUPS directories (useful later)
-	datadir_ = findDir(QStringList("/usr/share/cups")
+	// start by trying to find CUPS directories (useful later): first
+	// those CUPS was built with (from cups.pc at build time)
+	datadir_ = findDir(QStringList(KDE3_CUPS_DATADIR)
+			<< "/usr/share/cups"
 			<< "/usr/local/share/cups"
 			<< "/opt/share/cups"
 			<< "/opt/local/share/cups");
@@ -71,11 +73,16 @@ CupsdConf::CupsdConf()
 	//fontpath_ << (datadir_+"/fonts");
 	requestdir_ = findDir(QStringList("/var/spool/cups")
 			<< "/var/cups");
-	serverbin_ = findDir(QStringList("/usr/lib" KDELIBSUFF "/cups")
-			<< "/usr/local/lib" KDELIBSUFF "/cups"
-			<< "/opt/lib" KDELIBSUFF "/cups"
-			<< "/opt/local/lib" KDELIBSUFF "/cups");
-	serverfiles_ = findDir(QStringList("/etc/cups")
+	// ServerBin is <prefix>/lib/cups also where the system libraries
+	// are in lib64 (KDELIBSUFF, used here before, is the layout of the
+	// KDE prefix anyway)
+	serverbin_ = findDir(QStringList(KDE3_CUPS_SERVERBIN)
+			<< "/usr/lib/cups"
+			<< "/usr/local/lib/cups"
+			<< "/opt/lib/cups"
+			<< "/opt/local/lib/cups");
+	serverfiles_ = findDir(QStringList(KDE3_CUPS_SERVERROOT)
+			<< "/etc/cups"
 			<< "/usr/local/etc/cups");
 	tmpfiles_ = requestdir_+"/tmp";
 
