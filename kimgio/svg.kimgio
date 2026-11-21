@@ -1,0 +1,9 @@
+[Image Format]
+Type=SVG
+Header=^(\xef\xbb\xbf)?[ \t\r\n]*<(\?xml|svg|!DOCTYPE svg|!--)|^\x1f\x8b\x08
+Name=Scalable Vector Graphics
+Read=true
+Write=false
+Suffices=svg,SVG,svgz,SVGZ
+Mimetype=image/svg+xml
+Library=kimg_svg.la
