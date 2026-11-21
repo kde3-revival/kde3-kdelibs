@@ -64,10 +64,18 @@ KFilterBase * KFilterBase::findFilterByMimeType( const QString & mimeType )
             return filter;
     }
 
-    if ( mimeType == "application/x-bzip2" || mimeType == "application/x-gzip" ) // #88574
+    if ( mimeType == "application/x-bzip2" || mimeType == "application/x-gzip" ||
+         mimeType == "application/x-xz" || mimeType == "application/zstd" ) // #88574
         kdWarning(7005) << "KFilterBase::findFilterByMimeType : no filter found for " << mimeType << endl;
 
     return 0L;
+}
+
+bool KFilterBase::setEndOfInput()
+{
+    bool supported = false;
+    virtual_hook( VirtualHookEndOfInput, &supported );
+    return supported;
 }
 
 void KFilterBase::virtual_hook( int, void* )

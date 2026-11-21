@@ -31,12 +31,13 @@ class KFilterDev::KFilterDevPrivate
 public:
     KFilterDevPrivate() : bNeedHeader(true), bSkipHeaders(false),
                           autoDeleteFilterBase(false), bOpenedUnderlyingDevice(false),
-                          bIgnoreData(false){}
+                          bIgnoreData(false), bEndOfInput(false){}
     bool bNeedHeader;
     bool bSkipHeaders;
     bool autoDeleteFilterBase;
     bool bOpenedUnderlyingDevice;
     bool bIgnoreData;
+    bool bEndOfInput; // the device has no more data and the filter knows it
     QByteArray buffer; // Used as 'input buffer' when reading, as 'output buffer' when writing
     QCString ungetchBuffer;
     QCString origFileName;
@@ -130,6 +131,7 @@ bool KFilterDev::open( int mode )
         filter->setOutBuffer( d->buffer.data(), d->buffer.size() );
     }
     d->bNeedHeader = !d->bSkipHeaders;
+    d->bEndOfInput = false;
     filter->init( mode );
     d->bOpenedUnderlyingDevice = !filter->device()->isOpen();
     bool ret = d->bOpenedUnderlyingDevice ? filter->device()->open( mode ) : true;
@@ -202,6 +204,7 @@ bool KFilterDev::at( QIODevice::Offset pos )
         // We can forget about the cached data
         d->ungetchBuffer.resize(0);
         d->bNeedHeader = !d->bSkipHeaders;
+        d->bEndOfInput = false;
         d->result = KFilterBase::OK;
         filter->setInBuffer(0L,0);
         filter->reset();
@@ -292,8 +295,18 @@ Q_LONG KFilterDev::readBlock( char *data, Q_ULONG maxlen )
             // Request data from underlying device
             int size = filter->device()->readBlock( d->buffer.data(),
                                                     d->buffer.size() );
-            if ( size )
+            if ( size > 0 )
                 filter->setInBuffer( d->buffer.data(), size );
+            else if ( size < 0 ) {
+                kdWarning(7005) << "KFilterDev: Error when reading the compressed data" << endl;
+                d->result = KFilterBase::ERROR;
+                break;
+            }
+            else if ( d->bEndOfInput || filter->setEndOfInput() ) {
+                // The filter finishes the stream itself and tells whether
+                // the compressed data was complete (see below)
+                d->bEndOfInput = true;
+            }
             else {
                 if ( decompressedAll )
                 {
@@ -321,6 +334,14 @@ Q_LONG KFilterDev::readBlock( char *data, Q_ULONG maxlen )
 
         // We got that much data since the last time we went here
         uint outReceived = availOut - filter->outBufferAvailable();
+        if ( d->bEndOfInput && d->result == KFilterBase::OK && outReceived == 0 )
+        {
+            // No more input and no progress: the filter broke its promise
+            // to return END or ERROR; don't loop forever.
+            kdWarning(7005) << "KFilterDev: Unexpected end of the compressed data" << endl;
+            d->result = KFilterBase::ERROR;
+            break;
+        }
         //kdDebug(7005) << "avail_out = " << filter->outBufferAvailable() << " result=" << d->result << " outReceived=" << outReceived << endl;
         if( availOut < (uint)filter->outBufferAvailable() )
             kdWarning(7005) << " last availOut " << availOut << " smaller than new avail_out=" << filter->outBufferAvailable() << " !" << endl;
@@ -348,6 +369,9 @@ Q_LONG KFilterDev::readBlock( char *data, Q_ULONG maxlen )
         filter->setOutBuffer( data, availOut );
     }
 
+    // An error with no data: say so now, not with a 0 that means the end
+    if ( d->result == KFilterBase::ERROR && dataReceived == 0 )
+        return -1;
     return dataReceived;
 }
 
@@ -360,13 +384,12 @@ Q_LONG KFilterDev::writeBlock( const char *data /*0 to finish*/, Q_ULONG len )
 
     bool finish = (data == 0L);
     if (!finish)
-    {
         filter->setInBuffer( data, len );
-        if (d->bNeedHeader)
-        {
-            (void)filter->writeHeader( d->origFileName );
-            d->bNeedHeader = false;
-        }
+    // Also when nothing was written: an empty file needs its header too
+    if (d->bNeedHeader)
+    {
+        (void)filter->writeHeader( d->origFileName );
+        d->bNeedHeader = false;
     }
 
     uint dataWritten = 0;

@@ -32,7 +32,7 @@ class QIODevice;
 
 /**
  * This is the base class for compression filters
- * such as gzip and bzip2. It's pretty much internal.
+ * such as gzip, bzip2, xz, zstd and lz4. It's pretty much internal.
  * Don't use directly, use KFilterDev instead.
  */
 class KIO_EXPORT KFilterBase : public QObject // needs to inherit QObject for KLibFactory::create
@@ -89,6 +89,22 @@ public:
     virtual Result compress( bool finish ) = 0;
 
     /**
+     * \internal
+     * Tells the filter that the underlying device has no more data after
+     * what was given with setInBuffer(). A filter that supports this then
+     * finishes the stream: uncompress() returns END once the compressed
+     * data was complete and all of it was given out, OK as long as there
+     * is uncompressed data left that did not fit into the output buffer,
+     * and ERROR when the compressed data was cut off. reset() and init()
+     * forget the end of the input.
+     *
+     * @return true if the filter supports this (xz, lzma, zstd and lz4),
+     * false if it does not (gzip and bzip2: they find the end of their
+     * data themselves and do not tell when it is missing)
+     */
+    bool setEndOfInput();
+
+    /**
      * Call this to create the appropriate filter for the file
      * named @p fileName.
      * @param fileName the name of the file to filter
@@ -108,6 +124,12 @@ protected:
     QIODevice * m_dev;
     bool m_bAutoDel;
 protected:
+    /**
+     * \internal
+     * The id of virtual_hook() that setEndOfInput() calls; @p data is a
+     * bool * that a filter supporting the end of input sets to true.
+     */
+    enum { VirtualHookEndOfInput = 0x4b464531 };
     virtual void virtual_hook( int id, void* data );
 private:
     class KFilterBasePrivate;
