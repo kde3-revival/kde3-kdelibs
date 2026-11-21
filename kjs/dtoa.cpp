@@ -515,7 +515,9 @@ Balloc
 #endif
 
 	ACQUIRE_DTOA_LOCK(0);
-	if ((rv = freelist[k])) {
+	/* k > Kmax happens for long enough input (CVE-2009-0689): such
+	 * Bigints are malloc()ed and free()d, not kept in freelist[]. */
+	if (k <= Kmax && (rv = freelist[k])) {
 		freelist[k] = rv->next;
 		}
 	else {
@@ -525,7 +527,7 @@ Balloc
 #else
 		len = (sizeof(Bigint) + (x-1)*sizeof(ULong) + sizeof(double) - 1)
 			/sizeof(double);
-		if (pmem_next - private_mem + len <= PRIVATE_mem) {
+		if (k <= Kmax && pmem_next - private_mem + len <= PRIVATE_mem) {
 			rv = (Bigint*)pmem_next;
 			pmem_next += len;
 			}
@@ -549,10 +551,14 @@ Bfree
 #endif
 {
 	if (v) {
-		ACQUIRE_DTOA_LOCK(0);
-		v->next = freelist[v->k];
-		freelist[v->k] = v;
-		FREE_DTOA_LOCK(0);
+		if (v->k > Kmax)
+			free((void*)v);
+		else {
+			ACQUIRE_DTOA_LOCK(0);
+			v->next = freelist[v->k];
+			freelist[v->k] = v;
+			FREE_DTOA_LOCK(0);
+			}
 		}
 	}
 
