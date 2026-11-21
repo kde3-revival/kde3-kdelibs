@@ -1344,7 +1344,10 @@ bool CSSParser::parseContent( int propId, bool important )
                 if ( args->size() != 1)
                     return false;
                 Value *a = args->current();
-                parsedValue = new CSSPrimitiveValueImpl(domString(a->string), CSSPrimitiveValue::CSS_ATTR);
+                // Only an identifier names an attribute; for anything
+                // else a->string is not set (CVE-2009-1698).
+                if (a && a->unit == CSSPrimitiveValue::CSS_IDENT)
+                    parsedValue = new CSSPrimitiveValueImpl(domString(a->string), CSSPrimitiveValue::CSS_ATTR);
             }
             else
             if (fname == "counter(") {
