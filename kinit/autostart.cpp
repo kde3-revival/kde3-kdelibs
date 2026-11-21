@@ -135,37 +135,49 @@ static QStringList autoStartDirs()
 // The desktop files to autostart. A file hides the files of the same name
 // in the less important directories, also when it is not started itself
 // (Hidden=true in ~/.config/autostart disables a system-wide entry).
-static QStringList autoStartFiles()
+// kdeFiles gets those of them that are in share/autostart of KDE 3.
+static QStringList autoStartFiles(QStringList &kdeFiles)
 {
    QStringList files;
    QStringList names;
    QStringList dirs = autoStartDirs();
+   QStringList kdeDirs = KGlobal::dirs()->resourceDirs("autostart");
    for (QStringList::ConstIterator dit = dirs.begin(); dit != dirs.end(); ++dit)
    {
       QDir dir(*dit, "*.desktop", QDir::Name, QDir::Files | QDir::Readable);
       QStringList entries = dir.entryList();
+      bool kdeDir = kdeDirs.contains(*dit);
       for (QStringList::ConstIterator it = entries.begin(); it != entries.end(); ++it)
       {
          if (names.contains(*it))
             continue;
          names.append(*it);
          files.append(dir.absFilePath(*it));
+         if (kdeDir)
+            kdeFiles.append(dir.absFilePath(*it));
       }
    }
    return files;
 }
 
-// Our desktop names in XDG_CURRENT_DESKTOP: the session sets
-// XDG_CURRENT_DESKTOP=KDE3:GNOME, and older KDE 3 entries say "KDE".
-static bool isOurDesktop(const QStringList &desktops)
+// Whether an OnlyShowIn or NotShowIn list names this desktop: KDE3, or
+// also KDE when kdeIsUs. The session sets XDG_CURRENT_DESKTOP=KDE3:GNOME.
+// In share/autostart of KDE 3, "KDE" is KDE 3, as the older entries say.
+// In the XDG directories "KDE" is Plasma: OnlyShowIn=KDE; there is for
+// the parts of Plasma (plasmashell, xembedsniproxy, powerdevil, baloo_file,
+// ...), which KDE 3 must not start, so only KDE3 counts for OnlyShowIn;
+// NotShowIn=KDE; there is for the tools that Plasma replaces with its own
+// (nm-applet, the printer applet), as KDE 3 does, so KDE counts for it.
+static bool namesOurDesktop(const QStringList &desktops, bool kdeIsUs)
 {
-   return desktops.contains("KDE") || desktops.contains("KDE3");
+   return desktops.contains("KDE3") || (kdeIsUs && desktops.contains("KDE"));
 }
 
 void
 AutoStart::loadAutoStartList()
 {
-   QStringList files = autoStartFiles();
+   QStringList kdeFiles;
+   QStringList files = autoStartFiles(kdeFiles);
 
    for(QStringList::ConstIterator it = files.begin();
        it != files.end();
@@ -189,14 +201,15 @@ AutoStart::loadAutoStartList()
        // (the gsd-* settings daemons, gnome-software, gnome-initial-setup,
        // ...) and would fight KDE over the settings, the keys and the
        // screen. Entries without OnlyShowIn are started.
+       const bool kdeEntry = kdeFiles.contains(*it);
        if (config.hasKey("OnlyShowIn"))
        {
-          if (!isOurDesktop(config.readListEntry("OnlyShowIn", ';')))
+          if (!namesOurDesktop(config.readListEntry("OnlyShowIn", ';'), kdeEntry))
               continue;
        }
        if (config.hasKey("NotShowIn"))
        {
-           if (isOurDesktop(config.readListEntry("NotShowIn", ';')))
+           if (namesOurDesktop(config.readListEntry("NotShowIn", ';'), true))
                continue;
        }
 
