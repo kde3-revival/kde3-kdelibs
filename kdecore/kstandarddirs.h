@@ -90,6 +90,8 @@ class KStandardDirsPrivate;
  * @li tmp - Temporary files (specific for both current host and current user)
  * @li socket - UNIX Sockets (specific for both current host and current user)
  * @li emoticons - Emoticons themes  (Since KDE 3.4)
+ * @li xdgdata-mime - freedesktop.org shared-mime-info databases
+ *     ($XDG_DATA_DIRS/mime)
  *
  * A type that is added by the class KApplication if you use it, is
  * appdata. This one makes the use of the type data a bit easier as it

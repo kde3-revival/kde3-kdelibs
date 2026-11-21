@@ -100,7 +100,7 @@ static const char* const types[] = {"html", "icon", "apps", "sound",
 			      "wallpaper", "lib", "pixmap", "templates",
 			      "module", "qtplugins",
 			      "xdgdata-apps", "xdgdata-dirs", "xdgconf-menu",
-			      "xdgdata-icon", "xdgdata-pixmap",
+			      "xdgdata-icon", "xdgdata-pixmap", "xdgdata-mime",
 			      "kcfg", "emoticons", 0 };
 
 static int tokenize( QStringList& token, const QString& str,
@@ -1062,6 +1062,8 @@ QString KStandardDirs::kde_default(const char *type) {
         return "pixmaps/";
     if (!strcmp(type, "xdgdata-dirs"))
         return "desktop-directories/";
+    if (!strcmp(type, "xdgdata-mime"))
+        return "mime/";
     if (!strcmp(type, "xdgconf-menu"))
         return "menus/";
     if (!strcmp(type, "kcfg"))
