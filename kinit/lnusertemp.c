@@ -39,6 +39,7 @@
 
 int check_tmp_dir(const char *tmp_dir);
 int create_link(const char *file, const char *tmp_dir);
+int create_random_link(const char *file, char *tmp_dir);
 int build_link(const char *tmp_prefix, const char *kde_prefix);
 
 int check_tmp_dir(const char *tmp_dir)
@@ -54,7 +55,7 @@ int check_tmp_dir(const char *tmp_dir)
        fprintf(stderr, "Error: Can not create directory \"%s\".\n", tmp_dir);
        return 1;
     }
-    result = stat(tmp_dir, &stat_buf);
+    result = lstat(tmp_dir, &stat_buf);
   }
   if ((result == -1) || (!S_ISDIR(stat_buf.st_mode)))
   {
@@ -65,6 +66,14 @@ int check_tmp_dir(const char *tmp_dir)
   if (stat_buf.st_uid != getuid())
   {
      fprintf(stderr, "Error: \"%s\" is owned by uid %d instead of uid %d.\n", tmp_dir, stat_buf.st_uid, getuid());
+     return 1;
+  }
+
+  /* Other users must not be able to put files (or sockets) in there:
+     refuse the directory, the caller then creates a new one. */
+  if (stat_buf.st_mode & (S_IRWXG | S_IRWXO))
+  {
+     fprintf(stderr, "Error: \"%s\" is accessible by other users (mode %03o).\n", tmp_dir, (unsigned)(stat_buf.st_mode & 0777));
      return 1;
   }
   return 0;
@@ -86,6 +95,26 @@ int create_link(const char *file, const char *tmp_dir)
   }
   /*printf("Created link from \"%s\" to \"%s\"\n", file, tmp_dir);*/
   return 0;
+}
+
+/* Create a new directory <tmp_dir>XXXXXX with a random suffix and link
+   file to it.  mkdtemp() creates the directory atomically with mode 0700
+   and fails if the name exists, so nobody can plant it in advance. */
+int create_random_link(const char *file, char *tmp_dir)
+{
+  size_t len = strlen(tmp_dir);
+  if (len + 6 > PATH_MAX)
+  {
+     fprintf(stderr, "Error: \"%s\" is too long.\n", tmp_dir);
+     return 1;
+  }
+  strcpy(tmp_dir + len, "XXXXXX");
+  if (!mkdtemp(tmp_dir))
+  {
+     fprintf(stderr, "Error: Can not create a directory from \"%s\": %s\n", tmp_dir, strerror(errno));
+     return 1;
+  }
+  return create_link(file, tmp_dir);
 }
 
 
@@ -177,9 +206,7 @@ int build_link(const char *tmp_prefix, const char *kde_prefix)
      result = create_link(kde_tmp_dir, user_tmp_dir);
      if (result == 0) return 0; /* Success */
      unlink(kde_tmp_dir);
-     strncat(user_tmp_dir, "XXXXXX", PATH_MAX - strlen(user_tmp_dir));
-     mktemp(user_tmp_dir); /* We want a directory, not a file, so using mkstemp makes no sense and is wrong */
-     return create_link(kde_tmp_dir, user_tmp_dir);
+     return create_random_link(kde_tmp_dir, user_tmp_dir);
   }
   if ((result == -1) || (!S_ISLNK(stat_buf.st_mode)))
   {
@@ -203,16 +230,12 @@ int build_link(const char *tmp_prefix, const char *kde_prefix)
      result = create_link(kde_tmp_dir, user_tmp_dir);
      if (result == 0) return 0; /* Success */
      unlink(kde_tmp_dir);
-     strncat(user_tmp_dir, "XXXXXX", PATH_MAX - strlen(user_tmp_dir));
-     mktemp(user_tmp_dir); /* We want a directory, not a file, so using mkstemp makes no sense and is wrong */
-     return create_link(kde_tmp_dir, user_tmp_dir);
+     return create_random_link(kde_tmp_dir, user_tmp_dir);
   }
   result = check_tmp_dir(tmp_buf);
   if (result == 0) return 0; /* Success */
   unlink(kde_tmp_dir);
-  strncat(user_tmp_dir, "XXXXXX", PATH_MAX - strlen(user_tmp_dir));
-  mktemp(user_tmp_dir); /* We want a directory, not a file, so using mkstemp makes no sense and is wrong */
-  return create_link(kde_tmp_dir, user_tmp_dir);
+  return create_random_link(kde_tmp_dir, user_tmp_dir);
 }
 
 int main(int argc, char **argv)
