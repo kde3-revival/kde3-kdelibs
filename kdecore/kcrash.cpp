@@ -358,9 +358,13 @@ void KCrash::startDirectly( const char* argv[], int )
     // Run Dr. Konqi with the real ids, never with those of a set-id
     // program.  The supplementary groups need no reset: exec of a set-id
     // program keeps those of the user who ran it.
-    if (setgid(getgid()) < 0 || getegid() != getgid())
+    // Only change ids that differ: setgid() of an unmapped gid fails in
+    // a user namespace even when there is nothing to drop.
+    if (getegid() != getgid() &&
+        (setgid(getgid()) < 0 || getegid() != getgid()))
       _exit(253);
-    if (setuid(getuid()) < 0 || geteuid() != getuid())
+    if (geteuid() != getuid() &&
+        (setuid(getuid()) < 0 || geteuid() != getuid()))
       _exit(253);
     execvp("drkonqi", const_cast< char** >( argv ));
     _exit(errno);

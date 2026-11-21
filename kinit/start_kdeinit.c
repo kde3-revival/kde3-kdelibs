@@ -88,11 +88,14 @@ int main(int argc, char **argv)
          /* No setgroups(): exec of a setuid program keeps the
             supplementary groups of the user who ran it, and kdeinit
             must keep them. */
-         if (setgid(getgid()) || getegid() != getgid()) {
+         /* Only change ids that differ (see KProcess::start()). */
+         if (getegid() != getgid() &&
+             (setgid(getgid()) || getegid() != getgid())) {
              perror("setgid()");
              return 1;
          }
-         if (setuid(getuid()) || geteuid() != getuid()) {
+         if (geteuid() != getuid() &&
+             (setuid(getuid()) || geteuid() != getuid())) {
             perror("setuid()");
             return 1;
          }

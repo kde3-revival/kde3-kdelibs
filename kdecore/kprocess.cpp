@@ -384,11 +384,15 @@ bool KProcess::start(RunMode runmode, Communication comm)
         {
            // Supplementary groups first (needs root), then the gid,
            // then the uid; give up rather than run the child privileged.
+           // Only change what differs: with nothing to give up (also as
+           // root of a user namespace, where setgroups() is denied, or
+           // with an unmapped gid) the calls may fail harmlessly.
 #ifdef HAVE_INITGROUPS
-           if (pw && initgroups(pw->pw_name, pw->pw_gid) < 0)
+           if (pw && getuid() != 0 && initgroups(pw->pw_name, pw->pw_gid) < 0)
                _exit(1);
 #endif
-           if (setgid(getgid()) < 0 || getegid() != getgid())
+           if (getegid() != getgid() &&
+               (setgid(getgid()) < 0 || getegid() != getgid()))
                _exit(1);
 	   if (geteuid() != getuid())
 	       setuid(getuid());
