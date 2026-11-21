@@ -85,7 +85,10 @@ int main(int argc, char **argv)
          perror( "fork()" );
          return 1;
       default: /* parent, drop privileges and exec */
-         if (setgid(getgid())) {
+         /* No setgroups(): exec of a setuid program keeps the
+            supplementary groups of the user who ran it, and kdeinit
+            must keep them. */
+         if (setgid(getgid()) || getegid() != getgid()) {
              perror("setgid()");
              return 1;
          }

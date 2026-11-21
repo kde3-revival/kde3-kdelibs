@@ -382,11 +382,14 @@ bool KProcess::start(RunMode runmode, Communication comm)
 
         if (!runPrivileged())
         {
-           setgid(getgid());
+           // Supplementary groups first (needs root), then the gid,
+           // then the uid; give up rather than run the child privileged.
 #ifdef HAVE_INITGROUPS
-           if (pw)
-              initgroups(pw->pw_name, pw->pw_gid);
+           if (pw && initgroups(pw->pw_name, pw->pw_gid) < 0)
+               _exit(1);
 #endif
+           if (setgid(getgid()) < 0 || getegid() != getgid())
+               _exit(1);
 	   if (geteuid() != getuid())
 	       setuid(getuid());
 	   if (geteuid() != getuid())

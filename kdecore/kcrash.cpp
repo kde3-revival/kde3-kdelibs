@@ -355,9 +355,12 @@ void KCrash::startDirectly( const char* argv[], int )
   }
   if (pid == 0)
   {
-    if(!geteuid() && setgid(getgid()) < 0)
+    // Run Dr. Konqi with the real ids, never with those of a set-id
+    // program.  The supplementary groups need no reset: exec of a set-id
+    // program keeps those of the user who ran it.
+    if (setgid(getgid()) < 0 || getegid() != getgid())
       _exit(253);
-    if(!geteuid() && setuid(getuid()) < 0)
+    if (setuid(getuid()) < 0 || geteuid() != getuid())
       _exit(253);
     execvp("drkonqi", const_cast< char** >( argv ));
     _exit(errno);
