@@ -652,7 +652,10 @@ no longer supported: any configuration file, including a .desktop or
 (CVE-2019-14744).  $(command) is now left as it is; use environment
 variables instead, e.g.:
 
-Host[$e]=$HOSTNAME
+Path[$e]=$HOME/shared
+
+Note that only variables in the environment of the application are seen:
+shell variables like $HOSTNAME are usually not exported.
 
 
 KDE3 Kiosk Application API
