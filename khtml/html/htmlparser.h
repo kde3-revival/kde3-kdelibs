@@ -147,8 +147,10 @@ private:
 
     /*
      * the head element. Needed for crappy html which defines <base> after </head>
+     * Held by reference: a script may remove it from the document, which
+     * deleted it under the parser's feet (CVE-2009-1690).
      */
-    DOM::HTMLHeadElementImpl *head;
+    khtml::SharedPtr<DOM::HTMLHeadElementImpl> head;
 
     /*
      * a possible <isindex> element in the head. Compatibility hack for
