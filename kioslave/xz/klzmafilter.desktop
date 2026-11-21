@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Service
+Name=LZMA Filter
+X-KDE-Library=kxzfilter
+ServiceTypes=KDECompressionFilter,application/x-lzma,application/x-lzma-compressed-tar

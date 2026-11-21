@@ -469,6 +469,33 @@ if(BZIP2_FOUND)
     set(NEED_BZ2_PREFIX 1)
   endif()
 endif()
+# KFilterDev/KTar: xz (and legacy lzma) and Zstandard compression filters.
+# Required: most tar archives (KDE Store, distributions) use one of them.
+# Fedora: xz-devel, libzstd-devel; Arch: xz, zstd.
+pkg_check_modules(LIBLZMA REQUIRED IMPORTED_TARGET "liblzma >= 5.0")
+pkg_check_modules(LIBZSTD REQUIRED IMPORTED_TARGET "libzstd >= 1.4.0")
+# KFilterDev/KTar: LZ4 frame compression filter (Fedora: lz4-devel; Arch: lz4)
+option(KDE3_WITH_LZ4 "LZ4 compression filter (KFilterDev, needs liblz4)" ON)
+if(KDE3_WITH_LZ4)
+  pkg_check_modules(LIBLZ4 IMPORTED_TARGET "liblz4 >= 1.9.0")
+  if(NOT LIBLZ4_FOUND)
+    message(FATAL_ERROR "liblz4 (1.9 or later) was not found; it is needed for the LZ4 "
+      "compression filter.  Install it, or configure with -DKDE3_WITH_LZ4=OFF to "
+      "build without LZ4 support.")
+  endif()
+  set(HAVE_LIBLZ4 1)
+endif()
+# kio_http: Brotli content encoding (Fedora: brotli-devel; Arch: brotli)
+option(KDE3_WITH_BROTLI "Brotli HTTP content encoding (kio_http, needs libbrotlidec)" ON)
+if(KDE3_WITH_BROTLI)
+  pkg_check_modules(LIBBROTLIDEC IMPORTED_TARGET "libbrotlidec >= 1.0")
+  if(NOT LIBBROTLIDEC_FOUND)
+    message(FATAL_ERROR "libbrotlidec (1.0 or later) was not found; it is needed for the "
+      "Brotli content encoding of kio_http.  Install it, or configure with "
+      "-DKDE3_WITH_BROTLI=OFF to build without Brotli support.")
+  endif()
+  set(HAVE_LIBBROTLIDEC 1)
+endif()
 
 # kjs: PCRE (libpcre + libpcreposix)
 option(KDE3_WITH_PCRE "Use libpcre for JavaScript regular expressions" ON)

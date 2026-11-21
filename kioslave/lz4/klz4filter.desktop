@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Service
+Name=LZ4 Filter
+X-KDE-Library=klz4filter
+ServiceTypes=KDECompressionFilter,application/x-lz4,application/x-lz4-compressed-tar

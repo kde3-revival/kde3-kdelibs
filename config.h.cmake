@@ -255,6 +255,13 @@
 /* Defines if bzip2 is compiled; the libbz2 functions need the BZ2_ prefix */
 #cmakedefine HAVE_BZIP2_SUPPORT 1
 #cmakedefine NEED_BZ2_PREFIX 1
+
+/* Defines if the LZ4 compression filter is built (liblz4) */
+#cmakedefine HAVE_LIBLZ4 1
+
+/* Defines if kio_http decodes the Brotli content encoding (libbrotlidec) */
+#cmakedefine HAVE_LIBBROTLIDEC 1
+
 /* Define if you have pcreposix libraries and header files. */
 #cmakedefine HAVE_PCREPOSIX 1
 /* Defined if you have libthai and want to have it compiled in */

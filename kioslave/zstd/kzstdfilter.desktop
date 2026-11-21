@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Service
+Name=Zstandard Filter
+X-KDE-Library=kzstdfilter
+ServiceTypes=KDECompressionFilter,application/zstd,application/x-zstd-compressed-tar
