@@ -645,13 +645,14 @@ Name[$ei]=${USER}
 Shell Commands in KDE config files.
 ===================================
 
-In KDE3.1 arbitrary entries in configuration files can contain shell 
-commands. This way the value of a configuration entry can be determined
-dynamically at runtime. In order to use this the entry must be marked 
-with [$e]. 
+In KDE3.1 arbitrary entries in configuration files could contain shell
+commands, written as $(command) in an entry marked with [$e].  This is
+no longer supported: any configuration file, including a .desktop or
+.directory file that came from elsewhere, could run commands this way
+(CVE-2019-14744).  $(command) is now left as it is; use environment
+variables instead, e.g.:
 
-Example:
-Host[$e]=$(hostname)
+Host[$e]=$HOSTNAME
 
 
 KDE3 Kiosk Application API

@@ -259,24 +259,12 @@ QString KConfigBase::readEntry( const char *pKey,
       while( nDollarPos != -1 && nDollarPos+1 < static_cast<int>(aValue.length())) {
         // there is at least one $
         if( (aValue)[nDollarPos+1] == '(' ) {
-          uint nEndPos = nDollarPos+1;
-          // the next character is no $
-          while ( (nEndPos <= aValue.length()) && (aValue[nEndPos]!=')') )
-              nEndPos++;
-          nEndPos++;
-          QString cmd = aValue.mid( nDollarPos+2, nEndPos-nDollarPos-3 );
-
-          QString result;
-          FILE *fs = popen(QFile::encodeName(cmd).data(), "r");
-          if (fs)
-          {
-             {
-             QTextStream ts(fs, IO_ReadOnly);
-             result = ts.read().stripWhiteSpace();
-             }
-             pclose(fs);
-          }
-          aValue.replace( nDollarPos, nEndPos-nDollarPos, result );
+          // $(command) used to be replaced by the output of the shell
+          // command: any .desktop or .directory file, e.g. one that
+          // came with a downloaded archive, could then run commands
+          // when a file manager merely read its Icon (CVE-2019-14744).
+          // Keep the text as it is.
+          nDollarPos++;
         } else if( (aValue)[nDollarPos+1] != '$' ) {
           uint nEndPos = nDollarPos+1;
           // the next character is no $
