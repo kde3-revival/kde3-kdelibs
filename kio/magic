@@ -100,6 +100,8 @@
 #>8	string		CDRA		Corel Draw Picture
 # AVI == Audio Video Interleave
 >8	string		AVI\040		video/x-msvideo
+# WebP image
+>8	string		WEBP		image/webp
 
 #					RIFF (big-endian) data
 0	string		RIFX

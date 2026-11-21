@@ -37,6 +37,7 @@ install(FILES
   x-hdr.desktop
   fits.desktop
   x-raw.desktop
+  webp.desktop
   DESTINATION ${KDE3_MIME_INSTALL_DIR}/image)
 
 

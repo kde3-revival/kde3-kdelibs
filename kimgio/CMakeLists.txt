@@ -13,6 +13,9 @@ if(HAVE_LIBTIFF)
   # include_TIFF_MODULES
   list(APPEND _plugins tiffr=TIFF::TIFF)
 endif()
+if(HAVE_LIBWEBP)
+  list(APPEND _plugins webp=kdecore)
+endif()
 
 foreach(_p IN LISTS _plugins)
   string(REGEX MATCH "^([^=]*)=(.*)$" _m "${_p}")
@@ -33,11 +36,17 @@ foreach(_p IN LISTS _plugins)
   target_link_options(kimg_${_name} PRIVATE
     "-Wl,--version-script=${CMAKE_CURRENT_BINARY_DIR}/kimgio.map")
 endforeach()
+if(HAVE_LIBWEBP)
+  target_link_libraries(kimg_webp PRIVATE PkgConfig::LIBWEBP)
+endif()
 
 set(_kimgio png xpm bmp pbm pgm ppm xbm jpeg xv eps ico gif pcx tga rgb xcf
   dds mng psd hdr)
 if(HAVE_LIBTIFF)
   list(APPEND _kimgio tiff)
+endif()
+if(HAVE_LIBWEBP)
+  list(APPEND _kimgio webp)
 endif()
 list(TRANSFORM _kimgio APPEND .kimgio)
 install(FILES ${_kimgio} DESTINATION ${KDE3_SERVICES_INSTALL_DIR})
