@@ -105,6 +105,10 @@ namespace
                  >> r.hotspotX >> r.hotspotY >> r.size >> r.offset;
     }
 
+    // 0 in the directory means 256 pixels (Windows Vista icons).
+    inline unsigned recWidth( const IconRec& r ) { return r.width ? r.width : 256; }
+    inline unsigned recHeight( const IconRec& r ) { return r.height ? r.height : 256; }
+
     struct LessDifference
     {
         LessDifference( unsigned s, unsigned c )
@@ -113,10 +117,10 @@ namespace
         bool operator ()( const IconRec& lhs, const IconRec& rhs ) const
         {
             // closest size match precedes everything else
-            if ( std::abs( int( lhs.width - size ) ) <
-                 std::abs( int( rhs.width - size ) ) ) return true;
-            else if ( std::abs( int( lhs.width - size ) ) >
-                 std::abs( int( rhs.width - size ) ) ) return false;
+            if ( std::abs( int( recWidth( lhs ) - size ) ) <
+                 std::abs( int( recWidth( rhs ) - size ) ) ) return true;
+            else if ( std::abs( int( recWidth( lhs ) - size ) ) >
+                 std::abs( int( recWidth( rhs ) - size ) ) ) return false;
             else if ( colors == 0 )
             {
                 // high/true color requested
@@ -148,6 +152,8 @@ namespace
                header.biBitCount != 8 && header.biBitCount != 24 &&
                header.biBitCount != 32 ) ) return false;
 
+        const unsigned width = recWidth( rec );
+        const unsigned height = recHeight( rec );
         unsigned paletteSize, paletteEntries;
 
         if (header.biBitCount > 8)
@@ -164,8 +170,8 @@ namespace
         }
         
         // Always create a 32-bit image to get the mask right
-        // Note: this is safe as rec.width, rec.height are bytes
-        icon.create( rec.width, rec.height, 32 );
+        // Note: this is safe, width and height are at most 256
+        icon.create( width, height, 32 );
         if ( icon.isNull() ) return false;
         icon.setAlphaBuffer( true );
 
@@ -180,11 +186,11 @@ namespace
             colorTable[ i ] = qRgb( rgb[ 2 ], rgb[ 1 ], rgb[ 0 ] );
         }
 
-        unsigned bpl = ( rec.width * header.biBitCount + 31 ) / 32 * 4;
+        unsigned bpl = ( width * header.biBitCount + 31 ) / 32 * 4;
         
         unsigned char* buf = new unsigned char[ bpl ];
         unsigned char** lines = icon.jumpTable();
-        for ( unsigned y = rec.height; !stream.atEnd() && y--; )
+        for ( unsigned y = height; !stream.atEnd() && y--; )
         {
             stream.readRawBytes( reinterpret_cast< char* >( buf ), bpl );
             unsigned char* pixel = buf;
@@ -192,27 +198,27 @@ namespace
             switch ( header.biBitCount )
             {
                 case 1:
-                    for ( unsigned x = 0; x < rec.width; ++x )
+                    for ( unsigned x = 0; x < width; ++x )
                         *p++ = colorTable[
                             ( pixel[ x / 8 ] >> ( 7 - ( x & 0x07 ) ) ) & 1 ];
                     break;
                 case 4:
-                    for ( unsigned x = 0; x < rec.width; ++x )
+                    for ( unsigned x = 0; x < width; ++x )
                         if ( x & 1 ) *p++ = colorTable[ pixel[ x / 2 ] & 0x0f ];
                         else *p++ = colorTable[ pixel[ x / 2 ] >> 4 ];
                     break;
                 case 8:
-                    for ( unsigned x = 0; x < rec.width; ++x )
+                    for ( unsigned x = 0; x < width; ++x )
                         *p++ = colorTable[ pixel[ x ] ];
                     break;
                 case 24:
-                    for ( unsigned x = 0; x < rec.width; ++x )
+                    for ( unsigned x = 0; x < width; ++x )
                         *p++ = qRgb( pixel[ 3 * x + 2 ],
                                      pixel[ 3 * x + 1 ],
                                      pixel[ 3 * x ] );
                     break;
                 case 32:
-                    for ( unsigned x = 0; x < rec.width; ++x )
+                    for ( unsigned x = 0; x < width; ++x )
                         *p++ = qRgba( pixel[ 4 * x + 2 ],
                                       pixel[ 4 * x + 1 ],
                                       pixel[ 4 * x ],
@@ -225,13 +231,13 @@ namespace
         if ( header.biBitCount < 32 )
         {
             // Traditional 1-bit mask
-            bpl = ( rec.width + 31 ) / 32 * 4;
+            bpl = ( width + 31 ) / 32 * 4;
             buf = new unsigned char[ bpl ];
-            for ( unsigned y = rec.height; y--; )
+            for ( unsigned y = height; y--; )
             {
                 stream.readRawBytes( reinterpret_cast< char* >( buf ), bpl );
                 QRgb* p = reinterpret_cast< QRgb* >( lines[ y ] );
-                for ( unsigned x = 0; x < rec.width; ++x, ++p )
+                for ( unsigned x = 0; x < width; ++x, ++p )
                     if ( ( ( buf[ x / 8 ] >> ( 7 - ( x & 0x07 ) ) ) & 1 ) )
                         *p &= RGB_MASK;
             }
@@ -284,29 +290,59 @@ extern "C" KDE_EXPORT void kimgio_ico_read( QImageIO* io )
         stream >> rec;
         icons.push_back( rec );
     }
-    IconList::const_iterator selected;
-    if (requestedIndex >= 0) {
-        selected = std::min( icons.begin() + requestedIndex, icons.end() );
+    // The best match first; if it cannot be read, the next best ones.
+    std::vector< unsigned > order;
+    if ( requestedIndex >= 0 ) {
+        if ( unsigned( requestedIndex ) < icons.size() )
+            order.push_back( requestedIndex );
     } else {
-        selected = std::min_element( icons.begin(), icons.end(),
-                          LessDifference( requestedSize, requestedColors ) );
+        IconList sorted( icons );
+        std::stable_sort( sorted.begin(), sorted.end(), LessDifference( requestedSize, requestedColors ) );
+        for ( IconList::const_iterator it = sorted.begin(); it != sorted.end(); ++it )
+            for ( unsigned i = 0; i < icons.size(); ++i )
+                if ( icons[ i ].offset == it->offset &&
+                     std::find( order.begin(), order.end(), i ) == order.end() ) {
+                    order.push_back( i );
+                    break;
+                }
     }
-    if ( stream.atEnd() || selected == icons.end() ||
-         offset + selected->offset > io->ioDevice()->size() )
-        return;
 
-    io->ioDevice()->at( offset + selected->offset );
-    QImage icon;
-    if ( loadFromDIB( stream, *selected, icon ) )
+    for ( std::vector< unsigned >::const_iterator it = order.begin(); it != order.end(); ++it )
     {
-        icon.setText( "X-Index", 0, QString::number( selected - icons.begin() ) );
+        const IconRec& rec = icons[ *it ];
+        if ( offset + rec.offset >= io->ioDevice()->size() )
+            continue;
+        io->ioDevice()->at( offset + rec.offset );
+        QImage icon;
+        // Since Windows Vista an entry may be a PNG file (256 pixel ones
+        // usually, any size in favicons).
+        static const char pngSignature[] = "\x89PNG\r\n\x1a\n";
+        char signature[ 8 ];
+        if ( io->ioDevice()->readBlock( signature, 8 ) == 8 && memcmp( signature, pngSignature, 8 ) == 0 )
+        {
+            QIODevice::Offset available = io->ioDevice()->size() - ( offset + rec.offset );
+            QByteArray png( QMIN( QIODevice::Offset( rec.size ), available ) );
+            io->ioDevice()->at( offset + rec.offset );
+            if ( png.size() < 8 || io->ioDevice()->readBlock( png.data(), png.size() ) != Q_LONG( png.size() ) ||
+                 !icon.loadFromData( png, "PNG" ) )
+                continue;
+            icon = icon.convertDepth( 32 );
+        }
+        else
+        {
+            io->ioDevice()->at( offset + rec.offset );
+            if ( !loadFromDIB( stream, rec, icon ) )
+                continue;
+        }
+        icon.setText( "X-Index", 0, QString::number( *it ) );
         if ( header.type == IcoHeader::Cursor )
         {
-            icon.setText( "X-HotspotX", 0, QString::number( selected->hotspotX ) );
-            icon.setText( "X-HotspotY", 0, QString::number( selected->hotspotY ) );
+            icon.setText( "X-HotspotX", 0, QString::number( rec.hotspotX ) );
+            icon.setText( "X-HotspotY", 0, QString::number( rec.hotspotY ) );
         }
         io->setImage(icon);
         io->setStatus(0);
+        return;
     }
 }
 
