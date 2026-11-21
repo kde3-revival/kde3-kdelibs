@@ -18,6 +18,7 @@ kde3_add_library(kiocore OBJECT
     paste.cpp
     pastedialog.cpp
     kmimemagic.cpp
+    ksharedmimemagic.cpp
     tcpslavebase.cpp
     slavebase.cpp
     passdlg.cpp

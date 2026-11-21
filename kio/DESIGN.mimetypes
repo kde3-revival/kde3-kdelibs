@@ -32,3 +32,44 @@ Pattern Accuracy
 ======================
 In some cases of inheritance several mimetypes shares the same extension (with the primary case being Ogg Multimedia files).
 This has been solved sofar by matching the extension to most generic mimetype. To indicate that the mimetype can be refined further, the flag X-KDE-PatternsAccuracy can be set. The value to X-KDE-PatternsAccuracy is a number between 0-100, with 100 being the default if not set. Any values below 100 is interpreted as the possibility of further mimetype refinement.
+
+freedesktop.org shared-mime-info
+================================
+kbuildsycoca also reads the MIME database of shared-mime-info ($XDG_DATA_HOME/mime and
+$XDG_DATA_DIRS/mime: the "xdgdata-mime" resource), so that the types other programs install
+(KiCad, FreeCAD, ...) are known, and the MimeType= lines of their .desktop files work.
+
+* It reads the per-type files update-mime-database generates (mime/<media>/<subtype>.xml):
+  one file per type, like the mimelnk files, so the incremental update and kded's directory
+  watching work as for those. They hold the globs with weight and case sensitivity, aliases,
+  sub-class-of, icon, generic-icon and the translated comments. The magic rules are read at
+  run time by KMimeMagic, from the generated binary mime/magic file.
+* The KDE mimelnk files win: a type KDE defines keeps its patterns, icon, comment and
+  X-KDE-* keys; shared-mime-info only adds the glob patterns no KDE type claims.
+  A shared-mime-info type that KDE knows under an alias (application/zip, KDE's
+  application/x-zip), or under another name listed in kbuildservicetypefactory.cpp
+  (application/x-compressed-tar is KDE's application/x-tgz) becomes an alias of the KDE type.
+  The other types become KMimeType entries of their own (X-KDE-SharedMimeInfo=true).
+  The copies of a type's file in several directories are merged (the more important
+  one wins for the comment and icons; <glob-deleteall/> drops the globs of the others).
+* Aliases: KMimeType::mimeType(), KServiceType::serviceType() and the MimeType= lines of
+  services resolve them (and the lowercased names: audio/amr-wb is audio/AMR-WB) through
+  an alias table in the servicetype factory. Applications that name a KDE type by an
+  alias come after those naming it directly, so KDE's default applications stay.
+* Parents: X-KDE-IsAlso holds the first sub-class-of type, X-KDE-ParentMimeTypes all of them;
+  KMimeType::parentMimeTypes() and is() follow them. Every text/* type is a text/plain.
+  The applications offered for a shared-mime-info type itself come before those offered
+  for its parents (KiCad before the text editors for a .kicad_pcb).
+* Globs: the lowercased file name is tried against the shared-mime-info globs that are
+  not case-sensitive when the name itself matches no pattern, the longest "*.suffix" wins, and the patterns with
+  '?' or '[...]' are matched as such. When shared-mime-info types share a pattern with the
+  same weight, one of them gets it with X-KDE-PatternsAccuracy=50, so the contents decide;
+  magic that finds only a parent of the type (text/plain) keeps the type of the name.
+* Magic: the shared-mime-info rules are only consulted when KDE's own magic found nothing
+  more than text/plain or application/octet-stream; for text, a rule must be a text type of
+  priority 40 or more, or of priority 80 or more. The rules of a directory replace those
+  of the less important directories for the same type; a section with a line that can't
+  be read is dropped whole. The rules are read once per process.
+* Icons: the type's icon, the freedesktop.org default name (application-x-kicad-pcb) or
+  its generic icon, whichever the icon theme (hicolor included) has; otherwise the KDE 3
+  icon for the generic one (text-x-generic is "txt"), or the parent type's icon.

@@ -17,6 +17,8 @@
    Boston, MA 02110-1301, USA.
 */
 #include "kmimemagic.h"
+#include "ksharedmimemagic.h"
+#include "kmimetype.h"
 #include <kdebug.h>
 #include <kapplication.h>
 #include <qfile.h>
@@ -582,6 +584,9 @@ struct config_rec {
     struct magic *magic,    /* head of magic config list */
 	*last;
     KMimeMagicUtimeConf * utimeConf;
+    /* the freedesktop.org shared-mime-info rules, loaded when needed */
+    KSharedMimeMagic *sharedMagic;
+    bool sharedMagicLoaded;
 };
 
 #ifdef MIME_MAGIC_DEBUG_TABLE
@@ -1419,19 +1424,65 @@ void process(struct config_rec* conf, const QString & fn)
 }
 
 
+/*
+ * The KDE rules found no more than "some text" or "some data": maybe the
+ * shared-mime-info rules know better (KiCad files are text/plain to KDE).
+ * They never override a type the KDE rules found.
+ */
+static bool sharedMagic(struct config_rec* conf, const unsigned char *buf, int nb, bool text)
+{
+	if (!conf->sharedMagicLoaded) {
+		conf->sharedMagicLoaded = true;
+		conf->sharedMagic = new KSharedMimeMagic;
+		conf->sharedMagic->load(KGlobal::dirs()->resourceDirs("xdgdata-mime"));
+	}
+	int priority = 0;
+	const QString type = conf->sharedMagic->match(buf, nb, &priority);
+	if (type.isEmpty() || type == MIME_TEXT_PLAIN || type == MIME_BINARY_UNKNOWN)
+		return false;
+	// only a type KDE knows (maybe under another name)
+	KMimeType::Ptr mime = KMimeType::mimeType(type);
+	if (!mime || mime == KMimeType::defaultMimeTypePtr())
+		return false;
+	// Text the KDE rules found nothing particular in: the weak rules (a "/*"
+	// at the start) don't make it a type, and only the strong ones (80 and
+	// up: signatures) make it something else than text
+	if (text && priority < 80 && (priority < 40 || !mime->is(MIME_TEXT_PLAIN)))
+		return false;
+	// the name ksycoca knows it by (audio/x-it is audio/x-mod)
+	conf->resultBuf = mime->name();
+	conf->accuracy = QMAX(priority, 1);
+	return true;
+}
+
 static void tryit(struct config_rec* conf, unsigned char *buf, int nb)
 {
+	/* the caller added a '\0' after the data */
+	const int len = nb > 0 ? nb - 1 : 0;
+
 	/* try tests in /etc/magic (or surrogate magic file) */
-	if (match(conf, buf, nb))
+	if (match(conf, buf, nb)) {
+		if (conf->resultBuf.stripWhiteSpace() == MIME_BINARY_UNKNOWN)
+			sharedMagic(conf, buf, len, false);
 		return;
+	}
 
 	/* try known keywords, check for ascii-ness too. */
-	if (ascmagic(conf, buf, nb) == 1)
+	if (ascmagic(conf, buf, nb) == 1) {
+		if (conf->resultBuf == MIME_TEXT_PLAIN)
+			sharedMagic(conf, buf, len, true);
 		return;
+	}
 
         /* see if it's plain text */
-        if (textmagic(conf, buf, nb))
+        if (textmagic(conf, buf, nb)) {
+		if (conf->resultBuf == MIME_TEXT_PLAIN)
+			sharedMagic(conf, buf, len, true);
                 return;
+	}
+
+	if (sharedMagic(conf, buf, len, false))
+		return;
 
 	/* abandon hope, all ye who remain here */
 	conf->resultBuf = MIME_BINARY_UNKNOWN;
@@ -2143,6 +2194,8 @@ void KMimeMagic::init( const QString& _configfile )
 	conf->followLinks = false;
 
         conf->utimeConf = 0L; // created on demand
+	conf->sharedMagic = 0L; // read on demand
+	conf->sharedMagicLoaded = false;
 	/* on the first time through we read the magic file */
 	result = apprentice(_configfile);
 	if (result == -1)
@@ -2167,6 +2220,7 @@ KMimeMagic::~KMimeMagic()
 			free(q);
 		}
                 delete conf->utimeConf;
+		delete conf->sharedMagic;
 		delete conf;
 	}
         delete magicResult;
