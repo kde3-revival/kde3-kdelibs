@@ -409,57 +409,74 @@ KConfig *cfg;
    // but KDELIBSUFF is the layout of the KDE prefix (e.g. empty for
    // /opt/kde3/lib), not of the system: OpenSSL may well be in
    // /usr/lib64 or a multiarch directory (/usr/lib/x86_64-linux-gnu)
-   // none of them names.  Ask the dynamic linker where it finds each
-   // libcrypto (LD_LIBRARY_PATH, ld.so.cache, its default directories)
-   // and search those directories first, after the configured one.
-   {
-      QStringList::Iterator pos = libpaths.begin();
-      if (!upath.isEmpty())
-         ++pos;
-      QStringList found;
-      for (uint i = 0; i < libnamesc.count(); i++) {
-         void *h = dlopen(QFile::encodeName(libnamesc[i]), RTLD_LAZY | RTLD_LOCAL);
-         if (!h)
+   // none of them names.  So the directories are searched in two
+   // passes: the configured path first, then the directory where the
+   // dynamic linker finds libcrypto (LD_LIBRARY_PATH, ld.so.cache, its
+   // default directories) followed by the fixed list.
+   QStringList fixedpaths = libpaths;
+   if (!upath.isEmpty())
+      fixedpaths.remove(fixedpaths.begin());
+   for (int pass = 0; pass < 2 && !_sslLib; pass++) {
+      QStringList dirs;
+      if (pass == 0) {
+         if (upath.isEmpty())
             continue;
-         void *sym = dlsym(h, "CRYPTO_free");
-         Dl_info info;
-         if (sym && dladdr(sym, &info) && info.dli_fname &&
-             info.dli_fname[0] == '/') {
-            QString dir = QFile::decodeName(info.dli_fname);
-            dir.truncate(dir.findRev('/') + 1);
-            if (!found.contains(dir)) {
-               found << dir;
-               libpaths.insert(pos, dir);
+         dirs << upath;
+      } else {
+         // The first libcrypto, in order of preference, whose directory
+         // also has the libssl of the same version; only that one stays
+         // loaded (OpenSSL 3 marks itself NODELETE, dlclose() keeps it).
+         for (uint i = 0; i < libnamesc.count() && i < libnamess.count(); i++) {
+            void *h = dlopen(QFile::encodeName(libnamesc[i]), RTLD_LAZY | RTLD_LOCAL);
+            if (!h)
+               continue;
+            QString dir;
+            void *sym = dlsym(h, "CRYPTO_free");
+            Dl_info info;
+            if (sym && dladdr(sym, &info) && info.dli_fname &&
+                info.dli_fname[0] == '/') {
+               dir = QFile::decodeName(info.dli_fname);
+               dir.truncate(dir.findRev('/') + 1);
+            }
+            dlclose(h);
+            if (!dir.isEmpty() &&
+                !access(QFile::encodeName(dir + libnamess[i]), R_OK)) {
+               dirs << dir;
+               break;
             }
          }
-         dlclose(h);
+         for (QStringList::Iterator it = fixedpaths.begin();
+                                    it != fixedpaths.end(); ++it)
+            if (!dirs.contains(*it))
+               dirs << *it;
       }
-   }
 
-   // libssl and libcrypto of different OpenSSL versions (e.g. libssl.so.4
-   // and libcrypto.so.3 when only one of the two exists in a directory)
-   // must not be mixed: the functions are resolved separately in each.
-   // Take both from the same directory with the same soname version.
-   for (QStringList::Iterator it = libpaths.begin();
-                              it != libpaths.end() && !_sslLib;
-                              ++it) {
-      QString dir = *it;
-      if (!dir.isEmpty() && !dir.endsWith("/"))
-         dir += "/";
-      for (uint i = 0; i < libnamesc.count() && i < libnamess.count(); i++) {
-         QString clib = dir + libnamesc[i];
-         QString slib = dir + libnamess[i];
-         if (access(QFile::encodeName(clib), R_OK) ||
-             access(QFile::encodeName(slib), R_OK))
-            continue;
-         _cryptoLib = ll->globalLibrary(clib.latin1());
-         if (_cryptoLib)
-            _sslLib = ll->globalLibrary(slib.latin1());
-         if (_sslLib)
-            break;
-         if (_cryptoLib) {
-            _cryptoLib->unload();
-            _cryptoLib = 0L;
+      // libssl and libcrypto of different OpenSSL versions (e.g.
+      // libssl.so.4 and libcrypto.so.3 when only one of the two exists
+      // in a directory) must not be mixed: the functions are resolved
+      // separately in each.  Take both from the same directory with the
+      // same soname version.
+      for (QStringList::Iterator it = dirs.begin();
+                                 it != dirs.end() && !_sslLib;
+                                 ++it) {
+         QString dir = *it;
+         if (!dir.isEmpty() && !dir.endsWith("/"))
+            dir += "/";
+         for (uint i = 0; i < libnamesc.count() && i < libnamess.count(); i++) {
+            QString clib = dir + libnamesc[i];
+            QString slib = dir + libnamess[i];
+            if (access(QFile::encodeName(clib), R_OK) ||
+                access(QFile::encodeName(slib), R_OK))
+               continue;
+            _cryptoLib = ll->globalLibrary(clib.latin1());
+            if (_cryptoLib)
+               _sslLib = ll->globalLibrary(slib.latin1());
+            if (_sslLib)
+               break;
+            if (_cryptoLib) {
+               _cryptoLib->unload();
+               _cryptoLib = 0L;
+            }
          }
       }
    }
@@ -774,7 +791,7 @@ KConfig *cfg;
 #ifdef KSSL_HAVE_SSL
    if (!_sslLib || !_cryptoLib)
       kdWarning(7029) << "KOpenSSLProxy: libssl and libcrypto of OpenSSL "
-                         "not found, SSL is not available" << endl;
+                         "could not be loaded, SSL is not available" << endl;
 #endif
 }
 
