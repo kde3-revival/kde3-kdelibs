@@ -105,6 +105,7 @@
 #include <qtoolbutton.h>
 #include <qvbox.h>
 #include <qvgroupbox.h>
+#include <qtooltip.h>
 #include <qwhatsthis.h>
 #include <qwidgetstack.h>
 
@@ -1323,6 +1324,10 @@ KateHlConfigPage::KateHlConfigPage (QWidget *parent, KateDocument *doc)
   hbBtns->setSpacing( KDialog::spacingHint() );
   QPushButton *btnDl = new QPushButton(i18n("Do&wnload..."), hbBtns);
   connect( btnDl, SIGNAL(clicked()), this, SLOT(hlDownload()) );
+  // The update list of the Kate website (HLDOWNLOADPATH) is gone, and the
+  // highlighting files published since are written for newer versions.
+  btnDl->setEnabled( false );
+  QToolTip::add( btnDl, i18n("Downloading highlighting files is no longer available.") );
 
   int currentHl = m_doc ? m_doc->hlMode() : 0;
   hlCombo->setCurrentItem( currentHl );
@@ -1343,8 +1348,9 @@ KateHlConfigPage::KateHlConfigPage (QWidget *parent, KateDocument *doc)
         "<p>The <strong>File Extensions</strong> entry will automatically be "
         "edited as well.") );
   QWhatsThis::add( btnDl, i18n(
-        "Click this button to download new or updated syntax highlight "
-        "descriptions from the Kate website.") );
+        "The download of new or updated syntax highlight descriptions from "
+        "the Kate website is no longer available: the website does not "
+        "offer them anymore.") );
 
   layout->addStretch ();
 
