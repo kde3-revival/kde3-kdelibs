@@ -33,6 +33,7 @@
 #include <sys/socket.h>
 
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 
 #include <time.h>
 #include <netdb.h>
@@ -290,6 +291,38 @@ unsigned short int TCPSlaveBase::port(unsigned short int _p)
     return p;
 }
 
+// Make the kernel notice a dead peer (the machine was suspended, the
+// network changed, the server vanished without a FIN or RST) within a
+// couple of minutes, so that reads fail instead of waiting for data
+// that never comes: keepalive probes on an idle connection, and a cap
+// on how long sent data may stay unacknowledged (the default is ~15 min
+// of retransmissions, see tcp_retries2).
+static void enableDeadPeerDetection( int fd )
+{
+#ifdef Q_OS_UNIX
+    int on = 1;
+    setsockopt( fd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof( on ) );
+#ifdef TCP_KEEPIDLE
+    int idle = 60;      // seconds of silence before the first probe
+    setsockopt( fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof( idle ) );
+#endif
+#ifdef TCP_KEEPINTVL
+    int interval = 15;  // seconds between probes
+    setsockopt( fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof( interval ) );
+#endif
+#ifdef TCP_KEEPCNT
+    int count = 6;      // unanswered probes before the connection is dropped
+    setsockopt( fd, IPPROTO_TCP, TCP_KEEPCNT, &count, sizeof( count ) );
+#endif
+#ifdef TCP_USER_TIMEOUT
+    unsigned int timeout = 90 * 1000; // ms data may stay unacknowledged
+    setsockopt( fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &timeout, sizeof( timeout ) );
+#endif
+#else
+    Q_UNUSED( fd );
+#endif
+}
+
 // This function is simply a wrapper to establish the connection
 // to the server.  It's a bit more complicated than ::connect
 // because we first have to check to see if the user specified
@@ -364,6 +397,7 @@ bool TCPSlaveBase::connectToHost( const QString &host,
     }
 
     m_iSock = ks.fd();
+    enableDeadPeerDetection( m_iSock );
 
     // store the IP for later
     const KSocketAddress *sa = ks.peerAddress();
