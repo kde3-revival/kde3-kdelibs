@@ -1,0 +1,9 @@
+[Image Format]
+Type=JXL
+Header=^(\xff\x0a|\x01{3}\x0cJXL \x0d\x0a\x87\x0a)
+Name=JPEG XL Image
+Read=true
+Write=false
+Suffices=jxl,JXL
+Mimetype=image/jxl
+Library=kimg_jxl.la

@@ -644,6 +644,10 @@
 4	string		ftypavif	image/avif
 4	string		ftypavis	image/avif
 
+# JPEG XL images: a bare codestream or the ISO BMFF container
+0	beshort		0xff0a		image/jxl
+0	string		\000\000\000\014JXL\040\015\012\207\012	image/jxl
+
 # PNG images
 0       string          \x89PNG         image/png
 

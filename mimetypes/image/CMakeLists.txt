@@ -41,6 +41,7 @@ install(FILES
   heif.desktop
   heic.desktop
   avif.desktop
+  jxl.desktop
   DESTINATION ${KDE3_MIME_INSTALL_DIR}/image)
 
 

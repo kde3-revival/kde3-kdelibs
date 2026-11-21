@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=MimeType
+MimeType=image/jxl
+Icon=image
+Patterns=*.jxl;*.JXL;
+Comment=JPEG XL Image
