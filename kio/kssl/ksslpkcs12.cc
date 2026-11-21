@@ -23,7 +23,7 @@
 #include <config.h>
 #endif
 
-#include <kopenssl.h>
+#include "ksslopenssl_p.h"
 
 #include <qstring.h>
 #include <qfile.h>
@@ -34,15 +34,6 @@
 
 #include <assert.h>
 
-#ifdef KSSL_HAVE_SSL
-#define OPENSSL_sk_new kossl->OPENSSL_sk_new
-#define OPENSSL_sk_push kossl->OPENSSL_sk_push
-#define OPENSSL_sk_free kossl->OPENSSL_sk_free
-#define OPENSSL_sk_value kossl->OPENSSL_sk_value
-#define OPENSSL_sk_num kossl->OPENSSL_sk_num
-#define OPENSSL_sk_dup kossl->OPENSSL_sk_dup
-#define OPENSSL_sk_pop kossl->OPENSSL_sk_pop
-#endif
 
 
 KSSLPKCS12::KSSLPKCS12() {
@@ -50,23 +41,23 @@ KSSLPKCS12::KSSLPKCS12() {
    _pkey = NULL;
    _cert = NULL;
    _caStack = NULL;
-   kossl = KOSSL::self();
+   kossl = NULL;	// unused, kept for binary compatibility
 }
 
 
 
 KSSLPKCS12::~KSSLPKCS12() {
 #ifdef KSSL_HAVE_SSL
-   if (_pkey) kossl->EVP_PKEY_free(_pkey);
+   if (_pkey) EVP_PKEY_free(_pkey);
    if (_caStack) {
       for (;;) {
          X509* x5 = sk_X509_pop(_caStack);
          if (!x5) break;
-         kossl->X509_free(x5);
+         X509_free(x5);
       }
       sk_X509_free(_caStack);
    }
-   if (_pkcs) kossl->PKCS12_free(_pkcs);
+   if (_pkcs) PKCS12_free(_pkcs);
 #endif
    if (_cert) delete _cert;
 }
@@ -101,11 +92,11 @@ PKCS12 *newpkcs = NULL;
   FILE *fp = fdopen(qf.handle(), "r");
   if (!fp) return NULL;
 
-  newpkcs = KOSSL::self()->d2i_PKCS12_fp(fp, &newpkcs);
+  newpkcs = d2i_PKCS12_fp(fp, &newpkcs);
 
   fclose(fp);
   if (!newpkcs) {
-	KOSSL::self()->ERR_clear_error();
+	ERR_clear_error();
 	return NULL;
   }
 
@@ -133,7 +124,7 @@ void KSSLPKCS12::setCert(PKCS12 *c) {
 bool KSSLPKCS12::changePassword(QString pold, QString pnew) {
 #ifdef KSSL_HAVE_SSL
    // OpenSSL makes me cast away the const here.  argh
-   return (0 == kossl->PKCS12_newpass(_pkcs, 
+   return (0 == PKCS12_newpass(_pkcs, 
                            pold.isNull() ? (char *)"" : (char *)pold.latin1(), 
                            pnew.isNull() ? (char *)"" : (char *)pnew.latin1()));
 #endif
@@ -148,12 +139,12 @@ X509 *x = NULL;
   assert(_pkcs);   // if you're calling this before pkcs gets set, it's a BUG!
 
    if (_cert) delete _cert;
-   if (_pkey) kossl->EVP_PKEY_free(_pkey);
+   if (_pkey) EVP_PKEY_free(_pkey);
    if (_caStack) {
       for (;;) {
          X509* x5 = sk_X509_pop(_caStack);
          if (!x5) break;
-         kossl->X509_free(x5);
+         X509_free(x5);
       }
       sk_X509_free(_caStack);
    }
@@ -161,7 +152,7 @@ X509 *x = NULL;
    _caStack = NULL;
    _cert = NULL;
 
-  int rc = kossl->PKCS12_parse(_pkcs, pass.latin1(), &_pkey, &x, &_caStack);
+  int rc = PKCS12_parse(_pkcs, pass.latin1(), &_pkey, &x, &_caStack);
 
   if (rc == 1) {
      // kdDebug(7029) << "PKCS12_parse success" << endl;
@@ -176,7 +167,7 @@ X509 *x = NULL;
   } else {
     _caStack = NULL;
     _pkey = NULL;
-    kossl->ERR_clear_error();
+    ERR_clear_error();
   }
 #endif
 return false;  
@@ -199,11 +190,11 @@ QString base64;
 unsigned char *p;
 int len;
 
-   len = kossl->i2d_PKCS12(_pkcs, NULL);
+   len = i2d_PKCS12(_pkcs, NULL);
    if (len >= 0) {
        char *buf = new char[len];
        p = (unsigned char *)buf;
-       kossl->i2d_PKCS12(_pkcs, &p);
+       i2d_PKCS12(_pkcs, &p);
        QByteArray qba;
        qba.setRawData(buf, len);
        base64 = KCodecs::base64Encode(qba);
@@ -230,7 +221,7 @@ QFile out(filename);
       return false;
    }
 
-   kossl->i2d_PKCS12_fp(fp, _pkcs);
+   i2d_PKCS12_fp(fp, _pkcs);
 
    fclose(fp);
    return true;
@@ -247,7 +238,7 @@ KSSLCertificate::KSSLValidation KSSLPKCS12::validate() {
 KSSLCertificate::KSSLValidation KSSLPKCS12::validate(KSSLCertificate::KSSLPurpose p) {
 #ifdef KSSL_HAVE_SSL
 KSSLCertificate::KSSLValidation xx = _cert->validate(p);
-   if (1 != kossl->X509_check_private_key(_cert->getCert(), _pkey)) {
+   if (1 != X509_check_private_key(_cert->getCert(), _pkey)) {
       xx = KSSLCertificate::PrivateKeyFailed;
    }
 
@@ -283,13 +274,4 @@ QString KSSLPKCS12::name() {
 }
 
  
-#ifdef KSSL_HAVE_SSL
-#undef OPENSSL_sk_new
-#undef OPENSSL_sk_push
-#undef OPENSSL_sk_free
-#undef OPENSSL_sk_value
-#undef OPENSSL_sk_num
-#undef OPENSSL_sk_pop
-#undef OPENSSL_sk_dup
-#endif
 

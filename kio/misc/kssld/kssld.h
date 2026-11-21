@@ -34,7 +34,6 @@
 
 class KSimpleConfig;
 class KSSLCNode;
-class KOpenSSLProxy;
 
 class KSSLD : public KDEDModule
 {
@@ -138,9 +137,6 @@ private:
   // for the cache portion:
   KSimpleConfig *cfg;
   QPtrList<KSSLCNode> certList;
-
-  // Our pointer to OpenSSL
-  KOpenSSLProxy *kossl;
 
   // 
   void searchAddCert(KSSLCertificate *cert);

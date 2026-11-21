@@ -49,7 +49,13 @@ class KOpenSSLProxyPrivate;
 #include <kstaticdeleter.h>
 
 /**
- * Dynamically load and wrap OpenSSL.
+ * Wrap OpenSSL.
+ *
+ * This class used to load libssl and libcrypto at run time.  kdelibs
+ * links OpenSSL (>= 3.0) now and no longer uses it; it is kept only for
+ * binary compatibility: every method calls the OpenSSL function of the
+ * same name, hasLibSSL() and hasLibCrypto() are always true.  New code
+ * calls OpenSSL directly.
  *
  * @author George Staikos <staikos@kde.org>
  * @see KSSL

@@ -179,7 +179,7 @@ protected:
 private:
 	KSSLPKCS12Private *d;
 	PKCS12 *_pkcs;
-	KOpenSSLProxy *kossl;
+	KOpenSSLProxy *kossl;	// unused, kept for binary compatibility
 	EVP_PKEY *_pkey;
 	KSSLCertificate *_cert;
 	STACK_OF(X509) *_caStack;

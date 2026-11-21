@@ -23,7 +23,7 @@
 #endif
 
 #include "ksslx509v3.h"
-#include <kopenssl.h>
+#include "ksslopenssl_p.h"
 #include <kdebug.h>
 
 

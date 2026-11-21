@@ -122,7 +122,7 @@ class KIO_EXPORT KSMIMECrypto {
 
  private:
     KSMIMECryptoPrivate *priv;
-    KOpenSSLProxy *kossl;
+    KOpenSSLProxy *kossl;	// unused, kept for binary compatibility
 };
 
 #endif

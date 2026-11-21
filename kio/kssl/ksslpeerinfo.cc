@@ -34,7 +34,7 @@
 #include "kresolver.h"
 #endif
 
-#include <kopenssl.h>
+#include "ksslopenssl_p.h"
 
 #ifdef KSSL_HAVE_SSL
 #include <string.h>
@@ -128,10 +128,10 @@ static bool usablePeerHost(const QString &host)
 // in ASCII only (IDNs as A-labels, "xn--..."); QString::lower() on
 // other characters would fold some into ASCII (KELVIN SIGN U+212A to
 // "k", U+0130 to "i").
-static QString nameText(KOpenSSLProxy *kossl, ASN1_STRING *s)
+static QString nameText(const ASN1_STRING *s)
 {
 	unsigned char *utf8 = 0;
-	int len = s ? kossl->ASN1_STRING_to_UTF8(&utf8, s) : -1;
+	int len = s ? ASN1_STRING_to_UTF8(&utf8, s) : -1;
 	if (len < 0 || !utf8)
 		return QString::null;
 	bool ascii = true;
@@ -144,7 +144,7 @@ static QString nameText(KOpenSSLProxy *kossl, ASN1_STRING *s)
 	QString rc;
 	if (ascii)
 		rc = QString::fromLatin1(reinterpret_cast<char *>(utf8), len);
-	kossl->CRYPTO_free(utf8, __FILE__, __LINE__);
+	OPENSSL_free(utf8);
 	return rc;
 }
 
@@ -251,7 +251,6 @@ static bool ipTextMatches(const QString &name, const unsigned char *addr, int ad
 // as before); wildcards never match an IP address.
 bool KSSLPeerInfo::certMatchesAddress() {
 #ifdef KSSL_HAVE_SSL
-	KOpenSSLProxy *kossl = KOpenSSLProxy::self();
 	X509 *x = m_cert.getCert();
 	if (!x || !usablePeerHost(d->peerHost))
 		return false;
@@ -262,39 +261,39 @@ bool KSSLPeerInfo::certMatchesAddress() {
 	QStringList names;
 	bool haveDNSName = false;
 	bool haveIPAddress = false;
-	if (kossl->X509_get_ext_by_NID(x, NID_subject_alt_name, -1) >= 0) {
+	if (X509_get_ext_by_NID(x, NID_subject_alt_name, -1) >= 0) {
 		int crit = 0;
-		GENERAL_NAMES *gens = (GENERAL_NAMES *)kossl->X509_get_ext_d2i(x, NID_subject_alt_name, &crit, 0);
+		GENERAL_NAMES *gens = (GENERAL_NAMES *)X509_get_ext_d2i(x, NID_subject_alt_name, &crit, 0);
 		if (!gens)
 			return false;	// undecodable or duplicate: fail closed
-		int cnt = kossl->OPENSSL_sk_num((OPENSSL_STACK *)gens);
+		int cnt = sk_GENERAL_NAME_num(gens);
 		bool ipMatch = false;
 		for (int i = 0; i < cnt; i++) {
-			const GENERAL_NAME *val = (const GENERAL_NAME *)kossl->OPENSSL_sk_value((OPENSSL_STACK *)gens, i);
+			const GENERAL_NAME *val = sk_GENERAL_NAME_value(gens, i);
 			if (val->type == GEN_DNS) {
 				// even one that is skipped below
 				haveDNSName = true;
-				QString s = nameText(kossl, val->d.ia5);
+				QString s = nameText(val->d.ia5);
 				if (!s.isEmpty())
 					names += s;
 			} else if (val->type == GEN_IPADD) {
 				haveIPAddress = true;
 				if (addrLen > 0 &&
-				    kossl->ASN1_STRING_length(val->d.ip) == addrLen &&
-				    memcmp(kossl->ASN1_STRING_data(val->d.ip), addr, addrLen) == 0)
+				    kssl_ASN1_STRING_length(val->d.ip) == addrLen &&
+				    memcmp(ASN1_STRING_get0_data(val->d.ip), addr, addrLen) == 0)
 					ipMatch = true;
 			}
 		}
-		kossl->GENERAL_NAMES_free(gens);
+		GENERAL_NAMES_free(gens);
 		if (ipMatch)
 			return true;
 	}
 
 	if (!haveDNSName && !haveIPAddress) {
-		X509_NAME *subject = kossl->X509_get_subject_name(x);
-		for (int i = -1; subject && (i = kossl->X509_NAME_get_index_by_NID(subject, NID_commonName, i)) >= 0; ) {
-			X509_NAME_ENTRY *e = kossl->X509_NAME_get_entry(subject, i);
-			QString s = e ? nameText(kossl, kossl->X509_NAME_ENTRY_get_data(e)) : QString::null;
+		const X509_NAME *subject = X509_get_subject_name(x);
+		for (int i = -1; subject && (i = X509_NAME_get_index_by_NID(subject, NID_commonName, i)) >= 0; ) {
+			const X509_NAME_ENTRY *e = X509_NAME_get_entry(subject, i);
+			QString s = e ? nameText(X509_NAME_ENTRY_get_data(e)) : QString::null;
 			if (!s.isEmpty())
 				names += s;
 		}

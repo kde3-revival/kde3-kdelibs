@@ -42,6 +42,9 @@ if(HAVE_LIBPSL)
   target_link_libraries(kssl PRIVATE PkgConfig::LIBPSL)
 endif()
 target_link_libraries(kssl PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+# installed kssl headers include OpenSSL headers: those of the OpenSSL
+# linked, also for the sources of libkio that include them
+target_include_directories(kssl PUBLIC "$<BUILD_INTERFACE:${OPENSSL_INCLUDE_DIR}>")
 
 install(FILES
   kssl.h

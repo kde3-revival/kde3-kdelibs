@@ -26,7 +26,7 @@
 #include <klocale.h>
 #include <qdatetime.h>
 
-#include "kopenssl.h"
+#include "ksslopenssl_p.h"
 
 #ifdef KSSL_HAVE_SSL
 // This code is mostly taken from OpenSSL v0.9.5a
@@ -44,9 +44,9 @@ int y=0,M=0,d=0,h=0,m=0,s=0;
 QDate qdate;
 QTime qtime;
 
-  len = KOSSL::self()->ASN1_STRING_length(tm);
-  v = (const char *)KOSSL::self()->ASN1_STRING_data(tm);
-  ylen = (KOSSL::self()->ASN1_STRING_type(tm) == V_ASN1_GENERALIZEDTIME) ? 4 : 2;
+  len = kssl_ASN1_STRING_length(tm);
+  v = (const char *)ASN1_STRING_get0_data(tm);
+  ylen = (ASN1_STRING_type(tm) == V_ASN1_GENERALIZEDTIME) ? 4 : 2;
 
   if (!v || len < ylen + 8) goto auq_err;
   if (v[len-1] == 'Z') gmt=1;
@@ -94,9 +94,9 @@ QString ASN1_UTCTIME_QString(ASN1_UTCTIME *tm) {
 
 
 QString ASN1_INTEGER_QString(ASN1_INTEGER *aint) {
-char *rep = KOSSL::self()->i2s_ASN1_INTEGER(NULL, aint);
+char *rep = i2s_ASN1_INTEGER(NULL, aint);
 QString yy = rep;
-KOSSL::self()->OPENSSL_free(rep);
+OPENSSL_free(rep);
 return yy;
 }
 

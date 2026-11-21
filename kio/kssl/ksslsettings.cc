@@ -37,24 +37,8 @@
 #include <kstandarddirs.h>
 #include <kdebug.h>
 
-// this hack provided by Malte Starostik to avoid glibc/openssl bug
-// on some systems
-#ifdef KSSL_HAVE_SSL
-#define crypt _openssl_crypt
-#include <openssl/ssl.h>
-#undef crypt
-#endif
-#include <kopenssl.h>
+#include "ksslopenssl_p.h"
 
-#ifdef KSSL_HAVE_SSL
-#define OPENSSL_sk_new d->kossl->OPENSSL_sk_new
-#define OPENSSL_sk_push d->kossl->OPENSSL_sk_push
-#define OPENSSL_sk_free d->kossl->OPENSSL_sk_free
-#define OPENSSL_sk_value d->kossl->OPENSSL_sk_value
-#define OPENSSL_sk_num d->kossl->OPENSSL_sk_num
-#define OPENSSL_sk_dup d->kossl->OPENSSL_sk_dup
-#define OPENSSL_sk_pop d->kossl->OPENSSL_sk_pop
-#endif
 
       class CipherNode {
       public:
@@ -74,13 +58,11 @@
 class KSSLSettingsPrivate {
 public:
   KSSLSettingsPrivate() {
-    kossl = NULL;   // try to delay this as long as possible
   }
   ~KSSLSettingsPrivate() {
 
   }
 
-  KOSSL *kossl;
   bool m_bUseEGD;
   bool m_bUseEFile;
   QString m_EGDPath;
@@ -139,29 +121,18 @@ QString KSSLSettings::getCipherList() {
 	QString tcipher;
 	bool firstcipher = true;
 	bool restricted = false;
-	SSL_METHOD *meth = 0L;
 	QPtrList<CipherNode> cipherList;
 
 	cipherList.setAutoDelete(true);
 
-	if (!d->kossl)
-		d->kossl = KOSSL::self();
+	// OpenSSL 3 has no SSLv2 and no SSLv3 method: the ciphers are
+	// those of the TLS method (kcontrol's crypto module shows those),
+	// whatever the SSLv2/SSLv3 settings.
+	const SSL_METHOD *meth = TLS_client_method();
 
-	if (m_bUseSSLv3 && m_bUseSSLv2)
-		meth = d->kossl->SSLv23_client_method();
-	else if(m_bUseSSLv3)
-		meth = d->kossl->SSLv3_client_method();
-	else if (m_bUseSSLv2)
-		meth = d->kossl->SSLv2_client_method();
-	// OpenSSL >= 1.1 has no SSLv2 and may have no SSLv3 method: list the
-	// ciphers of the TLS method then (kcontrol's crypto module shows
-	// those), else the user's choice would be silently ignored.
-	if (!meth)
-		meth = d->kossl->SSLv23_client_method();
-
-	SSL_CTX *ctx = d->kossl->SSL_CTX_new(meth);
-	SSL* ssl = d->kossl->SSL_new(ctx);
-	STACK_OF(SSL_CIPHER)* sk = d->kossl->SSL_get_ciphers(ssl);
+	SSL_CTX *ctx = SSL_CTX_new(meth);
+	SSL* ssl = SSL_new(ctx);
+	STACK_OF(SSL_CIPHER)* sk = SSL_get_ciphers(ssl);
 	int cnt = sk_SSL_CIPHER_num(sk);
 	for (int i=0; i< cnt; i++) {
 		const SSL_CIPHER *sc = sk_SSL_CIPHER_value(sk,i);
@@ -170,18 +141,18 @@ QString KSSLSettings::getCipherList() {
 
 		// The TLS 1.3 suites are not set by SSL_CTX_set_cipher_list()
 		// and cannot be turned off here; kcontrol does not show them.
-		if (!strcmp("TLSv1.3", d->kossl->SSL_CIPHER_get_version(sc)))
+		if (!strcmp("TLSv1.3", SSL_CIPHER_get_version(sc)))
 			continue;
 
-		if(!strcmp("SSLv2", d->kossl->SSL_CIPHER_get_version(sc)))
+		if(!strcmp("SSLv2", SSL_CIPHER_get_version(sc)))
 			m_cfg->setGroup("SSLv2");
 		else
 			m_cfg->setGroup("SSLv3");
 
-		tcipher.sprintf("cipher_%s", d->kossl->SSL_CIPHER_get_name(sc));
-		int bits = d->kossl->SSL_CIPHER_get_bits(sc, NULL);
+		tcipher.sprintf("cipher_%s", SSL_CIPHER_get_name(sc));
+		int bits = SSL_CIPHER_get_bits(sc, NULL);
 		if (m_cfg->readBoolEntry(tcipher, bits >= 56)) {
-			CipherNode *xx = new CipherNode(d->kossl->SSL_CIPHER_get_name(sc),bits);
+			CipherNode *xx = new CipherNode(SSL_CIPHER_get_name(sc),bits);
 			if (!cipherList.contains(xx))
 				cipherList.prepend(xx);
 			else
@@ -189,8 +160,8 @@ QString KSSLSettings::getCipherList() {
 		} else if (m_cfg->hasKey(tcipher))
 			restricted = true;	// disabled by the user
 	}
-	d->kossl->SSL_free(ssl);
-	d->kossl->SSL_CTX_free(ctx);
+	SSL_free(ssl);
+	SSL_CTX_free(ctx);
 
 	if (!restricted) {
 		kdDebug(7029) << "Cipher list: the system default" << endl;
@@ -363,13 +334,4 @@ void KSSLSettings::setSSLv3(bool enabled) { m_bUseSSLv3 = enabled; }
 
 QString& KSSLSettings::getEGDPath()       { return d->m_EGDPath; }
 
-#ifdef KSSL_HAVE_SSL
-#undef OPENSSL_sk_new
-#undef OPENSSL_sk_push
-#undef OPENSSL_sk_free
-#undef OPENSSL_sk_value
-#undef OPENSSL_sk_num
-#undef OPENSSL_sk_pop
-#undef OPENSSL_sk_dup
-#endif
 

@@ -24,7 +24,7 @@
 #include <config.h>
 #endif
 
-#include <kopenssl.h>
+#include "ksslopenssl_p.h"
 #include <kmdcodec.h>
 
 KSSLSession::KSSLSession() : _session(0L) {
@@ -34,7 +34,7 @@ KSSLSession::KSSLSession() : _session(0L) {
 KSSLSession::~KSSLSession() {
 #ifdef KSSL_HAVE_SSL
 	if (_session) {
-		KOpenSSLProxy::self()->SSL_SESSION_free(static_cast<SSL_SESSION*>(_session));
+		SSL_SESSION_free(static_cast<SSL_SESSION*>(_session));
 		_session = 0L;
 	}
 #endif
@@ -46,11 +46,11 @@ QString rc;
 #ifdef KSSL_HAVE_SSL
 QByteArray qba;
 SSL_SESSION *session = static_cast<SSL_SESSION*>(_session);
-unsigned int slen = KOpenSSLProxy::self()->i2d_SSL_SESSION(session, 0L);
+unsigned int slen = i2d_SSL_SESSION(session, 0L);
 unsigned char *csess = new unsigned char[slen];
 unsigned char *p = csess;
 
-	if (!KOpenSSLProxy::self()->i2d_SSL_SESSION(session, &p)) {
+	if (!i2d_SSL_SESSION(session, &p)) {
 		delete[] csess;
 		return QString::null;
 	}
@@ -69,8 +69,8 @@ KSSLSession *session = 0L;
 #ifdef KSSL_HAVE_SSL
 QByteArray qba, qbb = s.local8Bit().copy();
 	KCodecs::base64Decode(qbb, qba);
-	unsigned char *qbap = reinterpret_cast<unsigned char *>(qba.data());
-	SSL_SESSION *ss = KOSSL::self()->d2i_SSL_SESSION(0L, &qbap, qba.size());
+	const unsigned char *qbap = reinterpret_cast<const unsigned char *>(qba.data());
+	SSL_SESSION *ss = d2i_SSL_SESSION(0L, &qbap, qba.size());
         if (ss) {
 		session = new KSSLSession;
 		session->_session = ss;

@@ -142,7 +142,7 @@ protected:
 private:
 	KSSLPKCS7Private *d;
 	PKCS7 *_pkcs;
-	KOpenSSLProxy *kossl;
+	KOpenSSLProxy *kossl;	// unused, kept for binary compatibility
 	KSSLCertificate *_cert;
 	KSSLCertChain *_chain;
 };

@@ -25,46 +25,21 @@
 #include "ksslcertificate.h"
 #include "ksslcertchain.h"
 
-// this hack provided by Malte Starostik to avoid glibc/openssl bug
-// on some systems
-#ifdef KSSL_HAVE_SSL
-#define crypt _openssl_crypt
-#include <openssl/ssl.h>
-#include <openssl/x509.h>
-#include <openssl/x509v3.h>
-#include <openssl/x509_vfy.h>
-#include <openssl/pem.h>
-#include <openssl/stack.h>
-#include <openssl/safestack.h>
-#undef crypt
-#endif
+#include "ksslopenssl_p.h"
 
-#include <kopenssl.h>
 #include <kdebug.h>
 #include <qstringlist.h>
 
 
 
-#ifdef KSSL_HAVE_SSL
-#define OPENSSL_sk_new d->kossl->OPENSSL_sk_new
-#define OPENSSL_sk_push d->kossl->OPENSSL_sk_push
-#define OPENSSL_sk_free d->kossl->OPENSSL_sk_free
-#define OPENSSL_sk_value d->kossl->OPENSSL_sk_value
-#define OPENSSL_sk_num d->kossl->OPENSSL_sk_num
-#define OPENSSL_sk_dup d->kossl->OPENSSL_sk_dup
-#define OPENSSL_sk_pop d->kossl->OPENSSL_sk_pop
-#endif
 
 class KSSLCertChainPrivate {
 public:
   KSSLCertChainPrivate() {
-     kossl = KOSSL::self();
   }
 
   ~KSSLCertChainPrivate() {
   }
-
-  KOSSL *kossl;
 };
 
 KSSLCertChain::KSSLCertChain() {
@@ -81,7 +56,7 @@ KSSLCertChain::~KSSLCertChain() {
     for (;;) {
       X509* x5 = sk_X509_pop(x);
       if (!x5) break;
-      d->kossl->X509_free(x5);
+      X509_free(x5);
     }
     sk_X509_free(x);
   }
@@ -123,7 +98,7 @@ STACK_OF(X509) *x = (STACK_OF(X509) *)_chain;
      X509* x5 = sk_X509_value(x, i);
      if (!x5) continue;
      KSSLCertificate *nc = new KSSLCertificate;
-     nc->setCert(d->kossl->X509_dup(x5));
+     nc->setCert(X509_dup(x5));
      cl.append(nc);
    }
 
@@ -140,7 +115,7 @@ if (_chain) {
     for (;;) {
       X509* x5 = sk_X509_pop(x);
       if (!x5) break;
-      d->kossl->X509_free(x5);
+      X509_free(x5);
     }
     sk_X509_free(x);
     _chain = NULL;
@@ -149,7 +124,7 @@ if (_chain) {
   if (chain.count() == 0) return;
   _chain = (void *)OPENSSL_sk_new(NULL);
   for (KSSLCertificate *x = chain.first(); x != 0; x = chain.next()) {
-    sk_X509_push((STACK_OF(X509)*)_chain, d->kossl->X509_dup(x->getCert()));
+    sk_X509_push((STACK_OF(X509)*)_chain, X509_dup(x->getCert()));
   }
 
 #endif
@@ -164,7 +139,7 @@ if (_chain) {
     for (;;) {
       X509* x5 = sk_X509_pop(x);
       if (!x5) break;
-      d->kossl->X509_free(x5);
+      X509_free(x5);
     }
     sk_X509_free(x);
     _chain = NULL;
@@ -178,7 +153,7 @@ STACK_OF(X509) *x = (STACK_OF(X509) *)stack_of_x509;
    for (int i = 0; i < sk_X509_num(x); i++) {
      X509* x5 = sk_X509_value(x, i);
      if (!x5) continue;
-     sk_X509_push((STACK_OF(X509)*)_chain,d->kossl->X509_dup(x5));
+     sk_X509_push((STACK_OF(X509)*)_chain,X509_dup(x5));
    }
 
 #else
@@ -204,13 +179,4 @@ void KSSLCertChain::setCertChain(const QStringList& chain) {
 }
 
 
-#ifdef KSSL_HAVE_SSL
-#undef OPENSSL_sk_new
-#undef OPENSSL_sk_push
-#undef OPENSSL_sk_free
-#undef OPENSSL_sk_value
-#undef OPENSSL_sk_num
-#undef OPENSSL_sk_dup
-#undef OPENSSL_sk_pop
-#endif
 

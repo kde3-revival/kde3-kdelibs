@@ -22,24 +22,12 @@
 #include <config.h>
 #endif
 
-// usleep(); the <unistd.h> below is not reached because KSSL_HAVE_SSL
-// is only defined later by ksslconfig.h
 #include <unistd.h>
 
-// this hack provided by Malte Starostik to avoid glibc/openssl bug
-// on some systems
-#ifdef KSSL_HAVE_SSL
-#include <unistd.h>
+#include "ksslopenssl_p.h"
+
 #include <netinet/in.h>
 #include <sys/socket.h>
-#define crypt _openssl_crypt
-#include <openssl/ssl.h>
-#include <openssl/x509.h>
-#include <openssl/x509v3.h>
-#include <openssl/pem.h>
-#include <openssl/rand.h>
-#undef crypt
-#endif
 
 #include "kssl.h"
 
@@ -48,7 +36,6 @@
 #include <ksock.h>
 #include <ksockaddr.h>
 
-#include <kopenssl.h>
 #include <ksslx509v3.h>
 #include <ksslpkcs12.h>
 #include <ksslsession.h>
@@ -63,7 +50,7 @@
 // meant, so that a server with several names presents the certificate
 // of this one.  The name is sent in ASCII (IDNA), without a trailing
 // dot, and never for an IP address.
-static void setServerName(KOpenSSLProxy *kossl, SSL *ssl, const QString &peer)
+static void setServerName(SSL *ssl, const QString &peer)
 {
 	QString host = peer.stripWhiteSpace();
 	while (host.endsWith("."))
@@ -81,9 +68,7 @@ static void setServerName(KOpenSSLProxy *kossl, SSL *ssl, const QString &peer)
 	QCString ace = KNetwork::KResolver::domainToAscii(host);
 	if (ace.isEmpty())
 		return;
-	// SSL_set_tlsext_host_name() is this macro
-	kossl->SSL_ctrl(ssl, SSL_CTRL_SET_TLSEXT_HOSTNAME,
-			TLSEXT_NAMETYPE_host_name, ace.data());
+	SSL_set_tlsext_host_name(ssl, ace.data());
 }
 #endif
 
@@ -91,7 +76,6 @@ class KSSLPrivate {
 public:
 	KSSLPrivate() {
 		lastInitTLS = false;
-		kossl = KOpenSSLProxy::self();
 		session = 0L;
 	}
 
@@ -107,10 +91,9 @@ public:
 #ifdef KSSL_HAVE_SSL
 	SSL *m_ssl;
 	SSL_CTX *m_ctx;
-	SSL_METHOD *m_meth;
+	const SSL_METHOD *m_meth;
 #endif
 	KSSLSession *session;
-	KOSSL *kossl;
 };
 
 
@@ -139,13 +122,17 @@ int KSSL::seedWithEGD() {
 int rc = 0;
 #ifdef KSSL_HAVE_SSL
 	if (m_cfg->useEGD() && !m_cfg->getEGDPath().isEmpty()) {
-		rc = d->kossl->RAND_egd(m_cfg->getEGDPath().latin1());
+#ifndef OPENSSL_NO_EGD
+		rc = RAND_egd(m_cfg->getEGDPath().latin1());
+#else
+		rc = -1;	// OpenSSL is built without EGD support
+#endif
 		if (rc < 0) 
 			kdDebug(7029) << "KSSL: Error seeding PRNG with the EGD." << endl;
 		else kdDebug(7029) << "KSSL: PRNG was seeded with " << rc 
 				   << " bytes from the EGD." << endl;
 	} else if (m_cfg->useEFile() && !m_cfg->getEGDPath().isEmpty()) {
-		rc = d->kossl->RAND_load_file(m_cfg->getEGDPath().latin1(), -1);
+		rc = RAND_load_file(m_cfg->getEGDPath().latin1(), -1);
 		if (rc < 0) 
 			kdDebug(7029) << "KSSL: Error seeding PRNG with the entropy file." << endl;
 		else kdDebug(7029) << "KSSL: PRNG was seeded with " << rc 
@@ -168,13 +155,14 @@ bool KSSL::TLSInit() {
 	if (!m_cfg->tlsv1())
 		return false;
 
+	OPENSSL_init_ssl(OPENSSL_INIT_LOAD_CONFIG, NULL);
 	seedWithEGD();
-	d->m_meth = d->kossl->TLSv1_client_method();
+	d->m_meth = TLS_client_method();
 	d->lastInitTLS = true;
 
 	m_pi.reset();
 
-	d->m_ctx = d->kossl->SSL_CTX_new(d->m_meth);
+	d->m_ctx = SSL_CTX_new(d->m_meth);
 	if (d->m_ctx == 0L) {
 		return false;
 	}
@@ -183,7 +171,7 @@ bool KSSL::TLSInit() {
 	QString clist = m_cfg->getCipherList();
 	//kdDebug(7029) << "Cipher list: " << clist << endl;
 	if (!clist.isEmpty())
-		d->kossl->SSL_CTX_set_cipher_list(d->m_ctx, const_cast<char *>(clist.ascii()));
+		SSL_CTX_set_cipher_list(d->m_ctx, const_cast<char *>(clist.ascii()));
 
 	m_bInit = true;
 return true;
@@ -208,13 +196,17 @@ bool KSSL::initialize() {
 
 	m_pi.reset();
 
-	if (!m_cfg->tlsv1() && !m_cfg->sslv3() && m_cfg->sslv2())
-		d->m_meth = d->kossl->SSLv2_client_method();
-        else if (m_cfg->tlsv1() && !m_cfg->sslv3() && !m_cfg->sslv2())
-		d->m_meth = d->kossl->TLSv1_client_method();
-	else if (!m_cfg->tlsv1() && m_cfg->sslv3() && !m_cfg->sslv2())
-		d->m_meth = d->kossl->SSLv3_client_method();
-	else d->m_meth = d->kossl->SSLv23_client_method();
+	OPENSSL_init_ssl(OPENSSL_INIT_LOAD_CONFIG, NULL);
+
+	// OpenSSL 3 has no SSLv2/SSLv3 client methods (KOpenSSLProxy
+	// returned none for them, so SSL_CTX_new() below failed): with only
+	// one of these enabled there is no SSL.  Otherwise the generic
+	// method; the versions are chosen with the SSL_OP_NO_* options in
+	// connect().
+	if (!m_cfg->tlsv1() && (m_cfg->sslv2() || m_cfg->sslv3()) &&
+	    !(m_cfg->sslv2() && m_cfg->sslv3()))
+		return false;
+	d->m_meth = TLS_client_method();
 
 /*
 if (m_cfg->sslv2() && m_cfg->sslv3()) kdDebug(7029) << "Double method" << endl;
@@ -222,7 +214,7 @@ else if (m_cfg->sslv2()) kdDebug(7029) << "SSL2 method" << endl;
 else if (m_cfg->sslv3()) kdDebug(7029) << "SSL3 method" << endl;
 */
 
-	d->m_ctx = d->kossl->SSL_CTX_new(d->m_meth);
+	d->m_ctx = SSL_CTX_new(d->m_meth);
 	if (d->m_ctx == 0L) {
 		return false;
 	}
@@ -231,7 +223,7 @@ else if (m_cfg->sslv3()) kdDebug(7029) << "SSL3 method" << endl;
 	QString clist = m_cfg->getCipherList();
 	kdDebug(7029) << "Cipher list: " << clist << endl;
 	if (!clist.isEmpty())
-		d->kossl->SSL_CTX_set_cipher_list(d->m_ctx, const_cast<char *>(clist.ascii()));
+		SSL_CTX_set_cipher_list(d->m_ctx, const_cast<char *>(clist.ascii()));
 
 	m_bInit = true;
 return true;
@@ -250,7 +242,7 @@ bool KSSL::setSession(const KSSLSession *session) {
 	}
 
 	// Obtain a reference by incrementing the reference count.  Yuck.
-	d->kossl->SSL_SESSION_up_ref(static_cast<SSL_SESSION*>(session->_session));
+	SSL_SESSION_up_ref(static_cast<SSL_SESSION*>(session->_session));
 
 	d->session = new KSSLSession;
 	d->session->_session = session->_session;
@@ -272,14 +264,14 @@ void KSSL::close() {
 	d->session = 0L;
 
 	if (d->m_ssl) {
-		d->kossl->SSL_shutdown(d->m_ssl);
-		d->kossl->SSL_free(d->m_ssl);
+		SSL_shutdown(d->m_ssl);
+		SSL_free(d->m_ssl);
 		d->m_ssl = 0L;
 	}
 
-	d->kossl->SSL_CTX_free(d->m_ctx);
+	SSL_CTX_free(d->m_ctx);
 	if (m_cfg->useEFile() && !m_cfg->getEGDPath().isEmpty()) {
-		d->kossl->RAND_write_file(m_cfg->getEGDPath().latin1());
+		RAND_write_file(m_cfg->getEGDPath().latin1());
 	}
 
 	m_bInit = false;
@@ -313,7 +305,7 @@ int KSSL::accept(int sock) {
 int rc;
 	if (!m_bInit)
 		return -1;
-	d->m_ssl = d->kossl->SSL_new(d->m_ctx);
+	d->m_ssl = SSL_new(d->m_ctx);
 	if (!d->m_ssl)
 		return -1;
 
@@ -329,7 +321,7 @@ int rc;
 			kdDebug(7029) << "Can't reuse session, no certificate." << endl;
 			delete d->session;
 			d->session = 0;
-		} else if (1 == d->kossl->SSL_set_session(d->m_ssl,
+		} else if (1 == SSL_set_session(d->m_ssl,
 			static_cast<SSL_SESSION*>(d->session->_session))) {
 			kdDebug(7029) << "Session ID is being reused." << endl;
 		} else {
@@ -341,8 +333,8 @@ int rc;
 
 /*
 	if (!setVerificationLogic()) {
-		d->kossl->SSL_shutdown(d->m_ssl);
-		d->kossl->SSL_free(d->m_ssl);
+		SSL_shutdown(d->m_ssl);
+		SSL_free(d->m_ssl);
 		d->m_ssl = 0;
 		return -1;
 	}
@@ -361,17 +353,17 @@ int rc;
 	if (!m_cfg->sslv2())
 		off |= SSL_OP_NO_SSLv2;
 
-	d->kossl->SSL_set_options(d->m_ssl, off);
+	SSL_set_options(d->m_ssl, off);
 
-	rc = d->kossl->SSL_set_fd(d->m_ssl, sock);
+	rc = SSL_set_fd(d->m_ssl, sock);
 	if (rc == 0) {
-		d->kossl->SSL_shutdown(d->m_ssl);
-		d->kossl->SSL_free(d->m_ssl);
+		SSL_shutdown(d->m_ssl);
+		SSL_free(d->m_ssl);
 		d->m_ssl = 0;
 		return rc;
 	}
 
-	rc = d->kossl->SSL_accept(d->m_ssl);
+	rc = SSL_accept(d->m_ssl);
 	if (rc == 1) {
 		setConnectionInfo();
 		setPeerInfo();
@@ -379,14 +371,14 @@ int rc;
 	} else {
 		kdDebug(7029) << "KSSL accept failed - rc = " << rc << endl;
 		kdDebug(7029) << "                      ERROR = "
-			      << d->kossl->SSL_get_error(d->m_ssl, rc) << endl;
-		d->kossl->SSL_shutdown(d->m_ssl);
-		d->kossl->SSL_free(d->m_ssl);
+			      << SSL_get_error(d->m_ssl, rc) << endl;
+		SSL_shutdown(d->m_ssl);
+		SSL_free(d->m_ssl);
 		d->m_ssl = 0;
 		return -1;
 	}
 
-	if (!d->kossl->SSL_session_reused(d->m_ssl)) {
+	if (!SSL_session_reused(d->m_ssl)) {
 		if (d->session) {
 			kdDebug(7029) << "Session reuse failed.  New session used instead." << endl;
 			delete d->session;
@@ -395,7 +387,7 @@ int rc;
 	}
 
 	if (!d->session) {
-		SSL_SESSION *sess = d->kossl->SSL_get1_session(d->m_ssl);
+		SSL_SESSION *sess = SSL_get1_session(d->m_ssl);
 		if (sess) {
 			d->session = new KSSLSession;
 			d->session->_session = sess;
@@ -415,11 +407,11 @@ int KSSL::connect(int sock) {
 int rc;
 	if (!m_bInit)
 		return -1;
-	d->m_ssl = d->kossl->SSL_new(d->m_ctx);
+	d->m_ssl = SSL_new(d->m_ctx);
 	if (!d->m_ssl)
 		return -1;
 
-	setServerName(d->kossl, d->m_ssl, d->proxyPeer);
+	setServerName(d->m_ssl, d->proxyPeer);
 
 	if (d->session) {
 		// OpenSSL >= 1.1.0 has no SSL_SESSION::sess_cert any more.
@@ -433,7 +425,7 @@ int rc;
 			kdDebug(7029) << "Can't reuse session, no certificate." << endl;
 			delete d->session;
 			d->session = 0;
-		} else if (1 == d->kossl->SSL_set_session(d->m_ssl,
+		} else if (1 == SSL_set_session(d->m_ssl,
 			static_cast<SSL_SESSION*>(d->session->_session))) {
 			kdDebug(7029) << "Session ID is being reused." << endl;
 		} else {
@@ -445,8 +437,8 @@ int rc;
 
 /*
 	if (!setVerificationLogic()) {
-		d->kossl->SSL_shutdown(d->m_ssl);
-		d->kossl->SSL_free(d->m_ssl);
+		SSL_shutdown(d->m_ssl);
+		SSL_free(d->m_ssl);
 		d->m_ssl = 0;
 		return -1;
 	}
@@ -465,24 +457,24 @@ int rc;
 	if (!m_cfg->sslv2())
 		off |= SSL_OP_NO_SSLv2;
 
-	d->kossl->SSL_set_options(d->m_ssl, off);
+	SSL_set_options(d->m_ssl, off);
 
-	rc = d->kossl->SSL_set_fd(d->m_ssl, sock);
+	rc = SSL_set_fd(d->m_ssl, sock);
 	if (rc == 0) {
-		d->kossl->SSL_shutdown(d->m_ssl);
-		d->kossl->SSL_free(d->m_ssl);
+		SSL_shutdown(d->m_ssl);
+		SSL_free(d->m_ssl);
 		d->m_ssl = 0;
 		return rc;
 	}
 
 connect_again:
-	rc = d->kossl->SSL_connect(d->m_ssl);
+	rc = SSL_connect(d->m_ssl);
 	if (rc == 1) {
 		setConnectionInfo();
 		setPeerInfo();
 		kdDebug(7029) << "KSSL connected OK" << endl;
 	} else {
-		int err = d->kossl->SSL_get_error(d->m_ssl, rc);
+		int err = SSL_get_error(d->m_ssl, rc);
 		if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
 			// nonblocking - but we block anyways in connect() :)
 			goto connect_again;
@@ -491,15 +483,15 @@ connect_again:
 				<< rc << endl;
 			kdDebug(7029) << "                   ERROR = "
 				<< err << endl;
-			d->kossl->ERR_print_errors_fp(stderr);
-			d->kossl->SSL_shutdown(d->m_ssl);
-			d->kossl->SSL_free(d->m_ssl);
+			ERR_print_errors_fp(stderr);
+			SSL_shutdown(d->m_ssl);
+			SSL_free(d->m_ssl);
 			d->m_ssl = 0;
 			return -1;
 		}
 	}
 
-	if (!d->kossl->SSL_session_reused(d->m_ssl)) {
+	if (!SSL_session_reused(d->m_ssl)) {
 		if (d->session) {
 			kdDebug(7029) << "Session reuse failed.  New session used instead." << endl;
 			delete d->session;
@@ -508,7 +500,7 @@ connect_again:
 	}
 
 	if (!d->session) {
-		SSL_SESSION *sess = d->kossl->SSL_get1_session(d->m_ssl);
+		SSL_SESSION *sess = SSL_get1_session(d->m_ssl);
 		if (sess) {
 			d->session = new KSSLSession;
 			d->session->_session = sess;
@@ -526,7 +518,7 @@ int KSSL::pending() {
 #ifdef KSSL_HAVE_SSL
 	if (!m_bInit)
 		return -1;
-return d->kossl->SSL_pending(d->m_ssl);
+return SSL_pending(d->m_ssl);
 #else
 return -1;
 #endif
@@ -538,7 +530,7 @@ int KSSL::peek(void *buf, int len) {
 	if (!m_bInit)
 		return -1;
 	// FIXME: enhance to work the way read() does below, handling errors
-return d->kossl->SSL_peek(d->m_ssl, buf, len);
+return SSL_peek(d->m_ssl, buf, len);
 #else
 return -1;
 #endif
@@ -554,9 +546,9 @@ int KSSL::read(void *buf, int len) {
 		return -1;
 
 read_again:
-	rc = d->kossl->SSL_read(d->m_ssl, (char *)buf, len);
+	rc = SSL_read(d->m_ssl, (char *)buf, len);
 	if (rc <= 0) {
-		int err = d->kossl->SSL_get_error(d->m_ssl, rc);
+		int err = SSL_get_error(d->m_ssl, rc);
 
 		if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
 			kdDebug(7029) << "SSL read() returning 0: " << err << endl;
@@ -571,7 +563,7 @@ read_again:
 		if (err != SSL_ERROR_NONE &&
 		    err != SSL_ERROR_ZERO_RETURN && err != SSL_ERROR_SYSCALL) {
 			rc = -1;      // OpenSSL returns 0 on error too
-			d->kossl->ERR_print_errors_fp(stderr);
+			ERR_print_errors_fp(stderr);
 		}
 
 //		else if (err == SSL_ERROR_ZERO_RETURN)
@@ -590,9 +582,9 @@ int KSSL::write(const void *buf, int len) {
 		return -1;
 
 write_again:
-	int rc = d->kossl->SSL_write(d->m_ssl, (const char *)buf, len);
+	int rc = SSL_write(d->m_ssl, (const char *)buf, len);
 	if (rc <= 0) {      // OpenSSL returns 0 on error too
-		int err = d->kossl->SSL_get_error(d->m_ssl, rc);
+		int err = SSL_get_error(d->m_ssl, rc);
 
 		if (err == SSL_ERROR_WANT_WRITE) {
 			::usleep(20000); // 20ms sleep
@@ -636,39 +628,30 @@ bool KSSL::m_bSSLWorks = false;
 #endif
 
 bool KSSL::doesSSLWork() {
-#ifdef KSSL_HAVE_SSL
-	// Built with SSL support is not enough: libssl and libcrypto are
-	// loaded at run time, and without them every SSL connection fails
-	// (with "Could not connect to host", which hides the cause).
-	if (m_bSSLWorks) {
-		KOpenSSLProxy *kossl = KOpenSSLProxy::self();
-		return kossl->hasLibSSL() && kossl->hasLibCrypto();
-	}
-#endif
 	return m_bSSLWorks;
 }
 
 
 void KSSL::setConnectionInfo() {
 #ifdef KSSL_HAVE_SSL
-SSL_CIPHER *sc;
+const SSL_CIPHER *sc;
 char buf[1024];
 
 	buf[0] = 0;  // for safety.
-	sc = d->kossl->SSL_get_current_cipher(d->m_ssl);
+	sc = SSL_get_current_cipher(d->m_ssl);
 	if (!sc) {
 		kdDebug(7029) << "KSSL get current cipher failed - we're probably gonna crash!" << endl;
 		return;
 	}
 
 	// set the number of bits, bits used
-	m_ci.m_iCipherUsedBits = d->kossl->SSL_CIPHER_get_bits(sc, &(m_ci.m_iCipherBits));
+	m_ci.m_iCipherUsedBits = SSL_CIPHER_get_bits(sc, &(m_ci.m_iCipherBits));
 	// set the cipher version
-	m_ci.m_cipherVersion = d->kossl->SSL_CIPHER_get_version(sc);
+	m_ci.m_cipherVersion = SSL_CIPHER_get_version(sc);
 	// set the cipher name
-	m_ci.m_cipherName = d->kossl->SSL_CIPHER_get_name(sc);
+	m_ci.m_cipherName = SSL_CIPHER_get_name(sc);
 	// set the cipher description
-	m_ci.m_cipherDescription = d->kossl->SSL_CIPHER_description(sc, buf, 1023);
+	m_ci.m_cipherDescription = SSL_CIPHER_description(sc, buf, 1023);
 
 #endif
 }
@@ -677,10 +660,10 @@ char buf[1024];
 void KSSL::setPeerInfo() {
 #ifdef KSSL_HAVE_SSL
 	m_pi.setPeerHost(d->proxyPeer);
-	m_pi.m_cert.setCert(d->kossl->SSL_get_peer_certificate(d->m_ssl));
+	m_pi.m_cert.setCert(SSL_get1_peer_certificate(d->m_ssl));
 	// The chain belongs to the SSL object; setChain() copies the
 	// certificates (X509_dup()), so no copy of the stack is needed.
-	m_pi.m_cert.setChain((void *)d->kossl->SSL_get_peer_cert_chain(d->m_ssl));
+	m_pi.m_cert.setChain((void *)SSL_get_peer_cert_chain(d->m_ssl));
 #endif
 }
 
@@ -719,13 +702,13 @@ EVP_PKEY *k = pkcs->getPrivateKey();
 	if (!pkcs->getCertificate()->x509V3Extensions().certTypeSSLClient())
 		return false;
 
-	rc = d->kossl->SSL_CTX_use_certificate(d->m_ctx, x);
+	rc = SSL_CTX_use_certificate(d->m_ctx, x);
 	if (rc <= 0) {
 		kdDebug(7029) << "KSSL - SSL_CTX_use_certificate failed.  rc = " << rc << endl;
 		return false;
 	}
 
-	rc = d->kossl->SSL_CTX_use_PrivateKey(d->m_ctx, k);
+	rc = SSL_CTX_use_PrivateKey(d->m_ctx, k);
 	if (rc <= 0) {
 		kdDebug(7029) << "KSSL - SSL_CTX_use_PrivateKey failed.  rc = " << rc << endl;
 		return false;
@@ -743,7 +726,7 @@ const KSSLSession* KSSL::session() const {
 
 bool KSSL::reusingSession() const {
 #ifdef KSSL_HAVE_SSL
-	return (d->m_ssl && d->kossl->SSL_session_reused(d->m_ssl));
+	return (d->m_ssl && SSL_session_reused(d->m_ssl));
 #else
 	return false;
 #endif

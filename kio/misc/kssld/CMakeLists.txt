@@ -10,9 +10,7 @@ kde3_add_module(kded_kssld
 target_include_directories(kded_kssld PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/.." "${PROJECT_SOURCE_DIR}/kio/kssl"
   "${PROJECT_BINARY_DIR}/kio/kssl")
-if(OPENSSL_FOUND)
-  target_include_directories(kded_kssld PRIVATE ${OPENSSL_INCLUDE_DIR})
-endif()
+target_include_directories(kded_kssld PRIVATE ${OPENSSL_INCLUDE_DIR})
 
 install(FILES
   kssld.desktop

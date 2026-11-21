@@ -48,7 +48,6 @@
 #include <qdatetime.h>
 
 #include <kmdcodec.h>
-#include <kopenssl.h>
 
 // See design notes at end
 
@@ -121,7 +120,6 @@ KSSLD::KSSLD(const QCString &name) : KDEDModule(name)
 	caVerifyUpdate();
 	cacheLoadDefaultPolicies();
 	certList.setAutoDelete(false);
-	kossl = KOSSL::self();
 
 // ----------------------- FOR THE HOME -------------------------------------
 }

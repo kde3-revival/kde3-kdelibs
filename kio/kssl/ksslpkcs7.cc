@@ -23,7 +23,7 @@
 #include <config.h>
 #endif
 
-#include <kopenssl.h>
+#include "ksslopenssl_p.h"
 
 #include <qstring.h>
 #include <qfile.h>
@@ -34,27 +34,19 @@
 
 #include <assert.h>
 
-#ifdef KSSL_HAVE_SSL
-#define OPENSSL_sk_new kossl->OPENSSL_sk_new
-#define OPENSSL_sk_push kossl->OPENSSL_sk_push
-#define OPENSSL_sk_free kossl->OPENSSL_sk_free
-#define OPENSSL_sk_value kossl->OPENSSL_sk_value
-#define OPENSSL_sk_num kossl->OPENSSL_sk_num
-#define OPENSSL_sk_dup kossl->OPENSSL_sk_dup
-#endif
 
 
 KSSLPKCS7::KSSLPKCS7() {
    _pkcs = NULL;
    _cert = NULL;
-   kossl = KOSSL::self();
+   kossl = NULL;	// unused, kept for binary compatibility
 }
 
 
 
 KSSLPKCS7::~KSSLPKCS7() {
 #ifdef KSSL_HAVE_SSL
-   if (_pkcs) kossl->PKCS7_free(_pkcs);
+   if (_pkcs) PKCS7_free(_pkcs);
 #endif
    if (_cert) delete _cert;
 }
@@ -89,7 +81,7 @@ PKCS7 *newpkcs = NULL;
   FILE *fp = fdopen(qf.handle(), "r");
   if (!fp) return NULL;
 
-  newpkcs = KOSSL::self()->d2i_PKCS7_fp(fp, &newpkcs);
+  newpkcs = d2i_PKCS7_fp(fp, &newpkcs);
 
   if (!newpkcs) return NULL;
 
@@ -128,11 +120,11 @@ QString base64;
 unsigned char *p;
 int len;
 
-   len = kossl->i2d_PKCS7(_pkcs, NULL);
+   len = i2d_PKCS7(_pkcs, NULL);
    if (len >= 0) {
        char *buf = new char[len];
        p = (unsigned char *)buf;
-       kossl->i2d_PKCS7(_pkcs, &p);
+       i2d_PKCS7(_pkcs, &p);
        QByteArray qba;
        qba.setRawData(buf, len);
        base64 = KCodecs::base64Encode(qba);
@@ -159,7 +151,7 @@ QFile out(filename);
       return false;
    }
 
-   kossl->i2d_PKCS7_fp(fp, _pkcs);
+   i2d_PKCS7_fp(fp, _pkcs);
 
    fclose(fp);
    return true;
@@ -197,12 +189,4 @@ QString KSSLPKCS7::name() {
 }
 
  
-#ifdef KSSL_HAVE_SSL
-#undef OPENSSL_sk_new
-#undef OPENSSL_sk_push
-#undef OPENSSL_sk_free
-#undef OPENSSL_sk_value
-#undef OPENSSL_sk_num
-#undef OPENSSL_sk_dup
-#endif
 

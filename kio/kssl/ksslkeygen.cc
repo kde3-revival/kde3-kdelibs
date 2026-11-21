@@ -27,7 +27,7 @@
 #include <kdebug.h>
 #include <klocale.h>
 #include <kmessagebox.h>
-#include <kopenssl.h>
+#include "ksslopenssl_p.h"
 #include <kprogress.h>
 #include <kstandarddirs.h>
 #include <ktempfile.h>
@@ -121,46 +121,55 @@ void KSSLKeyGen::slotGenerate() {
 
 int KSSLKeyGen::generateCSR(const QString& name, const QString& pass, int bits, int e) {
 #ifdef KSSL_HAVE_SSL
-	KOSSL *kossl = KOSSL::self();
 	int rc;
 
-	X509_REQ *req = kossl->X509_REQ_new();
+	X509_REQ *req = X509_REQ_new();
 	if (!req) {
 		return -2;
 	}
 
-	EVP_PKEY *pkey = kossl->EVP_PKEY_new();
-	if (!pkey) {
-		kossl->X509_REQ_free(req);
+	EVP_PKEY_CTX *kctx = EVP_PKEY_CTX_new_from_name(NULL, "RSA", NULL);
+	BIGNUM *pubexp = BN_new();
+	if (!kctx || !pubexp) {
+		EVP_PKEY_CTX_free(kctx);
+		BN_free(pubexp);
+		X509_REQ_free(req);
 		return -4;
 	}
 
-	RSA *rsakey = kossl->RSA_generate_key(bits, e, NULL, NULL);
-	if (!rsakey) {
-		kossl->X509_REQ_free(req);
-		kossl->EVP_PKEY_free(pkey);
+	// an RSA key of <bits> bits with the public exponent <e>
+	EVP_PKEY *pkey = NULL;
+	if (!BN_set_word(pubexp, e) ||
+	    EVP_PKEY_keygen_init(kctx) <= 0 ||
+	    EVP_PKEY_CTX_set_rsa_keygen_bits(kctx, bits) <= 0 ||
+	    EVP_PKEY_CTX_set1_rsa_keygen_pubexp(kctx, pubexp) <= 0 ||
+	    EVP_PKEY_generate(kctx, &pkey) <= 0 || !pkey) {
+		EVP_PKEY_CTX_free(kctx);
+		BN_free(pubexp);
+		X509_REQ_free(req);
 		return -3;
 	}
+	EVP_PKEY_CTX_free(kctx);
+	BN_free(pubexp);
 
-	rc = kossl->EVP_PKEY_assign(pkey, EVP_PKEY_RSA, (char *)rsakey);
-
-	rc = kossl->X509_REQ_set_pubkey(req, pkey);
+	rc = X509_REQ_set_pubkey(req, pkey);
 
 	// Set the subject
-	X509_NAME *n = kossl->X509_NAME_new();
+	X509_NAME *n = X509_NAME_new();
 
-	kossl->X509_NAME_add_entry_by_txt(n, (char*)LN_countryName, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
-	kossl->X509_NAME_add_entry_by_txt(n, (char*)LN_organizationName, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
-	kossl->X509_NAME_add_entry_by_txt(n, (char*)LN_organizationalUnitName, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
-	kossl->X509_NAME_add_entry_by_txt(n, (char*)LN_localityName, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
-	kossl->X509_NAME_add_entry_by_txt(n, (char*)LN_stateOrProvinceName, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
-	kossl->X509_NAME_add_entry_by_txt(n, (char*)LN_commonName, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
-	kossl->X509_NAME_add_entry_by_txt(n, (char*)LN_pkcs9_emailAddress, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
+	X509_NAME_add_entry_by_txt(n, (char*)LN_countryName, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
+	X509_NAME_add_entry_by_txt(n, (char*)LN_organizationName, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
+	X509_NAME_add_entry_by_txt(n, (char*)LN_organizationalUnitName, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
+	X509_NAME_add_entry_by_txt(n, (char*)LN_localityName, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
+	X509_NAME_add_entry_by_txt(n, (char*)LN_stateOrProvinceName, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
+	X509_NAME_add_entry_by_txt(n, (char*)LN_commonName, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
+	X509_NAME_add_entry_by_txt(n, (char*)LN_pkcs9_emailAddress, MBSTRING_UTF8, (unsigned char*)name.local8Bit().data(), -1, -1, 0);
 	
-	rc = kossl->X509_REQ_set_subject_name(req, n);
+	rc = X509_REQ_set_subject_name(req, n);
+	X509_NAME_free(n);	// the request has its own copy
 
 
-	rc = kossl->X509_REQ_sign(req, pkey, kossl->EVP_md5());
+	rc = X509_REQ_sign(req, pkey, EVP_md5());
 
 	// We write it to the database and then the caller can obtain it
 	// back from there.  Yes it's inefficient, but it doesn't happen
@@ -172,29 +181,29 @@ int KSSLKeyGen::generateCSR(const QString& name, const QString& pass, int bits, 
 	KTempFile csrFile(path + "csr_", ".der");
 
 	if (!csrFile.fstream()) {
-		kossl->X509_REQ_free(req);
-		kossl->EVP_PKEY_free(pkey);
+		X509_REQ_free(req);
+		EVP_PKEY_free(pkey);
 		return -5;
 	}
 
 	KTempFile p8File(path + "pkey_", ".p8");
 
 	if (!p8File.fstream()) {
-		kossl->X509_REQ_free(req);
-		kossl->EVP_PKEY_free(pkey);
+		X509_REQ_free(req);
+		EVP_PKEY_free(pkey);
 		return -5;
 	}
 
-	kossl->i2d_X509_REQ_fp(csrFile.fstream(), req);
+	i2d_X509_REQ_fp(csrFile.fstream(), req);
 
-	kossl->i2d_PKCS8PrivateKey_fp(p8File.fstream(), pkey,
-			kossl->EVP_bf_cbc(), pass.local8Bit().data(),
+	i2d_PKCS8PrivateKey_fp(p8File.fstream(), pkey,
+			EVP_bf_cbc(), pass.local8Bit().data(),
 			pass.length(), 0L, 0L);
 
 	// FIXME Write kconfig entry to store the filenames under the md5 hash
 
-	kossl->X509_REQ_free(req);
-	kossl->EVP_PKEY_free(pkey);
+	X509_REQ_free(req);
+	EVP_PKEY_free(pkey);
 
 	return 0;
 #else
