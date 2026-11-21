@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=MimeType
+MimeType=application/x-xz-compressed-tar
+Icon=tgz
+Patterns=*.tar.xz;*.txz;
+Comment=XZ-compressed Tar Archive

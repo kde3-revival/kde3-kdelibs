@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=MimeType
+MimeType=application/x-lz4
+Icon=tgz
+Patterns=*.lz4;*.LZ4;
+Comment=LZ4 File

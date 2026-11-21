@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=MimeType
+MimeType=application/zstd
+Icon=tgz
+Patterns=*.zst;*.ZST;
+Comment=Zstandard File

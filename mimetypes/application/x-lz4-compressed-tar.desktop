@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=MimeType
+MimeType=application/x-lz4-compressed-tar
+Icon=tgz
+Patterns=*.tar.lz4;
+Comment=LZ4-compressed Tar Archive

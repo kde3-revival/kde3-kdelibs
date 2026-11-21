@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=MimeType
+MimeType=application/x-xz
+Icon=tgz
+Patterns=*.xz;*.XZ;
+Comment=XZ File

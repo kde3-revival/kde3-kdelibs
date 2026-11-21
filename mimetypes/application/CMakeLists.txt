@@ -155,6 +155,12 @@ install(FILES
   vnd.sun.xml.writer.master.desktop
   x-xliff.desktop
   x-7z.desktop
+  x-xz.desktop
+  x-xz-compressed-tar.desktop
+  zstd.desktop
+  x-zstd-compressed-tar.desktop
+  x-lz4.desktop
+  x-lz4-compressed-tar.desktop
   xml.desktop
   x-webarchive.desktop
   x-mimearchive.desktop

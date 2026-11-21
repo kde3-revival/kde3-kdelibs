@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=MimeType
+MimeType=application/x-zstd-compressed-tar
+Icon=tgz
+Patterns=*.tar.zst;*.tzst;
+Comment=Zstandard-compressed Tar Archive
