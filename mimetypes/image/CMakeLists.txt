@@ -38,6 +38,8 @@ install(FILES
   fits.desktop
   x-raw.desktop
   webp.desktop
+  heif.desktop
+  heic.desktop
   DESTINATION ${KDE3_MIME_INSTALL_DIR}/image)
 
 

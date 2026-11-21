@@ -628,6 +628,18 @@
 # JPEG2000 images
 0 	beshort		0x0101010C6A50  image/jp2
 
+# HEIF images (HEIC, ...): the major brand in the "ftyp" box
+4	string		ftypheic	image/heif
+4	string		ftypheix	image/heif
+4	string		ftypheim	image/heif
+4	string		ftypheis	image/heif
+4	string		ftyphevc	image/heif
+4	string		ftyphevx	image/heif
+4	string		ftyphevm	image/heif
+4	string		ftyphevs	image/heif
+4	string		ftypmif1	image/heif
+4	string		ftypmsf1	image/heif
+
 # PNG images
 0       string          \x89PNG         image/png
 

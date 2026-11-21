@@ -1,0 +1,9 @@
+[Image Format]
+Type=HEIF
+Header=^.{4}ftyp(hei[cxms]|hev[cxms]|mif1|msf1)
+Name=HEIF Image
+Read=true
+Write=false
+Suffices=heif,HEIF,heic,HEIC,hif,HIF
+Mimetype=image/heif
+Library=kimg_heif.la

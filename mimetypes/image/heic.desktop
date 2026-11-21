@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=MimeType
+MimeType=image/heic
+Icon=image
+X-KDE-IsAlso=image/heif
+Comment=HEIC Image

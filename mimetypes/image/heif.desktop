@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=MimeType
+MimeType=image/heif
+Icon=image
+Patterns=*.heif;*.HEIF;*.heic;*.HEIC;*.hif;*.HIF;
+Comment=HEIF Image
