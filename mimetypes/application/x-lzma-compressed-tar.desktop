@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=MimeType
+MimeType=application/x-lzma-compressed-tar
+Icon=tgz
+Patterns=*.tar.lzma;*.tlz;
+Comment=LZMA-compressed Tar Archive
+
+[Property::X-KDE-LocalProtocol]
+Type=QString
+Value=tar
+
+[Property::X-KDE-NativeExtension]
+Type=QString
+Value=.tar.lzma

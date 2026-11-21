@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=MimeType
+MimeType=application/x-lzma
+Icon=tgz
+Patterns=*.lzma;*.LZMA;
+Comment=LZMA File

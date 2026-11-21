@@ -4,3 +4,11 @@ MimeType=application/x-zstd-compressed-tar
 Icon=tgz
 Patterns=*.tar.zst;*.tzst;
 Comment=Zstandard-compressed Tar Archive
+
+[Property::X-KDE-LocalProtocol]
+Type=QString
+Value=tar
+
+[Property::X-KDE-NativeExtension]
+Type=QString
+Value=.tar.zst

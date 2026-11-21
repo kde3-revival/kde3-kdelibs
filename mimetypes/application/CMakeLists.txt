@@ -161,6 +161,8 @@ install(FILES
   x-zstd-compressed-tar.desktop
   x-lz4.desktop
   x-lz4-compressed-tar.desktop
+  x-lzma.desktop
+  x-lzma-compressed-tar.desktop
   xml.desktop
   x-webarchive.desktop
   x-mimearchive.desktop

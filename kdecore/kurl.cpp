@@ -1450,6 +1450,14 @@ bool KURL::hasSubURL() const
      return true;
   if (m_strRef_encoded.startsWith("bzip2:"))
      return true;
+  if (m_strRef_encoded.startsWith("xz:"))
+     return true;
+  if (m_strRef_encoded.startsWith("lzma:"))
+     return true;
+  if (m_strRef_encoded.startsWith("zstd:"))
+     return true;
+  if (m_strRef_encoded.startsWith("lz4:"))
+     return true;
   if (m_strRef_encoded.startsWith("tar:"))
      return true;
   if (m_strRef_encoded.startsWith("ar:"))

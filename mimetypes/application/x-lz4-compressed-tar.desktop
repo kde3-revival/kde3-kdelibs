@@ -4,3 +4,11 @@ MimeType=application/x-lz4-compressed-tar
 Icon=tgz
 Patterns=*.tar.lz4;
 Comment=LZ4-compressed Tar Archive
+
+[Property::X-KDE-LocalProtocol]
+Type=QString
+Value=tar
+
+[Property::X-KDE-NativeExtension]
+Type=QString
+Value=.tar.lz4

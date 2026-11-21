@@ -486,6 +486,10 @@
 # XZ compressed data
 0	string		\3757zXZ\0	application/x-xz
 
+# LZMA (legacy lzma_alone) data with the default properties and an 8 MiB
+# dictionary, as "xz --format=lzma" and "lzma" write them by default
+0	string		]\0\0\200\0	application/x-lzma
+
 # Zstandard compressed data (RFC 8878 frame)
 0	string		\050\265\057\375	application/zstd
 
