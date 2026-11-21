@@ -771,6 +771,11 @@ KConfig *cfg;
       }
    }
 
+#ifdef KSSL_HAVE_SSL
+   if (!_sslLib || !_cryptoLib)
+      kdWarning(7029) << "KOpenSSLProxy: libssl and libcrypto of OpenSSL "
+                         "not found, SSL is not available" << endl;
+#endif
 }
 
 

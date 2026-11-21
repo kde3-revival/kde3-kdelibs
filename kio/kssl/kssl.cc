@@ -636,6 +636,15 @@ bool KSSL::m_bSSLWorks = false;
 #endif
 
 bool KSSL::doesSSLWork() {
+#ifdef KSSL_HAVE_SSL
+	// Built with SSL support is not enough: libssl and libcrypto are
+	// loaded at run time, and without them every SSL connection fails
+	// (with "Could not connect to host", which hides the cause).
+	if (m_bSSLWorks) {
+		KOpenSSLProxy *kossl = KOpenSSLProxy::self();
+		return kossl->hasLibSSL() && kossl->hasLibCrypto();
+	}
+#endif
 	return m_bSSLWorks;
 }
 
