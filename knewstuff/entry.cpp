@@ -105,9 +105,8 @@ Entry::~Entry()
 {
     if (d_ptr)
     {
-        EntryPrivate *p = d_ptr->find(this);
-        if (p)
-            d_ptr->remove(p);
+        // the dictionary is keyed by the Entry, not by its private data
+        d_ptr->remove(this);
 
         if (d_ptr->isEmpty())
         {

@@ -89,9 +89,8 @@ Provider::~Provider()
 {
     if (d_ptr_prov)
     {
-        ProviderPrivate *p = d_ptr_prov->find(this);
-        if (p)
-            d_ptr_prov->remove(p);
+        // the dictionary is keyed by the Provider, not by its private data
+        d_ptr_prov->remove(this);
 
         if (d_ptr_prov->isEmpty())
         {
