@@ -23,6 +23,8 @@
 
 #include "value.h"
 #include "internal.h"
+#include <limits.h>
+#include <stdlib.h>
 
 #ifndef MAX
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
@@ -73,6 +75,22 @@ struct CollectorHeap {
 
 static CollectorHeap heap = {NULL, 0, 0, 0, NULL, 0, 0, 0, 0};
 
+// Grow one of the heap's pointer arrays.  The size must not overflow
+// (CVE-2009-1687), and a failed allocation must not be written to: give
+// up, as the allocator cannot report failure to its callers.
+static void *growArray(void *array, int *size, size_t elementSize)
+{
+  if (*size > INT_MAX / GROWTH_FACTOR ||
+      (size_t)(*size * GROWTH_FACTOR) > (size_t)-1 / elementSize)
+    abort();
+  int newSize = MAX(MIN_ARRAY_SIZE, *size * GROWTH_FACTOR);
+  void *newArray = realloc(array, newSize * elementSize);
+  if (!newArray)
+    abort();
+  *size = newSize;
+  return newArray;
+}
+
 bool Collector::memoryFull = false;
 
 void* Collector::allocate(size_t s)
@@ -87,12 +105,12 @@ void* Collector::allocate(size_t s)
 
   if (s > (unsigned)CELL_SIZE) {
     // oversize allocator
-    if (heap.usedOversizeCells == heap.numOversizeCells) {
-      heap.numOversizeCells = MAX(MIN_ARRAY_SIZE, heap.numOversizeCells * GROWTH_FACTOR);
-      heap.oversizeCells = (CollectorCell **)realloc(heap.oversizeCells, heap.numOversizeCells * sizeof(CollectorCell *));
-    }
+    if (heap.usedOversizeCells == heap.numOversizeCells)
+      heap.oversizeCells = (CollectorCell **)growArray(heap.oversizeCells, &heap.numOversizeCells, sizeof(CollectorCell *));
 
     void *newCell = malloc(s);
+    if (!newCell)
+      abort();
     heap.oversizeCells[heap.usedOversizeCells] = (CollectorCell *)newCell;
     heap.usedOversizeCells++;
     heap.numLiveObjects++;
@@ -118,12 +136,12 @@ void* Collector::allocate(size_t s)
   if (targetBlock == NULL) {
     // didn't find one, need to allocate a new block
 
-    if (heap.usedBlocks == heap.numBlocks) {
-      heap.numBlocks = MAX(MIN_ARRAY_SIZE, heap.numBlocks * GROWTH_FACTOR);
-      heap.blocks = (CollectorBlock **)realloc(heap.blocks, heap.numBlocks * sizeof(CollectorBlock *));
-    }
+    if (heap.usedBlocks == heap.numBlocks)
+      heap.blocks = (CollectorBlock **)growArray(heap.blocks, &heap.numBlocks, sizeof(CollectorBlock *));
 
     targetBlock = (CollectorBlock *)calloc(1, sizeof(CollectorBlock));
+    if (!targetBlock)
+      abort();
     targetBlock->freeList = targetBlock->cells;
     heap.blocks[heap.usedBlocks] = targetBlock;
     heap.usedBlocks++;
