@@ -198,12 +198,162 @@ static bool parseOcsDocument( const QByteArray &data, QDomElement *dataElement,
   return true;
 }
 
-// The width and height of a PNG, JPEG or GIF picture, read from its
-// header, so that a picture is never decoded before its size is known.
+// The bit counts of the U32 of a JPEG XL SizeHeader:
+// U32( 1 + u(9), 1 + u(13), 1 + u(18), 1 + u(30) )
+static const int jxlSizeBits[ 4 ] = { 9, 13, 18, 30 };
+
+// Reads the bits of a JPEG XL codestream, least significant bit first.
+namespace {
+struct JxlBits
+{
+  JxlBits( const uchar *data, uint size ) : p( data ), n( size ), pos( 0 ), ok( true ) {}
+  uint read( int count )
+  {
+    uint v = 0;
+    for ( int i = 0; i < count; ++i, ++pos ) {
+      if ( ( pos >> 3 ) >= n ) {
+        ok = false;
+        return 0;
+      }
+      v |= uint( ( p[ pos >> 3 ] >> ( pos & 7 ) ) & 1 ) << i;
+    }
+    return v;
+  }
+  // the U32 of a size in the SizeHeader
+  Q_ULLONG size()
+  {
+    return Q_ULLONG( read( jxlSizeBits[ read( 2 ) ] ) ) + 1;
+  }
+  const uchar *p;
+  uint n;
+  uint pos;
+  bool ok;
+};
+}
+
+// The size of a JPEG XL picture, from the SizeHeader of its codestream
+// (ISO/IEC 18181-1), bare or in the ISO BMFF container.
+static bool jxlSize( const uchar *p, uint n, int *width, int *height )
+{
+  if ( n >= 12 && memcmp( p, "\0\0\0\x0cJXL \r\n\x87\n", 12 ) == 0 ) {
+    // the container: find the codestream box (jxlc, or the first jxlp)
+    uint i = 0;
+    const uchar *cs = 0;
+    uint csSize = 0;
+    while ( i + 8 <= n ) {
+      Q_ULLONG boxSize = ( uint( p[ i ] ) << 24 ) | ( p[ i + 1 ] << 16 ) | ( p[ i + 2 ] << 8 ) | p[ i + 3 ];
+      uint header = 8;
+      if ( boxSize == 1 ) {               // 64-bit size
+        if ( i + 16 > n ) return false;
+        boxSize = 0;
+        for ( int k = 0; k < 8; ++k )
+          boxSize = ( boxSize << 8 ) | p[ i + 8 + k ];
+        header = 16;
+      } else if ( boxSize == 0 ) {        // up to the end of the file
+        boxSize = n - i;
+      }
+      if ( boxSize < header ) return false;
+      if ( memcmp( p + i + 4, "jxlc", 4 ) == 0 ) {
+        cs = p + i + header;
+        csSize = n - i - header;
+        break;
+      }
+      if ( memcmp( p + i + 4, "jxlp", 4 ) == 0 ) {
+        if ( i + header + 4 > n ) return false;
+        cs = p + i + header + 4;          // after the index of the part
+        csSize = n - i - header - 4;
+        break;
+      }
+      if ( boxSize > n - i ) return false;
+      i += boxSize;
+    }
+    if ( !cs ) return false;
+    p = cs;
+    n = csSize;
+  }
+  if ( n < 2 || p[ 0 ] != 0xff || p[ 1 ] != 0x0a )
+    return false;
+
+  JxlBits bits( p + 2, n - 2 );
+  const bool small = bits.read( 1 );
+  Q_ULLONG h = small ? Q_ULLONG( bits.read( 5 ) + 1 ) * 8 : bits.size();
+  const uint ratio = bits.read( 3 );
+  Q_ULLONG w;
+  if ( ratio == 0 ) {
+    w = small ? Q_ULLONG( bits.read( 5 ) + 1 ) * 8 : bits.size();
+  } else {
+    static const uint ratios[ 8 ][ 2 ] = { { 1, 1 }, { 1, 1 }, { 12, 10 }, { 4, 3 },
+                                           { 3, 2 }, { 16, 9 }, { 5, 4 }, { 2, 1 } };
+    w = h * ratios[ ratio ][ 0 ] / ratios[ ratio ][ 1 ];
+  }
+  if ( !bits.ok || w > 0x7fffffff || h > 0x7fffffff )
+    return false;
+  *width = int( w );
+  *height = int( h );
+  return true;
+}
+
+// The size of an AVIF picture: the largest of the image spatial extents
+// ("ispe" properties) in its header, which covers a grid of tiles too.
+static bool avifSize( const uchar *p, uint n, int *width, int *height )
+{
+  uint w = 0, h = 0;
+  bool found = false;
+  // box: size (4), "ispe", version and flags (4), width (4), height (4)
+  for ( uint i = 4; i + 16 <= n; ++i ) {
+    if ( p[ i ] != 'i' || memcmp( p + i, "ispe", 4 ) != 0 )
+      continue;
+    uint boxSize = ( uint( p[ i - 4 ] ) << 24 ) | ( p[ i - 3 ] << 16 ) | ( p[ i - 2 ] << 8 ) | p[ i - 1 ];
+    if ( boxSize != 20 )
+      continue;
+    uint bw = ( uint( p[ i + 8 ] ) << 24 ) | ( p[ i + 9 ] << 16 ) | ( p[ i + 10 ] << 8 ) | p[ i + 11 ];
+    uint bh = ( uint( p[ i + 12 ] ) << 24 ) | ( p[ i + 13 ] << 16 ) | ( p[ i + 14 ] << 8 ) | p[ i + 15 ];
+    w = QMAX( w, bw );
+    h = QMAX( h, bh );
+    found = true;
+  }
+  if ( !found || w > 0x7fffffff || h > 0x7fffffff )
+    return false;
+  *width = int( w );
+  *height = int( h );
+  return true;
+}
+
+// The width and height of a picture, read from its header, so that a
+// picture is never decoded before its size is known.
 static bool pictureSize( const QByteArray &data, int *width, int *height )
 {
   const uchar *p = reinterpret_cast<const uchar *>( data.data() );
   uint n = data.size();
+
+  if ( n >= 30 && memcmp( p, "RIFF", 4 ) == 0 && memcmp( p + 8, "WEBP", 4 ) == 0 ) {
+    if ( memcmp( p + 12, "VP8X", 4 ) == 0 ) {   // extended: canvas size - 1
+      *width = ( p[ 24 ] | ( p[ 25 ] << 8 ) | ( p[ 26 ] << 16 ) ) + 1;
+      *height = ( p[ 27 ] | ( p[ 28 ] << 8 ) | ( p[ 29 ] << 16 ) ) + 1;
+      return true;
+    }
+    if ( memcmp( p + 12, "VP8 ", 4 ) == 0 ) {   // lossy: after the frame tag and start code
+      if ( p[ 23 ] != 0x9d || p[ 24 ] != 0x01 || p[ 25 ] != 0x2a ) return false;
+      *width = ( p[ 26 ] | ( p[ 27 ] << 8 ) ) & 0x3fff;
+      *height = ( p[ 28 ] | ( p[ 29 ] << 8 ) ) & 0x3fff;
+      return true;
+    }
+    if ( memcmp( p + 12, "VP8L", 4 ) == 0 ) {   // lossless: 14 bits each, size - 1
+      if ( p[ 20 ] != 0x2f ) return false;
+      uint bits = p[ 21 ] | ( p[ 22 ] << 8 ) | ( p[ 23 ] << 16 ) | ( uint( p[ 24 ] ) << 24 );
+      *width = ( bits & 0x3fff ) + 1;
+      *height = ( ( bits >> 14 ) & 0x3fff ) + 1;
+      return true;
+    }
+    return false;
+  }
+
+  if ( n >= 12 && memcmp( p + 4, "ftypavi", 7 ) == 0 )
+    return avifSize( p, n, width, height );
+
+  if ( ( n >= 2 && p[ 0 ] == 0xff && p[ 1 ] == 0x0a ) ||
+       ( n >= 12 && memcmp( p, "\0\0\0\x0cJXL ", 8 ) == 0 ) )
+    return jxlSize( p, n, width, height );
 
   if ( n >= 24 && p[ 0 ] == 0x89 && p[ 1 ] == 'P' && p[ 2 ] == 'N' && p[ 3 ] == 'G' ) {
     uint w = ( uint( p[ 16 ] ) << 24 ) | ( p[ 17 ] << 16 ) | ( p[ 18 ] << 8 ) | p[ 19 ];
@@ -674,7 +824,10 @@ static QString safeFileName( const QString &name, const QString &fallback )
 
 // The picture formats that are installed: the common, well-kept decoders
 // only (kimgio also reads EPS through Ghostscript and many old formats).
-static const char * const installableFormats[] = { "JPEG", "PNG", "GIF", "BMP", 0 };
+// The desktop (kdesktop's background renderer) reads them all through
+// QImage and kimgio.
+static const char * const installableFormats[] = { "JPEG", "PNG", "GIF", "BMP",
+                                                   "WEBP", "AVIF", "JXL", 0 };
 
 // The format of a picture that may be installed, from its first bytes, or
 // 0. Its size must be known from its header and be sane.
@@ -928,7 +1081,24 @@ static void extractImages( const KArchiveDirectory *dir, int depth, Extraction &
   }
 }
 
-// Decompresses a gzip or bzip2 file into @p out.
+// The mime type of the compression of a file, from its first 6 bytes, or
+// QString::null.
+static QString compressionMimeType( const uchar *magic )
+{
+  if ( magic[ 0 ] == 0x1f && magic[ 1 ] == 0x8b )
+    return "application/x-gzip";
+  if ( magic[ 0 ] == 'B' && magic[ 1 ] == 'Z' && magic[ 2 ] == 'h' )
+    return "application/x-bzip2";
+  if ( memcmp( magic, "\3757zXZ\0", 6 ) == 0 )
+    return "application/x-xz";
+  if ( memcmp( magic, "\050\265\057\375", 4 ) == 0 )
+    return "application/zstd";
+  if ( memcmp( magic, "\004\042\115\030", 4 ) == 0 )
+    return "application/x-lz4";
+  return QString::null;
+}
+
+// Decompresses a gzip, bzip2, xz, zstd or lz4 file into @p out.
 static bool decompress( const QString &file, const QString &mimeType, KTempFile &out, Q_ULLONG limit )
 {
   QIODevice *dev = KFilterDev::deviceForFile( file, mimeType, true );
@@ -1068,10 +1238,8 @@ QString OcsInstaller::install( const QString &file, const QString &dir, bool wal
   if ( magic[ 0 ] == 'P' && magic[ 1 ] == 'K' && magic[ 2 ] == 3 && magic[ 3 ] == 4 ) {
     archiveFile = file;
     zip = true;
-  } else if ( ( magic[ 0 ] == 0x1f && magic[ 1 ] == 0x8b ) ||
-              ( magic[ 0 ] == 'B' && magic[ 1 ] == 'Z' && magic[ 2 ] == 'h' ) ) {
-    QString mime = magic[ 0 ] == 0x1f ? "application/x-gzip" : "application/x-bzip2";
-    if ( !decompress( file, mime, plain, maxExtractedTotal ) )
+  } else if ( !compressionMimeType( magic ).isNull() ) {
+    if ( !decompress( file, compressionMimeType( magic ), plain, maxExtractedTotal ) )
       return i18n( "The downloaded archive is damaged or too large." );
     if ( isTar( plain.name() ) ) {
       archiveFile = plain.name();
@@ -1081,21 +1249,17 @@ QString OcsInstaller::install( const QString &file, const QString &dir, bool wal
       if ( !format )
         return i18n( "The downloaded file is neither a picture nor a supported archive." );
       OcsDownload d = download;
-      d.name.replace( QRegExp( "\\.(gz|bz2)$", false ), QString::null );
+      d.name.replace( QRegExp( "\\.(gz|bz2|xz|zst|lz4)$", false ), QString::null );
       return installImage( plain.name(), format, target, wallpaper, content, d, parent, installed );
     }
   } else if ( isTar( file ) ) {
     archiveFile = file;
-  } else if ( magic[ 0 ] == 0xfd && magic[ 1 ] == '7' && magic[ 2 ] == 'z' &&
-              magic[ 3 ] == 'X' && magic[ 4 ] == 'Z' && magic[ 5 ] == 0 ) {
-    return i18n( "Archives compressed with XZ are not supported. "
-                 "If the item offers other files, please choose one of those." );
   } else {
     const char *format = installableFormat( file );
     if ( format )
       return installImage( file, format, target, wallpaper, content, download, parent, installed );
     return i18n( "The downloaded file is neither a picture in a supported format "
-                 "(JPEG, PNG, GIF, BMP) nor a supported archive." );
+                 "(JPEG, PNG, GIF, BMP, WebP, AVIF, JPEG XL) nor a supported archive." );
   }
 
   if ( countArchiveEntries( archiveFile, zip, maxArchiveEntries ) > maxArchiveEntries )
@@ -1152,7 +1316,8 @@ QString OcsInstaller::install( const QString &file, const QString &dir, bool wal
   delete archive;
 
   if ( x.error.isEmpty() && installed->isEmpty() )
-    x.error = i18n( "The archive does not contain any pictures in a supported format (JPEG, PNG, GIF, BMP)." );
+    x.error = i18n( "The archive does not contain any pictures in a supported format "
+                    "(JPEG, PNG, GIF, BMP, WebP, AVIF, JPEG XL)." );
 
   if ( !x.error.isEmpty() ) {
     // only what this installation created; overwritten files stay
