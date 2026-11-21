@@ -547,14 +547,12 @@ if(KDE3_WITH_DNSSD)
   endif()
 endif()
 
-# kssl (KDE_CHECK_SSL): OpenSSL is dlopen()ed by KOpenSSLProxy; only
-# the headers are used at build time.
-option(KDE3_WITH_OPENSSL "SSL support in kssl" ON)
-if(KDE3_WITH_OPENSSL)
-  find_package(OpenSSL REQUIRED)
-  set(HAVE_SSL 1)
-  set(KSSL_HAVE_SSL 1)
-endif()
+# kssl: libkio links OpenSSL (>= 3.0, Apache-2.0) directly.  SSL is
+# not optional any more; KSSL_HAVE_SSL stays defined for the sources and
+# the installed headers that test it.
+find_package(OpenSSL 3.0 REQUIRED)
+set(HAVE_SSL 1)
+set(KSSL_HAVE_SSL 1)
 
 # kdoctools: libxml2, libxslt (meinproc is needed to build the
 # handbooks), xmllint

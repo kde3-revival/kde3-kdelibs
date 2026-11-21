@@ -41,10 +41,7 @@ target_include_directories(kssl PRIVATE "${PROJECT_SOURCE_DIR}/kwallet/client")
 if(HAVE_LIBPSL)
   target_link_libraries(kssl PRIVATE PkgConfig::LIBPSL)
 endif()
-if(OPENSSL_FOUND)
-  # SSL_INCLUDES; libssl/libcrypto themselves are dlopen()ed by KOpenSSLProxy
-  target_include_directories(kssl PRIVATE ${OPENSSL_INCLUDE_DIR})
-endif()
+target_link_libraries(kssl PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 
 install(FILES
   kssl.h
