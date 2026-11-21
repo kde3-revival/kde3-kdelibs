@@ -128,14 +128,17 @@ bool KSSLSettings::tlsv1() const {
 }
 
  
-// FIXME: we should make a default list available if this fails
-//        since OpenSSL seems to just choose any old thing if it's given an
-//        empty list.  This behavior is not confirmed though.
+// An empty list means: leave the cipher list of the SSL context alone, so
+// that the system's default (the OpenSSL configuration, a distribution's
+// crypto policy) applies.  A list is returned only when the user disabled
+// some of those ciphers in the crypto settings; it is then the system's
+// list, in its order, without these.
 QString KSSLSettings::getCipherList() {
 	QString clist;
 #ifdef KSSL_HAVE_SSL
 	QString tcipher;
 	bool firstcipher = true;
+	bool restricted = false;
 	SSL_METHOD *meth = 0L;
 	QPtrList<CipherNode> cipherList;
 
@@ -150,6 +153,11 @@ QString KSSLSettings::getCipherList() {
 		meth = d->kossl->SSLv3_client_method();
 	else if (m_bUseSSLv2)
 		meth = d->kossl->SSLv2_client_method();
+	// OpenSSL >= 1.1 has no SSLv2 and may have no SSLv3 method: list the
+	// ciphers of the TLS method then (kcontrol's crypto module shows
+	// those), else the user's choice would be silently ignored.
+	if (!meth)
+		meth = d->kossl->SSLv23_client_method();
 
 	SSL_CTX *ctx = d->kossl->SSL_CTX_new(meth);
 	SSL* ssl = d->kossl->SSL_new(ctx);
@@ -159,6 +167,11 @@ QString KSSLSettings::getCipherList() {
 		const SSL_CIPHER *sc = sk_SSL_CIPHER_value(sk,i);
 		if (!sc)
 			break;
+
+		// The TLS 1.3 suites are not set by SSL_CTX_set_cipher_list()
+		// and cannot be turned off here; kcontrol does not show them.
+		if (!strcmp("TLSv1.3", d->kossl->SSL_CIPHER_get_version(sc)))
+			continue;
 
 		if(!strcmp("SSLv2", d->kossl->SSL_CIPHER_get_version(sc)))
 			m_cfg->setGroup("SSLv2");
@@ -173,10 +186,16 @@ QString KSSLSettings::getCipherList() {
 				cipherList.prepend(xx);
 			else
 				delete xx;
-		}
+		} else if (m_cfg->hasKey(tcipher))
+			restricted = true;	// disabled by the user
 	}
 	d->kossl->SSL_free(ssl);
 	d->kossl->SSL_CTX_free(ctx);
+
+	if (!restricted) {
+		kdDebug(7029) << "Cipher list: the system default" << endl;
+		return QString::null;
+	}
 
 	// Remove any ADH ciphers as per RFC2246
 	// Also remove NULL ciphers and 168bit ciphers
