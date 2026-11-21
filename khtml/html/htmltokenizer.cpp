@@ -736,7 +736,9 @@ void HTMLTokenizer::parseEntity(TokenizerString &src, QChar *&dest, bool start)
 #ifdef TOKEN_DEBUG
                 kdDebug( 6036 ) << "unknown entity!" << endl;
 #endif
-                checkBuffer(10);
+                // '&' and up to 10 characters ("#x" and 8 hex digits):
+                // room for 10 was one short (CVE-2009-1725)
+                checkBuffer(cBufferPos + 1);
                 // ignore the sequence, add it to the buffer as plaintext
                 *dest++ = '&';
                 for(unsigned int i = 0; i < cBufferPos; i++)
