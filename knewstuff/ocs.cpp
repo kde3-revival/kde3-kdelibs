@@ -497,7 +497,12 @@ void PreviewSlots::release()
 void PreviewSlots::slotReleased()
 {
   mPending = false;
-  emit released();
+  // each client waiting takes one slot per round, while slots are left
+  int before;
+  do {
+    before = mRunning;
+    emit released();
+  } while ( mRunning > before && mRunning < maxPreviewJobs );
 }
 
 // ------------------------------------------------------------------
@@ -621,19 +626,22 @@ void OcsClient::addRequest( KIO::TransferJob *job, Request &r )
 // Cancels the requests that got no data for requestTimeout seconds.
 void OcsClient::slotWatchdog()
 {
+  // the expired ones first: failed() may show a message box, while which
+  // the others go on receiving data
   int now = mClock.elapsed();
-  QMap<KIO::Job *, Request>::Iterator it = mRequests.begin();
-  while ( it != mRequests.end() ) {
-    if ( now - it.data().active < requestTimeout * 1000 && now >= it.data().active ) {
-      ++it;
-      continue;
-    }
-    KIO::Job *job = it.key();
+  QValueList<KIO::Job *> expired;
+  QMap<KIO::Job *, Request>::Iterator it;
+  for ( it = mRequests.begin(); it != mRequests.end(); ++it )
+    if ( now - it.data().active >= requestTimeout * 1000 || now < it.data().active )
+      expired.append( it.key() );
+  for ( QValueList<KIO::Job *>::ConstIterator jt = expired.begin(); jt != expired.end(); ++jt ) {
+    it = mRequests.find( *jt );
+    if ( it == mRequests.end() )
+      continue;                     // ended meanwhile
     Request r = it.data();
     mRequests.remove( it );
-    job->kill( true );
+    ( *jt )->kill( true );
     failed( r, i18n( "The server did not answer in time." ) );
-    it = mRequests.begin();         // failed() may have started others
   }
   if ( mRequests.isEmpty() )
     mWatchdog->stop();
@@ -690,7 +698,9 @@ void OcsClient::fetchPreview( const KURL &url, int key )
 
 void OcsClient::slotStartPreviews()
 {
-  while ( !mPreviewQueue.isEmpty() && PreviewSlots::self()->take() ) {
+  // one at a time when a slot was released: the sources take turns
+  int count = sender() == PreviewSlots::self() ? 1 : maxPreviewJobs;
+  while ( count-- > 0 && !mPreviewQueue.isEmpty() && PreviewSlots::self()->take() ) {
     KURL url = mPreviewQueue.first();
     mPreviewQueue.remove( mPreviewQueue.begin() );
 

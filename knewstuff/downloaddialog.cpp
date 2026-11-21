@@ -594,7 +594,7 @@ void DownloadDialog::addProvider(Provider *p)
     connect(cancel, SIGNAL(clicked()), SLOT(slotOcsCancel()));
     d->m_progress[frame] = progress;
     d->m_cancelButtons[frame] = cancel;
-    if(d->m_ocsEntry)
+    if(!d->m_ocsName.isEmpty())
       progress->setText(d->m_ocsName);
     else
     {
@@ -945,6 +945,7 @@ void DownloadDialog::slotTab()
   kdDebug() << "switch tab to: " << tab << endl;
 
   // the tabs of another page (shown with its page): taken by slotPage()
+  ocsSyncPage();
   for(QMap<QWidget*, QTabWidget*>::ConstIterator it = d->m_tabWidgets.begin(); it != d->m_tabWidgets.end(); ++it)
     if(it.data() == ctl && it.key() != d->m_page) return;
 
@@ -1933,7 +1934,8 @@ void DownloadDialog::ocsFinish()
 // "Cancel Download"
 void DownloadDialog::slotOcsCancel()
 {
-  if(!d->m_ocsEntry) return;
+  // nothing to cancel once the file is being installed
+  if(!d->m_ocsEntry || d->m_ocsName.isEmpty()) return;
   if(d->m_ocsJob)
   {
     // reported (silently) by slotOcsDownloaded()
