@@ -23,6 +23,11 @@
 
 #include "httpfilter.h"
 
+#include <zstd.h>
+#ifdef HAVE_LIBBROTLIDEC
+#include <brotli/decode.h>
+#endif
+
 HTTPFilterBase::HTTPFilterBase()
  : last(0)
 {
@@ -368,5 +373,158 @@ HTTPFilterDeflate::HTTPFilterDeflate()
   iTrailer = 0;
 #endif
 }
+
+// RFC 9659: a "zstd" content encoding must not need a window of more
+// than 8 MB, and a decoder may refuse a larger one.
+static const int s_zstdWindowLogMax = 23;
+
+HTTPFilterZstd::HTTPFilterZstd()
+ : bFrameDone(false), bFinished(false)
+{
+  dctx = ZSTD_createDCtx();
+  if (dctx && ZSTD_isError(ZSTD_DCtx_setParameter(dctx, ZSTD_d_windowLogMax, s_zstdWindowLogMax)))
+  {
+    ZSTD_freeDCtx(dctx);
+    dctx = 0;
+  }
+}
+
+HTTPFilterZstd::~HTTPFilterZstd()
+{
+  ZSTD_freeDCtx(dctx);
+}
+
+void
+HTTPFilterZstd::slotInput(const QByteArray &d)
+{
+  if (bFinished)
+     return;
+  if (d.size() == 0)
+  {
+     // End of data
+     bFinished = true;
+     if (bFrameDone)
+        emit output(QByteArray());
+     else
+        emit error( KIO::ERR_SLAVE_DEFINED, i18n("Unexpected end of data, some information may be lost."));
+     return;
+  }
+  if (!dctx)
+  {
+     bFinished = true;
+     emit error( KIO::ERR_OUT_OF_MEMORY, QString::null );
+     return;
+  }
+
+  ZSTD_inBuffer in = { d.data(), d.size(), 0 };
+  while (true)
+  {
+     char buf[8192];
+     ZSTD_outBuffer out = { buf, sizeof(buf), 0 };
+     size_t ret = ZSTD_decompressStream(dctx, &out, &in);
+     if (ZSTD_isError(ret))
+     {
+        bFinished = true;
+        emit error( KIO::ERR_SLAVE_DEFINED, i18n("Receiving corrupt data."));
+        return;
+     }
+     if (out.pos)
+     {
+        QByteArray o;
+        o.setRawData( buf, out.pos );
+        emit output(o);
+        o.resetRawData( buf, out.pos );
+     }
+     // ret == 0: a frame is complete; another one may follow
+     bFrameDone = (ret == 0);
+     // All input taken and the decoder did not fill the output: it
+     // waits for more input
+     if (in.pos == in.size && out.pos < out.size)
+        break;
+  }
+}
+
+#ifdef HAVE_LIBBROTLIDEC
+HTTPFilterBrotli::HTTPFilterBrotli()
+ : bDone(false), bFinished(false)
+{
+  // The default (no large window) limits the window to 16 MiB
+  state = BrotliDecoderCreateInstance(0, 0, 0);
+}
+
+HTTPFilterBrotli::~HTTPFilterBrotli()
+{
+  if (state)
+     BrotliDecoderDestroyInstance(state);
+}
+
+void
+HTTPFilterBrotli::slotInput(const QByteArray &d)
+{
+  if (bFinished)
+     return;
+  if (d.size() == 0)
+  {
+     // End of data
+     bFinished = true;
+     if (bDone)
+        emit output(QByteArray());
+     else
+        emit error( KIO::ERR_SLAVE_DEFINED, i18n("Unexpected end of data, some information may be lost."));
+     return;
+  }
+  if (bDone)
+  {
+     // Data after the end of the Brotli stream
+     bFinished = true;
+     emit error( KIO::ERR_SLAVE_DEFINED, i18n("Receiving corrupt data."));
+     return;
+  }
+  if (!state)
+  {
+     bFinished = true;
+     emit error( KIO::ERR_OUT_OF_MEMORY, QString::null );
+     return;
+  }
+
+  size_t availIn = d.size();
+  const uint8_t *nextIn = reinterpret_cast<const uint8_t *>(d.data());
+  while (true)
+  {
+     uint8_t buf[8192];
+     size_t availOut = sizeof(buf);
+     uint8_t *nextOut = buf;
+     BrotliDecoderResult result =
+        BrotliDecoderDecompressStream(state, &availIn, &nextIn, &availOut, &nextOut, 0);
+     if (result == BROTLI_DECODER_RESULT_ERROR)
+     {
+        bFinished = true;
+        emit error( KIO::ERR_SLAVE_DEFINED, i18n("Receiving corrupt data."));
+        return;
+     }
+     const size_t bytesOut = sizeof(buf) - availOut;
+     if (bytesOut)
+     {
+        QByteArray o;
+        o.setRawData( reinterpret_cast<char *>(buf), bytesOut );
+        emit output(o);
+        o.resetRawData( reinterpret_cast<char *>(buf), bytesOut );
+     }
+     if (result == BROTLI_DECODER_RESULT_SUCCESS)
+     {
+        bDone = true;
+        if (availIn)
+        {
+           bFinished = true;
+           emit error( KIO::ERR_SLAVE_DEFINED, i18n("Receiving corrupt data."));
+        }
+        return;
+     }
+     if (result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT)
+        return;
+     // BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT: go on
+  }
+}
+#endif
 
 #include "httpfilter.moc"

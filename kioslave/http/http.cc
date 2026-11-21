@@ -2446,7 +2446,18 @@ bool HTTPProtocol::httpOpen()
 
 #ifdef DO_GZIP
     if (m_request.allowCompressedPage)
-      header += "Accept-Encoding: x-gzip, x-deflate, gzip, deflate\r\n";
+    {
+      // Like the browsers, ask for zstd and br over https only: some
+      // proxies and middleboxes mangle what they don't know
+      if (m_bIsSSL)
+#ifdef HAVE_LIBBROTLIDEC
+        header += "Accept-Encoding: x-gzip, x-deflate, gzip, deflate, br, zstd\r\n";
+#else
+        header += "Accept-Encoding: x-gzip, x-deflate, gzip, deflate, zstd\r\n";
+#endif
+      else
+        header += "Accept-Encoding: x-gzip, x-deflate, gzip, deflate\r\n";
+    }
 #endif
 
     if (!m_request.charsets.isEmpty())
@@ -3709,6 +3720,21 @@ try_again:
      m_strMimeType = QString::fromLatin1("application/x-bzip2");
   }
 
+  // As for gzip above: a .zst file or .tar.zst archive served with a
+  // "zstd" encoding is meant to be saved as it is
+  if (m_qContentEncodings.last() == "zstd" &&
+      (m_strMimeType == "application/zstd" ||
+       m_strMimeType == "application/x-zstd-compressed-tar" ||
+       m_request.url.path().right(4) == ".zst" ||
+       m_request.url.path().right(5) == ".tzst"))
+  {
+     m_qContentEncodings.remove(m_qContentEncodings.fromLast());
+     if (m_strMimeType != "application/x-zstd-compressed-tar")
+        m_strMimeType = QString::fromLatin1(
+           m_request.url.path().right(8) == ".tar.zst" || m_request.url.path().right(5) == ".tzst"
+              ? "application/x-zstd-compressed-tar" : "application/zstd");
+  }
+
   // Convert some common mimetypes to standard KDE mimetypes
   if (m_strMimeType == "application/x-targz")
      m_strMimeType = QString::fromLatin1("application/x-tgz");
@@ -3869,6 +3895,12 @@ void HTTPProtocol::addEncoding(QString encoding, QStringList &encs)
     encs.append(QString::fromLatin1("bzip2")); // Not yet supported!
   } else if ((encoding == "x-deflate") || (encoding == "deflate")) {
     encs.append(QString::fromLatin1("deflate"));
+  } else if (encoding == "zstd") {
+    encs.append(QString::fromLatin1("zstd"));
+#ifdef HAVE_LIBBROTLIDEC
+  } else if (encoding == "br") {
+    encs.append(QString::fromLatin1("br"));
+#endif
   } else {
     kdDebug(7113) << "(" << m_pid << ") Unknown encoding encountered.  "
                     << "Please write code. Encoding = \"" << encoding
@@ -4453,6 +4485,12 @@ bool HTTPProtocol::readBody( bool dataInternal /* = false */ )
       chain.addFilter(new HTTPFilterGZip);
     else if ( enc == "deflate" )
       chain.addFilter(new HTTPFilterDeflate);
+    else if ( enc == "zstd" )
+      chain.addFilter(new HTTPFilterZstd);
+#ifdef HAVE_LIBBROTLIDEC
+    else if ( enc == "br" )
+      chain.addFilter(new HTTPFilterBrotli);
+#endif
   }
 
   while (!m_bEOF)

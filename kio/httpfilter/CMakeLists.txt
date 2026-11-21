@@ -7,4 +7,8 @@ kde3_add_library(httpfilter OBJECT
   LINK
     kdecore
     ZLIB::ZLIB
+    PkgConfig::LIBZSTD
 )
+if(HAVE_LIBBROTLIDEC)
+  target_link_libraries(httpfilter PUBLIC PkgConfig::LIBBROTLIDEC)
+endif()

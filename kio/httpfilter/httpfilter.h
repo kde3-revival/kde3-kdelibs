@@ -30,6 +30,11 @@
 #include <zlib.h>
 #endif
 
+struct ZSTD_DCtx_s;
+#ifdef HAVE_LIBBROTLIDEC
+struct BrotliDecoderStateStruct;
+#endif
+
 #include <qobject.h>
 #include <kmdcodec.h>
 
@@ -115,5 +120,45 @@ class HTTPFilterDeflate : public HTTPFilterGZip
 public:
     HTTPFilterDeflate();
 };
+
+/**
+ * Decodes the "zstd" content encoding (RFC 8878, RFC 9659).
+ */
+class HTTPFilterZstd : public HTTPFilterBase
+{
+    Q_OBJECT
+public:
+    HTTPFilterZstd();
+    ~HTTPFilterZstd();
+
+public slots:
+    void slotInput(const QByteArray &d);
+
+private:
+    ZSTD_DCtx_s *dctx;
+    bool bFrameDone : 1;  // a frame ended and no other one has started yet
+    bool bFinished : 1;   // end of data or error
+};
+
+#ifdef HAVE_LIBBROTLIDEC
+/**
+ * Decodes the "br" (Brotli, RFC 7932) content encoding.
+ */
+class HTTPFilterBrotli : public HTTPFilterBase
+{
+    Q_OBJECT
+public:
+    HTTPFilterBrotli();
+    ~HTTPFilterBrotli();
+
+public slots:
+    void slotInput(const QByteArray &d);
+
+private:
+    BrotliDecoderStateStruct *state;
+    bool bDone : 1;      // the Brotli stream ended
+    bool bFinished : 1;  // end of data or error
+};
+#endif
 
 #endif
