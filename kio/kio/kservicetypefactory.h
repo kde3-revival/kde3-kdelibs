@@ -66,6 +66,14 @@ public:
   virtual KServiceType * findServiceTypeByName(const QString &_name);
 
   /**
+   * The mimetype an alias stands for (application/x-zip-compressed is
+   * application/zip, which may be KDE's application/x-zip).
+   * @return the name of the type, or QString::null if @p _name is no alias
+   * @since 3.5.10
+   */
+  QString resolveAlias(const QString &_name);
+
+  /**
    * Find a the property type of a named property.
    */
   QVariant::Type findPropertyTypeByName(const QString &_name);
@@ -105,6 +113,7 @@ protected:
 
 private:
   static KServiceTypeFactory *_self;
+  Q_INT32 findPatternOffset(const QString &_filename, QString *match);
 
 protected:
   int m_fastPatternOffset;

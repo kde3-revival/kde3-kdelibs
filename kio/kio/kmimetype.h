@@ -420,6 +420,16 @@ public:
   QString parentMimeType() const;
 
   /**
+   * The mimetypes this one inherits from: parentMimeType() for the KDE
+   * types, and all the sub-class-of types of the freedesktop.org
+   * shared-mime-info types (a type may have several parents there).
+   *
+   * @return the parent mime types, empty if there are none
+   * @since 3.5.10
+   */
+  QStringList parentMimeTypes() const;
+
+  /**
    * Do not use name()=="somename" anymore, to check for a given mimetype.
    * For mimetype inheritance to work, use is("somename") instead.
    * Warning, do not use inherits(), that's the servicetype inheritance concept!

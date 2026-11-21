@@ -429,6 +429,12 @@ int KService::initialPreferenceForMimeType( const QString& mimeType ) const
       if ( !mimePtr || !mimePtr->is( *it ) )
           continue;
 
+      // A shared-mime-info type: the applications for the type itself come
+      // before those for its parents (KiCad before the text editors for a
+      // .kicad_pcb, a text/plain)
+      if ( mimePtr->property( "X-KDE-SharedMimeInfo" ).toBool() )
+          return 0;
+
       int initalPreference = m_initialPreference;
       ++it;
       if (it != m_lstServiceTypes.end())

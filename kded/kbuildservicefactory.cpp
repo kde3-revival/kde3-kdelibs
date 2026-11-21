@@ -141,6 +141,10 @@ KBuildServiceFactory::saveOfferList(QDataStream &str)
    m_offerListOffset = str.device()->at();
 
    bool isNumber;
+   // Pass 0: the types the services name; pass 1: the types they name by
+   // an alias (application/zip for KDE's application/x-zip). These come
+   // after, so they don't change which application a KDE type opens with.
+   for (int pass = 0; pass < 2; ++pass)
    for(QDictIterator<KSycocaEntry::Ptr> itserv ( *m_entryDict );
        itserv.current();
        ++itserv)
@@ -158,9 +162,13 @@ KBuildServiceFactory::saveOfferList(QDataStream &str)
          KServiceType::Ptr serviceType = KServiceType::serviceType(*it);
          if (!serviceType)
          {
-           kdWarning() << "'"<< service->desktopEntryPath() << "' specifies undefined mimetype/servicetype '"<< (*it) << "'" << endl;
+           // URL scheme handlers of the XDG desktop entries are not types
+           if (pass == 0 && !(*it).startsWith("x-scheme-handler/"))
+             kdWarning() << "'"<< service->desktopEntryPath() << "' specifies undefined mimetype/servicetype '"<< (*it) << "'" << endl;
            continue;
          }
+         if ((serviceType->name() != *it) != (pass == 1))
+            continue;
          serviceTypes.append(serviceType);
       }
       
@@ -173,6 +181,8 @@ KBuildServiceFactory::saveOfferList(QDataStream &str)
          if (parentType)
             serviceTypes.append(parentType);
          
+         if (pass == 1 && serviceType->services().contains(KService::Ptr(service)))
+            continue;
          serviceType->addService(service);
       }
    }

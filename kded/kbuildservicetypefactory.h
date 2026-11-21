@@ -21,7 +21,10 @@
 #define __k_build_service_type_factory_h__
 
 #include <kservicetypefactory.h>
+#include <kmimetype.h>
 #include <qstringlist.h>
+#include <qmap.h>
+#include <qvaluelist.h>
 
 /**
  * Service-type factory for building ksycoca
@@ -75,6 +78,25 @@ public:
 private:
 
   void savePatternLists(QDataStream &str);
+  void saveAliases(QDataStream &str);
+
+  /**
+   * Merges the shared-mime-info types into the KDE ones: decides which of
+   * them become entries of their own and which are aliases of a KDE type,
+   * resolves their parents and assigns their glob patterns.
+   * Runs once, before the first lookup or the save.
+   */
+  void mergeSharedMimeInfo();
+
+  // shared-mime-info entries, merged into the factory by mergeSharedMimeInfo()
+  QValueList<KMimeType::Ptr> m_smiEntries;
+  bool m_smiMerged;
+  // alias -> name of the KDE or shared-mime-info type it stands for
+  QMap<QString,QString> m_aliases;
+  // glob patterns of shared-mime-info types that no KDE type claims
+  QMap<QString,KMimeType*> m_smiPatterns;
+  QMap<QString,bool> m_smiNoCasePatterns;
+  int m_aliasOffset;
 };
 
 #endif

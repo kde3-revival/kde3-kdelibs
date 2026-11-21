@@ -222,7 +222,17 @@ KMimeType::Ptr KMimeType::findByURL( const KURL& _url, mode_t _mode,
                             KMimeMagic::self()->findFileType( path );
 
                     if ( result && result->isValid() && result->accuracy() > 0 )
-                        return mimeType( result->mimeType() );
+                    {
+                        KMimeType::Ptr magic = mimeType( result->mimeType() );
+                        // shared-mime-info: the contents decide between the
+                        // types of an ambiguous pattern, but finding no more
+                        // than a parent type (text/plain, application/zip)
+                        // keeps the type of the name
+                        if ( mime->property( "X-KDE-SharedMimeInfo" ).toBool() &&
+                             ( magic == defaultMimeTypePtr() || mime->is( magic->name() ) ) )
+                            return mime;
+                        return magic;
+                    }
                 }
             }
 
@@ -556,20 +566,47 @@ QString KMimeType::parentMimeType() const
   return v.toString();
 }
 
+QStringList KMimeType::parentMimeTypes() const
+{
+  // Types from shared-mime-info may have several parents; "X-KDE-IsAlso"
+  // holds the first one
+  QVariant v = property("X-KDE-ParentMimeTypes");
+  if ( v.isValid() )
+      return v.toStringList();
+  QString parent = parentMimeType();
+  return parent.isEmpty() ? QStringList() : QStringList( parent );
+}
+
 bool KMimeType::is( const QString& mimeTypeName ) const
 {
   if ( name() == mimeTypeName )
       return true;
-  QString st = parentMimeType();
-  //if (st.isEmpty()) kdDebug(7009)<<"Parent mimetype is empty"<<endl;
-  while ( !st.isEmpty() )
+  // mimeTypeName may be an alias (application/x-zip-compressed)
+  QString wanted = KServiceTypeFactory::self()->resolveAlias( mimeTypeName );
+  if ( wanted.isEmpty() )
+      wanted = mimeTypeName;
+  else if ( name() == wanted )
+      return true;
+  QStringList todo = parentMimeTypes();
+  // Breadth first, each type once: the graph may have shared ancestors
+  // (and the KDE files nothing preventing a loop)
+  QStringList seen;
+  seen.append( name() );
+  while ( !todo.isEmpty() && seen.count() < 256 )
   {
-      //kdDebug(7009)<<"Checking parent mime type: "<<st<<endl;
-      KMimeType::Ptr ptr = KMimeType::mimeType( st );
-      if (!ptr) return false; //error
-      if ( ptr->name() == mimeTypeName )
+      const QString st = todo.first();
+      todo.pop_front();
+      if ( st.isEmpty() || seen.contains( st ) )
+          continue;
+      seen.append( st );
+      if ( st == wanted || st == mimeTypeName )
           return true;
-      st = ptr->parentMimeType();
+      KMimeType::Ptr ptr = KMimeType::mimeType( st );
+      if ( !ptr || ptr == defaultMimeTypePtr() )
+          continue;
+      if ( ptr->name() == wanted )
+          return true;
+      todo += ptr->parentMimeTypes();
   }
   return false;
 }

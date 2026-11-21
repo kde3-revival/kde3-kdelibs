@@ -18,6 +18,7 @@ kde3_add_kdeinit_executable(kbuildsycoca
     kbuildimageiofactory.cpp
     kbuildprotocolinfofactory.cpp
     kctimefactory.cpp
+    ksharedmimeinfo.cpp
     vfolder_menu.cpp
   MOC
     kbuildsycoca.h

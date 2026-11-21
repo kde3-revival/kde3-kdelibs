@@ -265,16 +265,30 @@ KService::List KServiceType::offers( const QString& _servicetype )
   bool isAMimeType = (mime != 0);
   if (mime)
   {
-     while(true)
+     // Breadth first, each parent once (a shared-mime-info type may have
+     // several parents, with common ancestors)
+     QStringList todo = mime->parentMimeTypes();
+     QStringList seen( mime->name() );
+     while ( !todo.isEmpty() && seen.count() < 256 )
      {
-        QString parent = mime->parentMimeType();
-        if (parent.isEmpty())
-           break;
+        const QString parent = todo.first();
+        todo.pop_front();
+        if ( parent.isEmpty() || seen.contains( parent ) )
+           continue;
+        seen.append( parent );
         mime = dynamic_cast<KMimeType *>(KServiceTypeFactory::self()->findServiceTypeByName( parent ));
         if (!mime)
-           break;
-        
+           continue;
+        if ( mime->name() != parent )
+        {
+           // an alias of a type already visited?
+           if ( seen.contains( mime->name() ) )
+              continue;
+           seen.append( mime->name() );
+        }
+
         addUnique(lst, dict, KServiceFactory::self()->offers( mime->offset() ), false);
+        todo += mime->parentMimeTypes();
      }
   }
   serv = mime = 0;
