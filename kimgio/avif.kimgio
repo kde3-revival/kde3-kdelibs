@@ -1,0 +1,9 @@
+[Image Format]
+Type=AVIF
+Header=^.{4}ftypavi[fs]
+Name=AVIF Image
+Read=true
+Write=false
+Suffices=avif,AVIF,avifs,AVIFS
+Mimetype=image/avif
+Library=kimg_avif.la

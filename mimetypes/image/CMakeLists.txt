@@ -40,6 +40,7 @@ install(FILES
   webp.desktop
   heif.desktop
   heic.desktop
+  avif.desktop
   DESTINATION ${KDE3_MIME_INSTALL_DIR}/image)
 
 

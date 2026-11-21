@@ -640,6 +640,10 @@
 4	string		ftypmif1	image/heif
 4	string		ftypmsf1	image/heif
 
+# AVIF images: the major brand in the "ftyp" box (avis: an animation)
+4	string		ftypavif	image/avif
+4	string		ftypavis	image/avif
+
 # PNG images
 0       string          \x89PNG         image/png
 

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=MimeType
+MimeType=image/avif
+Icon=image
+Patterns=*.avif;*.AVIF;*.avifs;*.AVIFS;
+Comment=AVIF Image
