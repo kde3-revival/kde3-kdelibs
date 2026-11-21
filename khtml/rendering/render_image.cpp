@@ -301,10 +301,20 @@ void RenderImage::paint(PaintInfo& paintInfo, int _tx, int _ty)
 //                  kdDebug( 6040 ) << "have to scale: " << endl;
 //                  qDebug("cw=%d ch=%d  pw=%d ph=%d  rcw=%d, rch=%d",
 //                          cWidth, cHeight, intrinsicWidth(), intrinsicHeight(), resizeCache.width(), resizeCache.height());
-                QWMatrix matrix;
-                matrix.scale( (float)(cWidth)/intrinsicWidth(),
-                              (float)(cHeight)/intrinsicHeight() );
-                resizeCache = pix.xForm( matrix );
+                if ( i->valid_rect().size() == QSize( intrinsicWidth(), intrinsicHeight() ) &&
+                     pix.size() == QSize( intrinsicWidth(), intrinsicHeight() ) ) {
+                    // Fully loaded: filter it (xForm samples the nearest pixel,
+                    // which aliases badly when an image is shown smaller).
+                    // Painted from resizeCache until the size changes.
+                    resizeCache.convertFromImage( pix.convertToImage().smoothScale( cWidth, cHeight ) );
+                } else {
+                    // Still loading: the fast nearest-pixel scaling, redone at
+                    // most every fifth of the height (see setPixmap())
+                    QWMatrix matrix;
+                    matrix.scale( (float)(cWidth)/intrinsicWidth(),
+                                  (float)(cHeight)/intrinsicHeight() );
+                    resizeCache = pix.xForm( matrix );
+                }
                 scaledrect.setWidth( ( cWidth*scaledrect.width() ) / intrinsicWidth() );
                 scaledrect.setHeight( ( cHeight*scaledrect.height() ) / intrinsicHeight() );
 //                   qDebug("resizeCache size: %d/%d", resizeCache.width(), resizeCache.height());
