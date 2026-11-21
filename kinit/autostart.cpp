@@ -173,16 +173,35 @@ static bool namesOurDesktop(const QStringList &desktops, bool kdeIsUs)
    return desktops.contains("KDE3") || (kdeIsUs && desktops.contains("KDE"));
 }
 
+// The entries that the user (or the system, in share/config/autostartrc
+// of a KDE prefix) does not want to start, by file name, as in
+//   [Autostart]
+//   Skip=localsearch-3.desktop,foo.desktop
+// Empty by default; the user's Skip replaces the one of the system.
+// Hidden=true in a file of the same name in ~/.config/autostart does the
+// same for one user, as the XDG Autostart specification says; the list
+// also works for all users at once.
+static QStringList skippedEntries()
+{
+   KConfig config("autostartrc", true, false);
+   config.setGroup("Autostart");
+   return config.readListEntry("Skip");
+}
+
 void
 AutoStart::loadAutoStartList()
 {
    QStringList kdeFiles;
    QStringList files = autoStartFiles(kdeFiles);
+   QStringList skipped = skippedEntries();
 
    for(QStringList::ConstIterator it = files.begin();
        it != files.end();
        ++it)
    {
+       const QString fileName = (*it).mid((*it).findRev('/') + 1);
+       if (skipped.contains(fileName) || skipped.contains(extractName(*it)))
+          continue;
        KDesktopFile config(*it, true);
        if (config.readBoolEntry("Hidden", false))
           continue;
