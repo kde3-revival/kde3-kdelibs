@@ -82,6 +82,7 @@ struct DownloadDialog::Private
     struct OcsPage
     {
       Provider *provider;
+      QString host;                       // of the provider, for the install status
       OcsClient *client;
       QTextBrowser *browser;
       QMimeSourceFactory *factory;
@@ -103,8 +104,10 @@ struct DownloadDialog::Private
     OcsDownload m_ocsFile;
     KTempFile *m_ocsTemp;
     KTempFile *m_ocsEngineTemp;
+    KIO::TransferJob *m_ocsJob;           // the download in progress
     Q_ULLONG m_ocsWritten;
     bool m_ocsTooLarge;
+    bool m_ocsBadRedirect;
 
     OcsPage *ocsPageFor(QObject *client)
     {
@@ -205,8 +208,10 @@ void DownloadDialog::init(Engine *engine)
   d->m_ocsPage = 0;
   d->m_ocsTemp = 0;
   d->m_ocsEngineTemp = 0;
+  d->m_ocsJob = 0;
   d->m_ocsWritten = 0;
   d->m_ocsTooLarge = false;
+  d->m_ocsBadRedirect = false;
 
   m_engine = engine;
   d->m_page = NULL;
@@ -234,6 +239,8 @@ DownloadDialog::~DownloadDialog()
         delete it.data()->factory;
         delete it.data();
     }
+    if (d->m_ocsJob)
+        d->m_ocsJob->kill(true);
     delete d->m_ocsTemp;
     delete d->m_ocsEngineTemp;
     delete d;
@@ -251,6 +258,17 @@ void DownloadDialog::load(QString providerList)
 
 void DownloadDialog::clear()
 {
+  // an OCS installation in progress belongs to the pages removed here
+  if(d->m_ocsEntry)
+  {
+    if(d->m_ocsJob) d->m_ocsJob->kill(true);
+    d->m_ocsJob = 0;
+    delete d->m_ocsTemp;
+    d->m_ocsTemp = 0;
+    d->m_ocsEntry = 0;
+    d->m_ocsPage = 0;
+  }
+
   QMap<QWidget*, QValueList<KListView*>* >::Iterator it;
   QMap<QWidget*, QValueList<KListView*>* >::Iterator end(m_map.end());
   for(it = m_map.begin(); it != end; ++it)
@@ -523,7 +541,7 @@ int DownloadDialog::installStatus(Entry *entry)
 
   QString key = ocsStatusKey(entry);
   if(key.isEmpty()) key = entry->name(lang);
-  kapp->config()->setGroup("KNewStuffStatus");
+  KConfigGroupSaver saver(kapp->config(), "KNewStuffStatus");
   datestring = kapp->config()->readEntry(key);
   if(datestring.isNull()) installed = 0;
   else
@@ -692,9 +710,11 @@ void DownloadDialog::install(Entry *e)
 {
   QString key = ocsStatusKey(e);
   if(key.isEmpty()) key = m_entryname;
-  kapp->config()->setGroup("KNewStuffStatus");
-  kapp->config()->writeEntry(key, e->releaseDate().toString(Qt::ISODate));
-  kapp->config()->sync();
+  {
+    KConfigGroupSaver saver(kapp->config(), "KNewStuffStatus");
+    kapp->config()->writeEntry(key, e->releaseDate().toString(Qt::ISODate));
+    kapp->config()->sync();
+  }
 
   QPixmap pix = KGlobal::iconLoader()->loadIcon("ok", KIcon::Small);
 
@@ -1078,13 +1098,14 @@ void DownloadDialog::ocsAddPage(QWidget *frame, Provider *p, QTextBrowser *rt,
 {
   Private::OcsPage *page = new Private::OcsPage;
   page->provider = p;
+  page->host = ocsBaseUrl(p).host();
   page->browser = rt;
   page->factory = new QMimeSourceFactory;
   rt->setMimeSourceFactory(page->factory);
 
   page->client = new OcsClient(ocsBaseUrl(p), ocsCategories(p), frame);
-  connect(page->client, SIGNAL(contentsListed(int, int, const QValueList<KNS::OcsContent> &, int)),
-          SLOT(slotOcsListed(int, int, const QValueList<KNS::OcsContent> &, int)));
+  connect(page->client, SIGNAL(contentsListed(int, int, const QValueList<KNS::OcsContent> &, int, bool)),
+          SLOT(slotOcsListed(int, int, const QValueList<KNS::OcsContent> &, int, bool)));
   connect(page->client, SIGNAL(listingFailed(int, const QString &)),
           SLOT(slotOcsListingFailed(int, const QString &)));
   connect(page->client, SIGNAL(previewLoaded(int, const QImage &)),
@@ -1138,7 +1159,7 @@ void DownloadDialog::ocsFetch(QWidget *frame, int tab)
   page->client->listContents(tab, t.nextPage);
 }
 
-void DownloadDialog::slotOcsListed(int sortMode, int pageNumber, const QValueList<KNS::OcsContent> &items, int total)
+void DownloadDialog::slotOcsListed(int sortMode, int pageNumber, const QValueList<KNS::OcsContent> &items, int total, bool more)
 {
   Private::OcsPage *page = d->ocsPageFor(const_cast<QObject*>(sender()));
   if(!page || sortMode < 0 || sortMode > 2) return;
@@ -1193,7 +1214,6 @@ void DownloadDialog::slotOcsListed(int sortMode, int pageNumber, const QValueLis
     t.loaded++;
   }
 
-  bool more = (int)items.count() >= OcsClient::pageSize() && total > t.loaded;
   t.more->setText(i18n("&More"));
   t.more->setEnabled(more);
   if(t.loaded == 0)
@@ -1287,7 +1307,7 @@ QString DownloadDialog::ocsStatusKey(Entry *e)
 {
   if(!e || !d->m_entryPage.contains(e)) return QString::null;
   Private::OcsPage *page = d->m_ocs[d->m_entryPage[e]];
-  return QString("ocs:%1:%2").arg(ocsBaseUrl(page->provider).host()).arg(page->content[e].id);
+  return QString("ocs:%1:%2").arg(page->host).arg(page->content[e].id);
 }
 
 void DownloadDialog::ocsShowDetails(Entry *e)
@@ -1336,7 +1356,8 @@ void DownloadDialog::ocsInstall(Entry *e)
 
   QWidget *frame = d->m_entryPage[e];
   Private::OcsPage *page = d->m_ocs[frame];
-  const OcsContent &c = page->content[e];
+  // a copy: listings may update the content while the file dialog is open
+  const OcsContent c = page->content[e];
 
   if(c.files.isEmpty())
   {
@@ -1379,6 +1400,7 @@ void DownloadDialog::ocsInstall(Entry *e)
   d->m_ocsPage = frame;
   d->m_ocsFile = c.files[index];
   d->m_ocsTooLarge = false;
+  d->m_ocsBadRedirect = false;
 
   m_entryitem = currentEntryItem();
   m_entryname = m_entryitem ? m_entryitem->text(0) : c.name;
@@ -1424,14 +1446,27 @@ void DownloadDialog::slotOcsResolved(const QString &id, int number, const KURL &
   KIO::TransferJob *job = KIO::get(link, true, true);
   job->addMetaData("errorPage", "false");
   job->addMetaData("cookies", "none");
+  job->addMetaData("ssl_militant", "TRUE");
+  d->m_ocsJob = job;
+  connect(job, SIGNAL(redirection(KIO::Job*, const KURL&)),
+          SLOT(slotOcsRedirection(KIO::Job*, const KURL&)));
   connect(job, SIGNAL(data(KIO::Job*, const QByteArray&)),
           SLOT(slotOcsDownloadData(KIO::Job*, const QByteArray&)));
   connect(job, SIGNAL(result(KIO::Job*)), SLOT(slotOcsDownloaded(KIO::Job*)));
 }
 
+void DownloadDialog::slotOcsRedirection(KIO::Job *job, const KURL &url)
+{
+  if(job != d->m_ocsJob || !d->m_ocs.contains(d->m_ocsPage)) return;
+  if(d->m_ocs[d->m_ocsPage]->client->isAllowedUrl(url)) return;
+  // reported by slotOcsDownloaded()
+  d->m_ocsBadRedirect = true;
+  job->kill(false);
+}
+
 void DownloadDialog::slotOcsDownloadData(KIO::Job *job, const QByteArray &data)
 {
-  if(!d->m_ocsTemp || d->m_ocsTooLarge || data.isEmpty()) return;
+  if(job != d->m_ocsJob || !d->m_ocsTemp || d->m_ocsTooLarge || data.isEmpty()) return;
 
   d->m_ocsWritten += data.size();
   QFile *f = d->m_ocsTemp->file();
@@ -1446,12 +1481,20 @@ void DownloadDialog::slotOcsDownloadData(KIO::Job *job, const QByteArray &data)
 
 void DownloadDialog::slotOcsDownloaded(KIO::Job *job)
 {
+  if(job != d->m_ocsJob) return;
+  d->m_ocsJob = 0;
   Entry *e = d->m_ocsEntry;
-  if(!e || !d->m_ocs.contains(d->m_ocsPage)) return;
-
-  if(job->error() || d->m_ocsTooLarge || !d->m_ocsTemp->close())
+  if(!e || !d->m_ocs.contains(d->m_ocsPage))
   {
-    if(d->m_ocsTooLarge)
+    ocsFinish();
+    return;
+  }
+
+  if(job->error() || d->m_ocsTooLarge || d->m_ocsBadRedirect || !d->m_ocsTemp->close())
+  {
+    if(d->m_ocsBadRedirect)
+      KMessageBox::error(this, i18n("The server redirected the download to a location that is not allowed."));
+    else if(d->m_ocsTooLarge)
       KMessageBox::error(this, i18n("The download is too large, or it could not be saved."));
     else if(!job->error())
       KMessageBox::error(this, i18n("The download could not be saved."));
@@ -1501,6 +1544,7 @@ void DownloadDialog::ocsFinish()
   Entry *e = d->m_ocsEntry;
   d->m_ocsEntry = 0;
   d->m_ocsPage = 0;
+  d->m_ocsJob = 0;
   delete d->m_ocsTemp;
   d->m_ocsTemp = 0;
 

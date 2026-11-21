@@ -119,7 +119,7 @@ class OcsClient : public QObject
 
   signals:
     // spelled out, as in the slots of DownloadDialog, for the signature match
-    void contentsListed( int sortMode, int page, const QValueList<KNS::OcsContent> &items, int total );
+    void contentsListed( int sortMode, int page, const QValueList<KNS::OcsContent> &items, int total, bool more );
     void listingFailed( int sortMode, const QString &message );
     void downloadResolved( const QString &id, int number, const KURL &link );
     void downloadFailed( const QString &id, int number, const QString &message );
@@ -128,6 +128,7 @@ class OcsClient : public QObject
   private slots:
     void slotData( KIO::Job *job, const QByteArray &data );
     void slotResult( KIO::Job *job );
+    void slotRedirection( KIO::Job *job, const KURL &url );
 
   private:
     enum Kind { List, Download, Preview };

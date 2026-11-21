@@ -228,7 +228,7 @@ class KDE_EXPORT DownloadDialog : public KDialogBase
     void slotFinish();
     void slotEmail(const QString& link);
     // Open Collaboration Services providers
-    void slotOcsListed(int sortMode, int page, const QValueList<KNS::OcsContent> &items, int total);
+    void slotOcsListed(int sortMode, int page, const QValueList<KNS::OcsContent> &items, int total, bool more);
     void slotOcsListingFailed(int sortMode, const QString &message);
     void slotOcsMore();
     void slotOcsPreview(int key, const QImage &image);
@@ -236,6 +236,7 @@ class KDE_EXPORT DownloadDialog : public KDialogBase
     void slotOcsResolveFailed(const QString &id, int number, const QString &message);
     void slotOcsDownloaded(KIO::Job *job);
     void slotOcsDownloadData(KIO::Job *job, const QByteArray &data);
+    void slotOcsRedirection(KIO::Job *job, const KURL &url);
 
   private:
     void init(Engine *e);

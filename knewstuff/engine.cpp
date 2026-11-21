@@ -120,6 +120,13 @@ void Engine::getMetaInformation( Provider::List *providers )
     mNewStuffJobData.insert( job, "" );
     mProviderJobs[ job ] = p;
   }
+
+  // OCS providers start no job here: show the dialog again in case it
+  // was closed before (the engine and its dialog live on)
+  if ( mNewStuffJobData.count() == 0 ) {
+    mDownloadDialog->show();
+    mDownloadDialog->raise();
+  }
 }
 
 void Engine::slotNewStuffJobData( KIO::Job *job, const QByteArray &data )

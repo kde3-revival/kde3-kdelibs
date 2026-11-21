@@ -21,10 +21,13 @@
 #include "ocs.h"
 #include "ocs.moc"
 
+#include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
 #include <qbuffer.h>
+#include <qxml.h>
 #include <qdir.h>
 #include <qfile.h>
 #include <qfileinfo.h>
@@ -50,7 +53,7 @@
 using namespace KNS;
 
 // Response size limits
-static const uint maxListResponse = 8 * 1024 * 1024;
+static const uint maxListResponse = 2 * 1024 * 1024;   // a page is ~100 KB
 static const uint maxDownloadResponse = 256 * 1024;
 static const uint maxPreviewResponse = 4 * 1024 * 1024;
 // Largest accepted preview picture
@@ -60,7 +63,12 @@ static const int maxPreviewJobs = 3;
 
 const Q_ULLONG OcsInstaller::maxDownloadSize = Q_ULLONG( 512 ) * 1024 * 1024;
 static const Q_ULLONG maxExtractedFile = Q_ULLONG( 128 ) * 1024 * 1024;
+// everything decompressed from one download, pictures or not
 static const Q_ULLONG maxExtractedTotal = Q_ULLONG( 512 ) * 1024 * 1024;
+// largest picture installed (width or height)
+static const int maxPictureDimension = 16384;
+// deepest element nesting accepted in a response (Qt's reader recurses)
+static const int maxXmlDepth = 32;
 static const int maxArchiveEntries = 5000;
 static const int maxArchiveImages = 500;
 static const int maxArchiveDepth = 16;
@@ -84,29 +92,77 @@ static QString cleanLine( const QString &s, uint max )
   return t;
 }
 
-// The document is refused if it has a DTD (internal entities could expand
-// without bounds) or any other markup declaration.
-static bool hasMarkupDeclaration( const QByteArray &data )
+// Checks the decoded document before it is parsed: it is refused if it has
+// a DTD (internal entities could expand without bounds) or any other
+// markup declaration, or if its elements nest deeper than maxXmlDepth
+// (Qt's reader and QDom recurse per level).
+static bool isAcceptableXml( const QString &text )
 {
-  const char *p = data.data();
-  uint n = data.size();
-  for ( uint i = 0; i + 1 < n; ++i ) {
-    if ( p[ i ] != '<' || p[ i + 1 ] != '!' )
+  const uint n = text.length();
+  int depth = 0;
+  uint i = 0;
+  while ( i < n ) {
+    if ( text[ i ] != '<' ) {
+      ++i;
       continue;
-    if ( i + 9 <= n && qstrncmp( p + i, "<![CDATA[", 9 ) == 0 )
-      continue;
-    if ( i + 4 <= n && qstrncmp( p + i, "<!--", 4 ) == 0 )
-      continue;
-    return true;
+    }
+    if ( text.mid( i, 9 ) == "<![CDATA[" ) {
+      int end = text.find( "]]>", i + 9 );
+      if ( end < 0 ) return false;
+      i = end + 3;
+    } else if ( text.mid( i, 4 ) == "<!--" ) {
+      int end = text.find( "-->", i + 4 );
+      if ( end < 0 ) return false;
+      i = end + 3;
+    } else if ( i + 1 < n && text[ i + 1 ] == '!' ) {
+      return false;                       // <!DOCTYPE, <!ENTITY, ...
+    } else if ( i + 1 < n && text[ i + 1 ] == '?' ) {
+      int end = text.find( "?>", i + 2 );
+      if ( end < 0 ) return false;
+      i = end + 2;
+    } else if ( i + 1 < n && text[ i + 1 ] == '/' ) {
+      --depth;
+      int end = text.find( '>', i + 2 );
+      if ( end < 0 ) return false;
+      i = end + 1;
+    } else {
+      // a start tag; quoted attribute values may contain '>'
+      uint j = i + 1;
+      QChar quote;
+      while ( j < n ) {
+        QChar c = text[ j ];
+        if ( !quote.isNull() ) {
+          if ( c == quote ) quote = QChar();
+        } else if ( c == '"' || c == '\'' ) {
+          quote = c;
+        } else if ( c == '>' ) {
+          break;
+        }
+        ++j;
+      }
+      if ( j >= n ) return false;
+      if ( text[ j - 1 ] != '/' && ++depth > maxXmlDepth )
+        return false;
+      i = j + 1;
+    }
   }
-  return false;
+  return true;
 }
 
 // Parses an OCS response; returns the <data> element.
 static bool parseOcsDocument( const QByteArray &data, QDomElement *dataElement,
                               int *total, QString *error )
 {
-  if ( hasMarkupDeclaration( data ) ) {
+  // Decode the bytes the way the XML reader does (UTF-8, or UTF-16 with a
+  // byte order mark, or the declared encoding), so that the checks see
+  // what the parser will see.
+  QByteArray copy( data );
+  copy.detach();
+  QBuffer buffer( copy );
+  buffer.open( IO_ReadOnly );
+  QXmlInputSource source( &buffer );
+  QString text = source.data();
+  if ( text.find( QChar( 0 ) ) >= 0 || !isAcceptableXml( text ) ) {
     *error = i18n( "The server sent an invalid response." );
     return false;
   }
@@ -114,7 +170,7 @@ static bool parseOcsDocument( const QByteArray &data, QDomElement *dataElement,
   QDomDocument doc;
   QString message;
   int line, column;
-  if ( !doc.setContent( data, false, &message, &line, &column ) ) {
+  if ( !doc.setContent( text, false, &message, &line, &column ) ) {
     kdDebug() << "OCS: parse error " << message << " at " << line << ":" << column << endl;
     *error = i18n( "The server sent an invalid response." );
     return false;
@@ -150,8 +206,26 @@ static bool pictureSize( const QByteArray &data, int *width, int *height )
   uint n = data.size();
 
   if ( n >= 24 && p[ 0 ] == 0x89 && p[ 1 ] == 'P' && p[ 2 ] == 'N' && p[ 3 ] == 'G' ) {
-    *width = ( p[ 16 ] << 24 ) | ( p[ 17 ] << 16 ) | ( p[ 18 ] << 8 ) | p[ 19 ];
-    *height = ( p[ 20 ] << 24 ) | ( p[ 21 ] << 16 ) | ( p[ 22 ] << 8 ) | p[ 23 ];
+    uint w = ( uint( p[ 16 ] ) << 24 ) | ( p[ 17 ] << 16 ) | ( p[ 18 ] << 8 ) | p[ 19 ];
+    uint h = ( uint( p[ 20 ] ) << 24 ) | ( p[ 21 ] << 16 ) | ( p[ 22 ] << 8 ) | p[ 23 ];
+    if ( w > 0x7fffffff || h > 0x7fffffff ) return false;
+    *width = w;
+    *height = h;
+    return true;
+  }
+
+  if ( n >= 26 && p[ 0 ] == 'B' && p[ 1 ] == 'M' ) {
+    uint headerSize = p[ 14 ] | ( p[ 15 ] << 8 ) | ( p[ 16 ] << 16 ) | ( uint( p[ 17 ] ) << 24 );
+    if ( headerSize == 12 ) {             // OS/2 BITMAPCOREHEADER
+      *width = p[ 18 ] | ( p[ 19 ] << 8 );
+      *height = p[ 20 ] | ( p[ 21 ] << 8 );
+      return true;
+    }
+    int w = int( p[ 18 ] | ( p[ 19 ] << 8 ) | ( p[ 20 ] << 16 ) | ( uint( p[ 21 ] ) << 24 ) );
+    int h = int( p[ 22 ] | ( p[ 23 ] << 8 ) | ( p[ 24 ] << 16 ) | ( uint( p[ 25 ] ) << 24 ) );
+    if ( h < 0 && h != INT_MIN ) h = -h;  // top-down bitmap
+    *width = w;
+    *height = h;
     return true;
   }
 
@@ -263,9 +337,13 @@ bool OcsClient::isAllowedUrl( const KURL &url ) const
 KIO::TransferJob *OcsClient::startJob( const KURL &url, bool reload )
 {
   KIO::TransferJob *job = KIO::get( url, reload, false );
-  // HTTP errors are errors, not data; anonymous: no cookies
+  // HTTP errors are errors, not data; anonymous: no cookies; a certificate
+  // that does not validate fails the job instead of asking the user
   job->addMetaData( "errorPage", "false" );
   job->addMetaData( "cookies", "none" );
+  job->addMetaData( "ssl_militant", "TRUE" );
+  connect( job, SIGNAL( redirection( KIO::Job *, const KURL & ) ),
+           SLOT( slotRedirection( KIO::Job *, const KURL & ) ) );
   connect( job, SIGNAL( data( KIO::Job *, const QByteArray & ) ),
            SLOT( slotData( KIO::Job *, const QByteArray & ) ) );
   connect( job, SIGNAL( result( KIO::Job * ) ),
@@ -380,6 +458,17 @@ void OcsClient::slotData( KIO::Job *job, const QByteArray &data )
   memcpy( r.data.data() + size, data.data(), data.size() );
 }
 
+void OcsClient::slotRedirection( KIO::Job *job, const KURL &url )
+{
+  QMap<KIO::Job *, Request>::Iterator it = mRequests.find( job );
+  if ( it == mRequests.end() || isAllowedUrl( url ) )
+    return;
+  Request r = it.data();
+  mRequests.remove( it );
+  job->kill( true );
+  failed( r, i18n( "The server redirected to a location that is not allowed." ) );
+}
+
 void OcsClient::slotResult( KIO::Job *job )
 {
   QMap<KIO::Job *, Request>::Iterator it = mRequests.find( job );
@@ -455,7 +544,9 @@ void OcsClient::finishList( const Request &r )
       list.append( c );
   }
 
-  emit contentsListed( r.sortMode, r.page, list, total < 0 ? 0 : total );
+  // a full page (counting the items left out) means there may be more
+  emit contentsListed( r.sortMode, r.page, list, total < 0 ? 0 : total,
+                       count >= pageSize() );
 }
 
 void OcsClient::finishDownload( const Request &r )
@@ -555,7 +646,8 @@ bool OcsClient::parseContent( const QDomElement &element, OcsContent &c ) const
 // ------------------------------------------------------------------
 
 // A plain file name: no directory separators, no control characters, no
-// leading dots (hidden files, "." and ".."), not too long.
+// leading dots (hidden files, "." and ".."), at most 200 bytes encoded
+// (file systems allow 255, and KSaveFile adds a suffix while writing).
 static QString safeFileName( const QString &name, const QString &fallback )
 {
   QString s = name;
@@ -567,34 +659,70 @@ static QString safeFileName( const QString &name, const QString &fallback )
   s = s.stripWhiteSpace();
   while ( s.startsWith( "." ) )
     s.remove( 0, 1 );
-  if ( s.length() > 120 ) {
+  if ( QFile::encodeName( s ).length() > 200 ) {
     int dot = s.findRev( '.' );
     QString ext = ( dot > 0 && s.length() - dot <= 10 ) ? s.mid( dot ) : QString::null;
-    s = s.left( 120 - ext.length() ) + ext;
+    QString base = s.left( s.length() - ext.length() );
+    while ( !base.isEmpty() && QFile::encodeName( base + ext ).length() > 200 )
+      base.truncate( base.length() - 1 );
+    s = base + ext;
   }
   if ( s.isEmpty() )
     s = fallback;
   return s;
 }
 
-// The picture format of a device, or 0. The SVG reader claims anything
-// gzip compressed; a compressed file is never taken for a picture here.
-static const char *pictureFormat( QIODevice *dev )
+// The picture formats that are installed: the common, well-kept decoders
+// only (kimgio also reads EPS through Ghostscript and many old formats).
+static const char * const installableFormats[] = { "JPEG", "PNG", "GIF", "BMP", 0 };
+
+// The format of a picture that may be installed, from its first bytes, or
+// 0. Its size must be known from its header and be sane.
+static const char *installableFormat( const QByteArray &head )
 {
-  char magic[ 2 ];
-  if ( dev->readBlock( magic, 2 ) != 2 || !dev->at( 0 ) )
+  QBuffer buffer( head );
+  buffer.open( IO_ReadOnly );
+  const char *format = QImageIO::imageFormat( &buffer );
+  if ( !format )
     return 0;
-  if ( uchar( magic[ 0 ] ) == 0x1f && uchar( magic[ 1 ] ) == 0x8b )
+  bool known = false;
+  for ( int i = 0; installableFormats[ i ]; ++i )
+    if ( qstrcmp( format, installableFormats[ i ] ) == 0 )
+      known = true;
+  if ( !known )
     return 0;
-  return QImageIO::imageFormat( dev );
+  int width = 0, height = 0;
+  if ( !pictureSize( head, &width, &height ) ||
+       width <= 0 || height <= 0 ||
+       width > maxPictureDimension || height > maxPictureDimension )
+    return 0;
+  return format;
 }
 
-static const char *pictureFormat( const QString &file )
+// The first bytes of a file: enough for any picture header (a JPEG's size
+// may follow its EXIF and colour profile segments).
+static const uint headSize = 512 * 1024;
+
+static QByteArray readHead( QIODevice *dev, uint size )
+{
+  QByteArray head( size );
+  uint got = 0;
+  while ( got < size ) {
+    Q_LONG n = dev->readBlock( head.data() + got, size - got );
+    if ( n <= 0 )
+      break;
+    got += n;
+  }
+  head.resize( got );
+  return head;
+}
+
+static const char *installableFormat( const QString &file )
 {
   QFile f( file );
   if ( !f.open( IO_ReadOnly ) )
     return 0;
-  return pictureFormat( &f );
+  return installableFormat( readHead( &f, headSize ) );
 }
 
 // The file name with an extension that matches the picture format.
@@ -604,10 +732,6 @@ static QString imageFileName( const QString &name, const char *format )
   QStringList exts;
   if ( fmt == "jpeg" )
     exts << "jpg" << "jpeg" << "jpe";
-  else if ( fmt == "tiff" )
-    exts << "tif" << "tiff";
-  else if ( fmt == "svg" )
-    exts << "svg" << "svgz";
   else
     exts << fmt;
 
@@ -618,18 +742,24 @@ static QString imageFileName( const QString &name, const char *format )
   return name + "." + exts.first();
 }
 
-// Copies a device into @p path (written to a temporary file next to it,
-// then renamed, so a link at the destination is replaced, not followed).
-static bool saveDevice( QIODevice *source, const QString &path, Q_ULLONG limit )
+// Copies @p head, then the rest of @p source, into @p path. KSaveFile
+// writes a temporary file next to it and renames it over @p path.
+static bool saveDevice( const QByteArray &head, QIODevice *source, const QString &path, Q_ULLONG limit )
 {
   KSaveFile out( path, 0644 );
   if ( out.status() != 0 || !out.file() )
     return false;
 
+  Q_ULLONG total = head.size();
+  if ( total > limit ||
+       ( head.size() && out.file()->writeBlock( head.data(), head.size() ) != (Q_LONG)head.size() ) ) {
+    out.abort();
+    return false;
+  }
+
   char buffer[ 65536 ];
-  Q_ULLONG total = 0;
   for ( ;; ) {
-    Q_LONG n = source->readBlock( buffer, sizeof( buffer ) );
+    Q_LONG n = source ? source->readBlock( buffer, sizeof( buffer ) ) : 0;
     if ( n < 0 ) {
       out.abort();
       return false;
@@ -664,6 +794,13 @@ static void writeWallpaperDesktop( const QString &imagePath, const QString &capt
   cfg.sync();
 }
 
+// Whether a path exists, also as a dangling symbolic link.
+static bool pathExists( const QString &path )
+{
+  struct stat st;
+  return lstat( QFile::encodeName( path ), &st ) == 0;
+}
+
 QString OcsInstaller::targetDirectory( bool *wallpaper )
 {
   *wallpaper = false;
@@ -696,11 +833,13 @@ namespace {
 
 struct Extraction
 {
-  QString dir;
+  QString dir;          // where the pictures go
+  QString prefix;       // prepended to their names
   bool zip;
   QStringList *installed;
+  QStringList created;  // files that did not exist before
   QStringList usedNames;
-  Q_ULLONG total;
+  Q_ULLONG total;       // bytes decompressed, pictures or not
   int entries;
   QString error;
 };
@@ -746,38 +885,25 @@ static void extractImages( const KArchiveDirectory *dir, int depth, Extraction &
     if ( !dev )
       continue;
 
-    QByteArray data;
-    bool ok = true;
-    char chunk[ 65536 ];
-    for ( ;; ) {
-      Q_LONG n = dev->readBlock( chunk, sizeof( chunk ) );
-      if ( n < 0 ) { ok = false; break; }
-      if ( n == 0 ) break;
-      uint size = data.size();
-      if ( Q_ULLONG( size ) + n > maxExtractedFile ) { ok = false; break; }
-      data.resize( size + n );
-      memcpy( data.data() + size, chunk, n );
-    }
-    delete dev;
-    if ( !ok )
+    // Only the header is read to tell a picture: the rest of other files
+    // is never decompressed.
+    QByteArray head = readHead( dev, headSize );
+    x.total += head.size();
+    const char *format = x.total <= maxExtractedTotal ? installableFormat( head ) : 0;
+    if ( !format ) {
+      delete dev;
+      if ( x.total > maxExtractedTotal )
+        x.error = i18n( "The archive is too large." );
       continue;
-
-    QBuffer buffer( data );
-    buffer.open( IO_ReadOnly );
-    const char *format = pictureFormat( &buffer );
-    if ( !format )
-      continue;
-
-    if ( x.total + data.size() > maxExtractedTotal ) {
-      x.error = i18n( "The archive is too large." );
-      return;
     }
+
     if ( x.installed->count() >= uint( maxArchiveImages ) ) {
-      x.error = i18n( "The archive has too many images." );
+      delete dev;
+      x.error = i18n( "The archive has too many pictures." );
       return;
     }
 
-    QString name = imageFileName( safeFileName( *it, "image" ), format );
+    QString name = imageFileName( safeFileName( x.prefix + *it, "image" ), format );
     if ( x.usedNames.contains( name.lower() ) ) {
       int dot = name.findRev( '.' );
       QString base = name.left( dot ), ext = name.mid( dot );
@@ -787,18 +913,23 @@ static void extractImages( const KArchiveDirectory *dir, int depth, Extraction &
     x.usedNames.append( name.lower() );
 
     QString path = x.dir + name;
-    buffer.at( 0 );
-    if ( !saveDevice( &buffer, path, maxExtractedFile ) ) {
-      x.error = i18n( "Could not write the file '%1'." ).arg( path );
+    bool existed = pathExists( path );
+    Q_ULLONG limit = QMIN( maxExtractedFile, maxExtractedTotal - ( x.total - head.size() ) );
+    bool ok = saveDevice( head, dev, path, limit );
+    delete dev;
+    if ( !ok ) {
+      x.error = i18n( "Could not write the file '%1', or the archive is too large." ).arg( path );
       return;
     }
-    x.total += data.size();
+    x.total += QFileInfo( path ).size() - head.size();
+    if ( !existed )
+      x.created.append( path );
     x.installed->append( path );
   }
 }
 
 // Decompresses a gzip or bzip2 file into @p out.
-static bool decompress( const QString &file, const QString &mimeType, KTempFile &out )
+static bool decompress( const QString &file, const QString &mimeType, KTempFile &out, Q_ULLONG limit )
 {
   QIODevice *dev = KFilterDev::deviceForFile( file, mimeType, true );
   if ( !dev )
@@ -816,7 +947,7 @@ static bool decompress( const QString &file, const QString &mimeType, KTempFile 
     if ( n < 0 ) { ok = false; break; }
     if ( n == 0 ) break;
     total += n;
-    if ( total > maxExtractedTotal || f->writeBlock( chunk, n ) != n )
+    if ( total > limit || f->writeBlock( chunk, n ) != n )
       ok = false;
   }
   delete dev;
@@ -834,6 +965,53 @@ static bool isTar( const QString &file )
   return qstrncmp( header + 257, "ustar", 5 ) == 0;
 }
 
+// An upper bound of the entries KTar or KZip would create for @p file,
+// counted before the archive is opened (opening builds every entry):
+// tar headers have a valid checksum, zip entries start with a local
+// header signature. Stops counting past @p limit.
+static int countArchiveEntries( const QString &file, bool zip, int limit )
+{
+  QFile f( file );
+  if ( !f.open( IO_ReadOnly ) )
+    return limit + 1;
+
+  int count = 0;
+  char block[ 512 ];
+  if ( zip ) {
+    // a signature may straddle two reads: keep the last 3 bytes
+    char buffer[ 65536 + 3 ];
+    uint kept = 0;
+    for ( ;; ) {
+      Q_LONG n = f.readBlock( buffer + kept, 65536 );
+      if ( n <= 0 )
+        break;
+      uint size = kept + n;
+      for ( uint i = 0; i + 3 < size; ++i )
+        if ( buffer[ i ] == 'P' && buffer[ i + 1 ] == 'K' && buffer[ i + 2 ] == 3 && buffer[ i + 3 ] == 4 )
+          if ( ++count > limit )
+            return count;
+      kept = QMIN( size, 3u );
+      memmove( buffer, buffer + size - kept, kept );
+    }
+    return count;
+  }
+
+  while ( f.readBlock( block, sizeof( block ) ) == 512 ) {
+    // the checksum as KTar computes it: the field itself counts as spaces
+    int check = 0;
+    for ( int i = 0; i < 512; ++i )
+      check += ( i >= 148 && i < 156 ) ? ' ' : uchar( block[ i ] );
+    char field[ 9 ];
+    memcpy( field, block + 148, 8 );
+    field[ 8 ] = 0;
+    char *end;
+    long stored = strtol( field, &end, 8 );
+    if ( end != field && stored == check && ++count > limit )
+      return count;
+  }
+  return count;
+}
+
 static QString installImage( const QString &file, const char *format, const QString &dir,
                              bool wallpaper, const OcsContent &content,
                              const OcsDownload &download, QWidget *parent,
@@ -842,7 +1020,7 @@ static QString installImage( const QString &file, const char *format, const QStr
   QString name = imageFileName( safeFileName( download.name, "ocs-" + content.id ), format );
   QString path = dir + name;
 
-  if ( QFileInfo( path ).exists() ) {
+  if ( pathExists( path ) ) {
     int result = KMessageBox::warningContinueCancel( parent,
         "<qt>" + i18n( "The file '%1' already exists. Do you want to overwrite it?" ).arg( QStyleSheet::escape( path ) ) + "</qt>",
         QString::null, i18n( "Overwrite" ) );
@@ -851,7 +1029,8 @@ static QString installImage( const QString &file, const char *format, const QStr
   }
 
   QFile source( file );
-  if ( !source.open( IO_ReadOnly ) || !saveDevice( &source, path, OcsInstaller::maxDownloadSize ) )
+  if ( !source.open( IO_ReadOnly ) ||
+       !saveDevice( QByteArray(), &source, path, OcsInstaller::maxDownloadSize ) )
     return i18n( "Could not write the file '%1'." ).arg( path );
 
   installed->append( path );
@@ -870,9 +1049,8 @@ QString OcsInstaller::install( const QString &file, const QString &dir, bool wal
   if ( !target.endsWith( "/" ) )
     target += '/';
 
-  // An archive (checked first: the SVG reader claims any gzip file), or else
-  // a picture
-  const char *format = 0;
+  // The type is told from the content, not from the name. Archives are
+  // checked first: the SVG reader claims any gzip file.
   QFile f( file );
   if ( !f.open( IO_ReadOnly ) )
     return i18n( "Could not read the downloaded file." );
@@ -881,26 +1059,25 @@ QString OcsInstaller::install( const QString &file, const QString &dir, bool wal
   f.close();
   if ( n < 6 )
     return i18n( "The downloaded file is neither a picture nor a supported archive." );
-  // the name of the downloaded file is not trusted for the type
 
   KTempFile plain( locateLocal( "tmp", "knewstuff-ocs-" ), ".tar" );
   plain.setAutoDelete( true );
 
-  KArchive *archive = 0;
+  QString archiveFile;
   bool zip = false;
   if ( magic[ 0 ] == 'P' && magic[ 1 ] == 'K' && magic[ 2 ] == 3 && magic[ 3 ] == 4 ) {
-    archive = new KZip( file );
+    archiveFile = file;
     zip = true;
   } else if ( ( magic[ 0 ] == 0x1f && magic[ 1 ] == 0x8b ) ||
               ( magic[ 0 ] == 'B' && magic[ 1 ] == 'Z' && magic[ 2 ] == 'h' ) ) {
     QString mime = magic[ 0 ] == 0x1f ? "application/x-gzip" : "application/x-bzip2";
-    if ( !decompress( file, mime, plain ) )
+    if ( !decompress( file, mime, plain, maxExtractedTotal ) )
       return i18n( "The downloaded archive is damaged or too large." );
     if ( isTar( plain.name() ) ) {
-      archive = new KTar( plain.name(), "application/x-tar" );
+      archiveFile = plain.name();
     } else {
-      // a single compressed picture (or an SVGZ)
-      format = pictureFormat( plain.name() );
+      // a single compressed picture
+      const char *format = installableFormat( plain.name() );
       if ( !format )
         return i18n( "The downloaded file is neither a picture nor a supported archive." );
       OcsDownload d = download;
@@ -908,47 +1085,64 @@ QString OcsInstaller::install( const QString &file, const QString &dir, bool wal
       return installImage( plain.name(), format, target, wallpaper, content, d, parent, installed );
     }
   } else if ( isTar( file ) ) {
-    archive = new KTar( file, "application/x-tar" );
+    archiveFile = file;
   } else if ( magic[ 0 ] == 0xfd && magic[ 1 ] == '7' && magic[ 2 ] == 'z' &&
               magic[ 3 ] == 'X' && magic[ 4 ] == 'Z' && magic[ 5 ] == 0 ) {
     return i18n( "Archives compressed with XZ are not supported. "
                  "If the item offers other files, please choose one of those." );
   } else {
-    format = pictureFormat( file );
+    const char *format = installableFormat( file );
     if ( format )
       return installImage( file, format, target, wallpaper, content, download, parent, installed );
-    return i18n( "The downloaded file is neither a picture nor a supported archive." );
+    return i18n( "The downloaded file is neither a picture in a supported format "
+                 "(JPEG, PNG, GIF, BMP) nor a supported archive." );
   }
 
+  if ( countArchiveEntries( archiveFile, zip, maxArchiveEntries ) > maxArchiveEntries )
+    return i18n( "The archive has too many entries." );
+
+  KArchive *archive = zip ? static_cast<KArchive *>( new KZip( archiveFile ) )
+                          : static_cast<KArchive *>( new KTar( archiveFile, "application/x-tar" ) );
   if ( !archive->open( IO_ReadOnly ) || !archive->directory() ) {
     delete archive;
     return i18n( "The downloaded archive is damaged." );
   }
 
-  QString folder = target + safeFileName( content.name, "ocs-" + content.id ) + "/";
+  // Wallpapers go next to the others, named after the item (the
+  // background module does not look into folders); other content goes
+  // into a folder named after the item.
+  QString itemName = safeFileName( content.name, "ocs-" + content.id );
+  QString folder = target;
+  QString prefix;
   bool created = false;
-  if ( QFileInfo( folder ).exists() ) {
-    int result = KMessageBox::warningContinueCancel( parent,
-        "<qt>" + i18n( "The folder '%1' already exists. Do you want to overwrite the files in it?" ).arg( QStyleSheet::escape( folder ) ) + "</qt>",
-        QString::null, i18n( "Overwrite" ) );
-    if ( result == KMessageBox::Cancel ) {
-      delete archive;
-      return QString::null;
-    }
-    if ( !QFileInfo( folder ).isDir() ) {
-      delete archive;
-      return i18n( "Could not write the file '%1'." ).arg( folder );
-    }
+  if ( wallpaper ) {
+    prefix = itemName + " - ";
   } else {
-    if ( !QDir().mkdir( folder ) ) {
-      delete archive;
-      return i18n( "Could not create the folder '%1'." ).arg( folder );
+    folder = target + itemName + "/";
+    if ( pathExists( folder ) ) {
+      int result = KMessageBox::warningContinueCancel( parent,
+          "<qt>" + i18n( "The folder '%1' already exists. Do you want to overwrite the files in it?" ).arg( QStyleSheet::escape( folder ) ) + "</qt>",
+          QString::null, i18n( "Overwrite" ) );
+      if ( result == KMessageBox::Cancel ) {
+        delete archive;
+        return QString::null;
+      }
+      if ( !QFileInfo( folder ).isDir() ) {
+        delete archive;
+        return i18n( "Could not write the file '%1'." ).arg( folder );
+      }
+    } else {
+      if ( !QDir().mkdir( folder ) ) {
+        delete archive;
+        return i18n( "Could not create the folder '%1'." ).arg( folder );
+      }
+      created = true;
     }
-    created = true;
   }
 
   Extraction x;
   x.dir = folder;
+  x.prefix = prefix;
   x.zip = zip;
   x.installed = installed;
   x.total = 0;
@@ -958,10 +1152,11 @@ QString OcsInstaller::install( const QString &file, const QString &dir, bool wal
   delete archive;
 
   if ( x.error.isEmpty() && installed->isEmpty() )
-    x.error = i18n( "The archive does not contain any pictures." );
+    x.error = i18n( "The archive does not contain any pictures in a supported format (JPEG, PNG, GIF, BMP)." );
 
   if ( !x.error.isEmpty() ) {
-    for ( QStringList::ConstIterator it = installed->begin(); it != installed->end(); ++it )
+    // only what this installation created; overwritten files stay
+    for ( QStringList::ConstIterator it = x.created.begin(); it != x.created.end(); ++it )
       QFile::remove( *it );
     installed->clear();
     if ( created )
@@ -973,7 +1168,7 @@ QString OcsInstaller::install( const QString &file, const QString &dir, bool wal
     for ( QStringList::ConstIterator it = installed->begin(); it != installed->end(); ++it ) {
       QString caption = content.name;
       if ( installed->count() > 1 ) {
-        QString base = QFileInfo( *it ).baseName( true );
+        QString base = QFileInfo( *it ).baseName( true ).mid( prefix.length() );
         base.replace( '_', ' ' );
         caption += " - " + base;
       }
