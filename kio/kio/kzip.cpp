@@ -476,7 +476,11 @@ kdDebug(7040) << "dev->at() now : " << dev->at() << endl;
 	    kdDebug(7040) << "extralen: " << extralen << endl;
 	    kdDebug(7040) << "archive size: " << dev->size() << endl;
 
-	    // read filename
+	    // read filename (bounded: it is a path, and its depth is not)
+	    if ( namelen > max_path_len ) {
+                kdWarning(7040) << "Invalid ZIP file. Name too long" << endl;
+		return false;
+	    }
 	    QCString filename(namelen + 1);
 	    n = dev->readBlock(filename.data(), namelen);
             if ( n < namelen ) {
@@ -668,6 +672,11 @@ kdDebug(7040) << "dev->at() now : " << dev->at() << endl;
             //kdDebug() << "general purpose flag=" << gpf << endl;
             // length of the filename (well, pathname indeed)
             int namelen = (uchar)buffer[29] << 8 | (uchar)buffer[28];
+            if ( namelen > max_path_len )
+            {
+                kdWarning(7040) << "Invalid ZIP file. Name too long" << endl;
+                return false;
+            }
             QCString bufferName( namelen + 1 );
             n = dev->readBlock( bufferName.data(), namelen );
             if ( n < namelen )

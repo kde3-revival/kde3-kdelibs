@@ -54,7 +54,13 @@ class KArchive::KArchivePrivate
 public:
     KArchiveDirectory* rootDir;
     bool closeSucceeded;
+    // directories created by findOrCreate() for the current root dir
+    int implicitDirs;
 };
+
+// The most directories findOrCreate() creates in one archive: the paths
+// come from the archive, and each component would be an object.
+static const int maxImplicitDirs = 100000;
 
 class PosSortedPtrList : public QPtrList<KArchiveFile> {
 protected:
@@ -76,6 +82,7 @@ KArchive::KArchive( QIODevice * dev )
 {
     d = new KArchivePrivate;
     d->rootDir = 0;
+    d->implicitDirs = 0;
     m_dev = dev;
     m_open = false;
 }
@@ -376,6 +383,7 @@ KArchiveDirectory * KArchive::rootDir()
         QString groupname = grp ? QFile::decodeName(grp->gr_name) : QString::number( getgid() );
 
         d->rootDir = new KArchiveDirectory( this, QString::fromLatin1("/"), (int)(0777 + S_IFDIR), 0, username, groupname, QString::null );
+        d->implicitDirs = 0;
     }
     return d->rootDir;
 }
@@ -405,29 +413,47 @@ KArchiveDirectory * KArchive::findOrCreate( const QString & path )
             kdWarning() << "Found " << path << " but it's not a directory" << endl;
     }
 
-    // Otherwise go up and try again
-    int pos = path.findRev( '/' );
-    KArchiveDirectory * parent;
-    QString dirname;
-    if ( pos == -1 ) // no more slash => create in root dir
+    // Otherwise walk down from the root dir, creating the missing pieces.
+    // Iteratively: the depth of a path read from an archive is not bounded
+    // (a recursion per path component, each keeping a copy of the path,
+    // let a small archive exhaust the memory).
+    KArchiveDirectory * parent = rootDir();
+    const int length = path.length();
+    int start = 0;
+    while ( start < length )
     {
-        parent =  rootDir();
-        dirname = path;
-    }
-    else
-    {
-        QString left = path.left( pos );
-        dirname = path.mid( pos + 1 );
-        parent = findOrCreate( left ); // recursive call... until we find an existing dir.
-    }
+        int end = path.find( '/', start );
+        if ( end == -1 )
+            end = length;
+        QString dirname = path.mid( start, end - start );
+        start = end + 1;
+        if ( dirname.isEmpty() || dirname == "." ) // "a//b", "/a", "./a"
+            continue;
 
-    //kdDebug() << "KTar : found parent " << parent->name() << " adding " << dirname << " to ensure " << path << endl;
-    // Found -> add the missing piece
-    KArchiveDirectory * e = new KArchiveDirectory( this, dirname, d->rootDir->permissions(),
-                                                   d->rootDir->date(), d->rootDir->user(),
-                                                   d->rootDir->group(), QString::null );
-    parent->addEntry( e );
-    return e; // now a directory to <path> exists
+        KArchiveEntry* child = parent->entry( dirname );
+        if ( child && child->isDirectory() )
+        {
+            parent = (KArchiveDirectory *) child;
+            continue;
+        }
+        if ( child )
+            kdWarning() << "Found " << dirname << " in " << path << " but it's not a directory" << endl;
+        if ( d->implicitDirs >= maxImplicitDirs )
+        {
+            kdWarning() << "KArchive::findOrCreate: too many directories, " << path << " is put into " << parent->name() << endl;
+            break;
+        }
+        d->implicitDirs++;
+
+        //kdDebug() << "KTar : found parent " << parent->name() << " adding " << dirname << " to ensure " << path << endl;
+        // add the missing piece
+        KArchiveDirectory * e = new KArchiveDirectory( this, dirname, d->rootDir->permissions(),
+                                                       d->rootDir->date(), d->rootDir->user(),
+                                                       d->rootDir->group(), QString::null );
+        parent->addEntry( e );
+        parent = e;
+    }
+    return parent; // now a directory to <path> exists
 }
 
 void KArchive::setDevice( QIODevice * dev )
@@ -439,6 +465,7 @@ void KArchive::setRootDir( KArchiveDirectory *rootDir )
 {
     Q_ASSERT( !d->rootDir ); // Call setRootDir only once during parsing please ;)
     d->rootDir = rootDir;
+    d->implicitDirs = 0;
 }
 
 ////////////////////////////////////////////////////////////////////////

@@ -208,6 +208,9 @@ Q_LONG KTar::readRawHeader(char *buffer) {
   return n;
 }
 
+// The longest path name accepted from an archive (PATH_MAX)
+static const int maxNameLength = 4096;
+
 bool KTar::readLonglink(char *buffer,QCString &longlink) {
   Q_LONG n = 0;
   QIODevice *dev = device();
@@ -218,6 +221,10 @@ bool KTar::readLonglink(char *buffer,QCString &longlink) {
   const char* p = buffer + 0x7c;
   while( *p == ' ' ) ++p;
   int size = (int)strtol( p, &dummy, 8 );
+
+  // a path name: bound it (and the directory depth it can create)
+  if ( size <= 0 || size > maxNameLength + 1 )
+    return false;
 
   longlink.resize(size);
   size--;	// ignore trailing null
@@ -249,7 +256,7 @@ Q_LONG KTar::readHeader(char *buffer,QString &name,QString &symlink) {
     if (strcmp(buffer,"././@LongLink") == 0) {
       char typeflag = buffer[0x9c];
       QCString longlink;
-      readLonglink(buffer,longlink);
+      if (!readLonglink(buffer,longlink)) return -1;
       switch (typeflag) {
         case 'L': name = QFile::decodeName(longlink); break;
         case 'K': symlink = QFile::decodeName(longlink); break;
