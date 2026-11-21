@@ -33,6 +33,7 @@
 
 #include <stdio.h>
 #include <unistd.h>
+#include <dlfcn.h>
 #include "kopenssl.h"
 
 // OPENSSL_SHLIB_VERSION is a plain number (e.g. 3), unlike the old
@@ -404,6 +405,37 @@ KConfig *cfg;
 #endif
 
 #ifdef KOSSL_LOAD_PAIRS
+   // The fixed directories above are /usr/lib KDELIBSUFF and the like,
+   // but KDELIBSUFF is the layout of the KDE prefix (e.g. empty for
+   // /opt/kde3/lib), not of the system: OpenSSL may well be in
+   // /usr/lib64 or a multiarch directory (/usr/lib/x86_64-linux-gnu)
+   // none of them names.  Ask the dynamic linker where it finds each
+   // libcrypto (LD_LIBRARY_PATH, ld.so.cache, its default directories)
+   // and search those directories first, after the configured one.
+   {
+      QStringList::Iterator pos = libpaths.begin();
+      if (!upath.isEmpty())
+         ++pos;
+      QStringList found;
+      for (uint i = 0; i < libnamesc.count(); i++) {
+         void *h = dlopen(QFile::encodeName(libnamesc[i]), RTLD_LAZY | RTLD_LOCAL);
+         if (!h)
+            continue;
+         void *sym = dlsym(h, "CRYPTO_free");
+         Dl_info info;
+         if (sym && dladdr(sym, &info) && info.dli_fname &&
+             info.dli_fname[0] == '/') {
+            QString dir = QFile::decodeName(info.dli_fname);
+            dir.truncate(dir.findRev('/') + 1);
+            if (!found.contains(dir)) {
+               found << dir;
+               libpaths.insert(pos, dir);
+            }
+         }
+         dlclose(h);
+      }
+   }
+
    // libssl and libcrypto of different OpenSSL versions (e.g. libssl.so.4
    // and libcrypto.so.3 when only one of the two exists in a directory)
    // must not be mixed: the functions are resolved separately in each.
