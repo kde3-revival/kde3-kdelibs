@@ -31,9 +31,7 @@
 #endif
 
 struct ZSTD_DCtx_s;
-#ifdef HAVE_LIBBROTLIDEC
 struct BrotliDecoderStateStruct;
-#endif
 
 #include <qobject.h>
 #include <kmdcodec.h>
@@ -138,11 +136,13 @@ private:
     ZSTD_DCtx_s *dctx;
     bool bFrameDone : 1;  // a frame ended and no other one has started yet
     bool bFinished : 1;   // end of data or error
+    bool bGotInput : 1;   // any data at all
 };
 
-#ifdef HAVE_LIBBROTLIDEC
+// Declared also without libbrotlidec: moc does not see the #ifdefs.
 /**
- * Decodes the "br" (Brotli, RFC 7932) content encoding.
+ * Decodes the "br" (Brotli, RFC 7932) content encoding (without
+ * libbrotlidec it fails with an error).
  */
 class HTTPFilterBrotli : public HTTPFilterBase
 {
@@ -158,7 +158,7 @@ private:
     BrotliDecoderStateStruct *state;
     bool bDone : 1;      // the Brotli stream ended
     bool bFinished : 1;  // end of data or error
+    bool bGotInput : 1;  // any data at all
 };
-#endif
 
 #endif

@@ -379,7 +379,7 @@ HTTPFilterDeflate::HTTPFilterDeflate()
 static const int s_zstdWindowLogMax = 23;
 
 HTTPFilterZstd::HTTPFilterZstd()
- : bFrameDone(false), bFinished(false)
+ : bFrameDone(false), bFinished(false), bGotInput(false)
 {
   dctx = ZSTD_createDCtx();
   if (dctx && ZSTD_isError(ZSTD_DCtx_setParameter(dctx, ZSTD_d_windowLogMax, s_zstdWindowLogMax)))
@@ -401,14 +401,15 @@ HTTPFilterZstd::slotInput(const QByteArray &d)
      return;
   if (d.size() == 0)
   {
-     // End of data
+     // End of data; an empty body is fine
      bFinished = true;
-     if (bFrameDone)
+     if (bFrameDone || !bGotInput)
         emit output(QByteArray());
      else
         emit error( KIO::ERR_SLAVE_DEFINED, i18n("Unexpected end of data, some information may be lost."));
      return;
   }
+  bGotInput = true;
   if (!dctx)
   {
      bFinished = true;
@@ -444,19 +445,34 @@ HTTPFilterZstd::slotInput(const QByteArray &d)
   }
 }
 
-#ifdef HAVE_LIBBROTLIDEC
 HTTPFilterBrotli::HTTPFilterBrotli()
- : bDone(false), bFinished(false)
+ : state(0), bDone(false), bFinished(false), bGotInput(false)
 {
+#ifdef HAVE_LIBBROTLIDEC
   // The default (no large window) limits the window to 16 MiB
   state = BrotliDecoderCreateInstance(0, 0, 0);
+#endif
 }
 
 HTTPFilterBrotli::~HTTPFilterBrotli()
 {
+#ifdef HAVE_LIBBROTLIDEC
   if (state)
      BrotliDecoderDestroyInstance(state);
+#endif
 }
+
+#ifndef HAVE_LIBBROTLIDEC
+void
+HTTPFilterBrotli::slotInput(const QByteArray &)
+{
+  // kio_http neither asks for nor accepts "br" without libbrotlidec
+  if (bFinished)
+     return;
+  bFinished = true;
+  emit error( KIO::ERR_SLAVE_DEFINED, i18n("Receiving corrupt data."));
+}
+#else
 
 void
 HTTPFilterBrotli::slotInput(const QByteArray &d)
@@ -465,14 +481,15 @@ HTTPFilterBrotli::slotInput(const QByteArray &d)
      return;
   if (d.size() == 0)
   {
-     // End of data
+     // End of data; an empty body is fine
      bFinished = true;
-     if (bDone)
+     if (bDone || !bGotInput)
         emit output(QByteArray());
      else
         emit error( KIO::ERR_SLAVE_DEFINED, i18n("Unexpected end of data, some information may be lost."));
      return;
   }
+  bGotInput = true;
   if (bDone)
   {
      // Data after the end of the Brotli stream

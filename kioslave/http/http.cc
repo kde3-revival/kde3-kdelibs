@@ -4557,6 +4557,10 @@ bool HTTPProtocol::readBody( bool dataInternal /* = false */ )
     }
   }
   chain.slotInput(QByteArray()); // Flush chain.
+  // A filter may find the data incomplete or corrupt only now; error()
+  // was sent then, so no data end and no finished() must follow
+  if (m_bError)
+    return false;
 
   if ( useMD5 )
   {
