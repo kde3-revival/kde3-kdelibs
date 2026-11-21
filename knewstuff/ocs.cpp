@@ -27,6 +27,7 @@
 #include <sys/stat.h>
 
 #include <qbuffer.h>
+#include <qtimer.h>
 #include <qxml.h>
 #include <qdir.h>
 #include <qfile.h>
@@ -46,6 +47,7 @@
 #include <ksavefile.h>
 #include <ksimpleconfig.h>
 #include <kstandarddirs.h>
+#include <kstaticdeleter.h>
 #include <ktar.h>
 #include <ktempfile.h>
 #include <kzip.h>
@@ -58,8 +60,8 @@ static const uint maxDownloadResponse = 256 * 1024;
 static const uint maxPreviewResponse = 4 * 1024 * 1024;
 // Largest accepted preview picture
 static const int maxPreviewDimension = 4096;
-// Concurrent preview downloads
-static const int maxPreviewJobs = 3;
+// Concurrent preview downloads, of all clients and sources together
+static const int maxPreviewJobs = 4;
 
 const Q_ULLONG OcsInstaller::maxDownloadSize = Q_ULLONG( 512 ) * 1024 * 1024;
 static const Q_ULLONG maxExtractedFile = Q_ULLONG( 128 ) * 1024 * 1024;
@@ -456,6 +458,49 @@ static QString licenseFromTags( const QString &tags )
 }
 
 // ------------------------------------------------------------------
+// PreviewSlots
+// ------------------------------------------------------------------
+
+static PreviewSlots *s_previewSlots = 0;
+static KStaticDeleter<PreviewSlots> s_previewSlotsDeleter;
+
+PreviewSlots *PreviewSlots::self()
+{
+  if ( !s_previewSlots )
+    s_previewSlotsDeleter.setObject( s_previewSlots, new PreviewSlots );
+  return s_previewSlots;
+}
+
+PreviewSlots::PreviewSlots()
+  : QObject( 0, "KNS::PreviewSlots" ), mRunning( 0 ), mPending( false )
+{
+}
+
+bool PreviewSlots::take()
+{
+  if ( mRunning >= maxPreviewJobs )
+    return false;
+  ++mRunning;
+  return true;
+}
+
+void PreviewSlots::release()
+{
+  if ( mRunning > 0 )
+    --mRunning;
+  if ( !mPending ) {
+    mPending = true;
+    QTimer::singleShot( 0, this, SLOT( slotReleased() ) );
+  }
+}
+
+void PreviewSlots::slotReleased()
+{
+  mPending = false;
+  emit released();
+}
+
+// ------------------------------------------------------------------
 // OcsClient
 // ------------------------------------------------------------------
 
@@ -463,6 +508,10 @@ OcsClient::OcsClient( const KURL &base, const QString &categories, QObject *pare
   : QObject( parent ), mBase( base ), mPreviewsRunning( 0 )
 {
   mBase.adjustPath( +1 );
+  mWatchdog = new QTimer( this );
+  connect( mWatchdog, SIGNAL( timeout() ), SLOT( slotWatchdog() ) );
+  mClock.start();
+  connect( PreviewSlots::self(), SIGNAL( released() ), SLOT( slotStartPreviews() ) );
 
   // Category ids, separated by commas, spaces or 'x' (the OCS separator)
   QStringList ids;
@@ -476,9 +525,17 @@ OcsClient::OcsClient( const KURL &base, const QString &categories, QObject *pare
 
 OcsClient::~OcsClient()
 {
+  // nothing more is started for this client; its preview slots are given
+  // back to the others
+  disconnect( PreviewSlots::self(), 0, this, 0 );
+  mPreviewQueue.clear();
+  QMap<KIO::Job *, Request> requests = mRequests;
+  mRequests.clear();
   QMap<KIO::Job *, Request>::Iterator it;
-  for ( it = mRequests.begin(); it != mRequests.end(); ++it )
+  for ( it = requests.begin(); it != requests.end(); ++it )
     it.key()->kill( true );
+  for ( ; mPreviewsRunning > 0; --mPreviewsRunning )
+    PreviewSlots::self()->release();
 }
 
 int OcsClient::pageSize()
@@ -550,7 +607,49 @@ void OcsClient::listContents( int sortMode, int page )
   r.number = 0;
   r.key = 0;
   r.tooLarge = false;
-  mRequests.insert( startJob( url, true ), r );
+  addRequest( startJob( url, true ), r );
+}
+
+void OcsClient::addRequest( KIO::TransferJob *job, Request &r )
+{
+  r.active = mClock.elapsed();
+  mRequests.insert( job, r );
+  if ( !mWatchdog->isActive() )
+    mWatchdog->start( 5000 );
+}
+
+// Cancels the requests that got no data for requestTimeout seconds.
+void OcsClient::slotWatchdog()
+{
+  int now = mClock.elapsed();
+  QMap<KIO::Job *, Request>::Iterator it = mRequests.begin();
+  while ( it != mRequests.end() ) {
+    if ( now - it.data().active < requestTimeout * 1000 && now >= it.data().active ) {
+      ++it;
+      continue;
+    }
+    KIO::Job *job = it.key();
+    Request r = it.data();
+    mRequests.remove( it );
+    job->kill( true );
+    failed( r, i18n( "The server did not answer in time." ) );
+    it = mRequests.begin();         // failed() may have started others
+  }
+  if ( mRequests.isEmpty() )
+    mWatchdog->stop();
+}
+
+void OcsClient::cancelDownload()
+{
+  QMap<KIO::Job *, Request>::Iterator it = mRequests.begin();
+  while ( it != mRequests.end() ) {
+    if ( it.data().kind == Download ) {
+      it.key()->kill( true );
+      mRequests.remove( it );
+      it = mRequests.begin();
+    } else
+      ++it;
+  }
 }
 
 void OcsClient::resolveDownload( const QString &id, int number )
@@ -571,21 +670,28 @@ void OcsClient::resolveDownload( const QString &id, int number )
 
   KURL url( mBase );
   url.addPath( QString( "content/download/%1/%2" ).arg( id ).arg( number ) );
-  mRequests.insert( startJob( url, true ), r );
+  addRequest( startJob( url, true ), r );
 }
 
 void OcsClient::fetchPreview( const KURL &url, int key )
 {
   if ( !isAllowedUrl( url ) )
     return;
-  mPreviewQueue.append( qMakePair( url, key ) );
-  startPreviews();
+  QMap<QString, QValueList<int> >::Iterator it = mPreviewKeys.find( url.url() );
+  if ( it != mPreviewKeys.end() ) {
+    // queued or loading already
+    it.data().append( key );
+    return;
+  }
+  mPreviewKeys[ url.url() ].append( key );
+  mPreviewQueue.append( url );
+  slotStartPreviews();
 }
 
-void OcsClient::startPreviews()
+void OcsClient::slotStartPreviews()
 {
-  while ( mPreviewsRunning < maxPreviewJobs && !mPreviewQueue.isEmpty() ) {
-    QPair<KURL, int> next = mPreviewQueue.first();
+  while ( !mPreviewQueue.isEmpty() && PreviewSlots::self()->take() ) {
+    KURL url = mPreviewQueue.first();
     mPreviewQueue.remove( mPreviewQueue.begin() );
 
     Request r;
@@ -593,11 +699,24 @@ void OcsClient::startPreviews()
     r.sortMode = 0;
     r.page = 0;
     r.number = 0;
-    r.key = next.second;
+    r.key = 0;
     r.tooLarge = false;
-    mRequests.insert( startJob( next.first, false ), r );
+    r.url = url;
     ++mPreviewsRunning;
+    addRequest( startJob( url, false ), r );
   }
+}
+
+// A preview ended, loaded or not: its slot is given back.
+void OcsClient::previewDone( const Request &r, const QImage &image )
+{
+  QValueList<int> keys = mPreviewKeys[ r.url.url() ];
+  mPreviewKeys.remove( r.url.url() );
+  if ( !image.isNull() )
+    for ( QValueList<int>::ConstIterator it = keys.begin(); it != keys.end(); ++it )
+      emit previewLoaded( *it, image );
+  --mPreviewsRunning;
+  PreviewSlots::self()->release();
 }
 
 void OcsClient::slotData( KIO::Job *job, const QByteArray &data )
@@ -607,6 +726,7 @@ void OcsClient::slotData( KIO::Job *job, const QByteArray &data )
     return;
 
   Request &r = it.data();
+  r.active = mClock.elapsed();
   uint limit = r.kind == List ? maxListResponse :
                r.kind == Download ? maxDownloadResponse : maxPreviewResponse;
   uint size = r.data.size();
@@ -653,15 +773,14 @@ void OcsClient::slotResult( KIO::Job *job )
       finishDownload( r );
       break;
     case Preview: {
-      --mPreviewsRunning;
       int width = 0, height = 0;
       QImage image;
-      if ( pictureSize( r.data, &width, &height ) &&
-           width > 0 && height > 0 &&
-           width <= maxPreviewDimension && height <= maxPreviewDimension &&
-           image.loadFromData( r.data ) )
-        emit previewLoaded( r.key, image );
-      startPreviews();
+      if ( !( pictureSize( r.data, &width, &height ) &&
+              width > 0 && height > 0 &&
+              width <= maxPreviewDimension && height <= maxPreviewDimension &&
+              image.loadFromData( r.data ) ) )
+        image = QImage();
+      previewDone( r, image );
       break;
     }
   }
@@ -678,8 +797,7 @@ void OcsClient::failed( const Request &r, const QString &message )
       emit downloadFailed( r.id, r.number, message );
       break;
     case Preview:
-      --mPreviewsRunning;
-      startPreviews();
+      previewDone( r, QImage() );
       break;
   }
 }

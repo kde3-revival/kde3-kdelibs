@@ -46,6 +46,7 @@
 
 #include <kurl.h>
 
+class QTimer;
 class QWidget;
 
 namespace KIO { class Job; class TransferJob; }
@@ -109,6 +110,43 @@ bool parseUntrustedXml( const QByteArray &data, QDomDocument *doc );
 bool imageHeaderSize( const QByteArray &data, int *width, int *height );
 
 /**
+ * The preview downloads of all clients and sources together: the download
+ * dialog lists several sources at once, each with its previews, so they
+ * share a few downloads at a time. take() a slot before starting a
+ * preview and release() it exactly once when it ends; released() tells
+ * the clients waiting that one is free, from the event loop (a client
+ * releases its slots while it is destroyed, with its dialog).
+ */
+class PreviewSlots : public QObject
+{
+    Q_OBJECT
+  public:
+    static PreviewSlots *self();
+    /** Takes a slot; false if all are in use. */
+    bool take();
+    void release();
+
+  signals:
+    void released();
+
+  private slots:
+    void slotReleased();
+
+  private:
+    PreviewSlots();
+    int mRunning;
+    bool mPending;
+};
+
+/**
+ * Requests that get no data for this long are cancelled and fail: a
+ * server that accepts the connection and never answers would otherwise
+ * keep a listing or a download link pending for the ten minutes of KIO's
+ * response timeout.
+ */
+const int requestTimeout = 60;          // seconds
+
+/**
  * Asynchronous, anonymous OCS client: content listing, resolution of the
  * (short-lived) download links and preview pictures.
  * The server data is untrusted: the responses are size limited, documents
@@ -131,8 +169,12 @@ class OcsClient : public QObject
     void listContents( int sortMode, int page );
     /** Asks the server for a fresh link to file @p number of item @p id. */
     void resolveDownload( const QString &id, int number );
-    /** Loads a preview picture; @p key is returned with the image. */
+    /** Loads a preview picture; @p key is returned with the image. The
+        same picture asked for several times is loaded once. */
     void fetchPreview( const KURL &url, int key );
+    /** Cancels the resolution of download links in progress: no signal
+        is emitted for them. */
+    void cancelDownload();
 
     /** Whether @p url may be fetched for this provider. */
     bool isAllowedUrl( const KURL &url ) const;
@@ -149,6 +191,8 @@ class OcsClient : public QObject
     void slotData( KIO::Job *job, const QByteArray &data );
     void slotResult( KIO::Job *job );
     void slotRedirection( KIO::Job *job, const KURL &url );
+    void slotStartPreviews();
+    void slotWatchdog();
 
   private:
     enum Kind { List, Download, Preview };
@@ -162,11 +206,14 @@ class OcsClient : public QObject
       int key;
       QByteArray data;
       bool tooLarge;
+      KURL url;            // Preview: the picture
+      int active;          // when data last came (mClock)
     };
 
     KIO::TransferJob *startJob( const KURL &url, bool reload );
-    void startPreviews();
+    void addRequest( KIO::TransferJob *job, Request &r );
     void failed( const Request &r, const QString &message );
+    void previewDone( const Request &r, const QImage &image );
     void finishList( const Request &r );
     void finishDownload( const Request &r );
     bool parseContent( const QDomElement &e, OcsContent &c ) const;
@@ -174,8 +221,11 @@ class OcsClient : public QObject
     KURL mBase;
     QString mCategories;
     QMap<KIO::Job *, Request> mRequests;
-    QValueList<QPair<KURL, int> > mPreviewQueue;
+    QValueList<KURL> mPreviewQueue;
+    QMap<QString, QValueList<int> > mPreviewKeys;  // queued or loading
     int mPreviewsRunning;
+    QTimer *mWatchdog;
+    QTime mClock;
 };
 
 /**

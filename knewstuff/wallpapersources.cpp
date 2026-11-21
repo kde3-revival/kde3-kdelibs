@@ -46,7 +46,6 @@ static const uint maxListResponse = 2 * 1024 * 1024;   // the APOD feed is ~400 
 static const uint maxResolveResponse = 256 * 1024;
 static const uint maxPreviewResponse = 4 * 1024 * 1024;
 static const int maxPreviewDimension = 4096;
-static const int maxPreviewJobs = 3;
 // Items taken from one response
 static const int maxItems = 100;
 // Wikimedia: the size of the picture installed
@@ -205,14 +204,25 @@ WallpaperSource::WallpaperSource( const QString &id, QObject *parent )
     mDomains = QStringList::split( ',', QString::fromLatin1( info->domains ) );
   mQueueTimer = new QTimer( this );
   connect( mQueueTimer, SIGNAL( timeout() ), SLOT( slotStartQueued() ) );
+  mWatchdog = new QTimer( this );
+  connect( mWatchdog, SIGNAL( timeout() ), SLOT( slotWatchdog() ) );
   mClock.start();
+  connect( PreviewSlots::self(), SIGNAL( released() ), SLOT( slotStartPreviews() ) );
 }
 
 WallpaperSource::~WallpaperSource()
 {
+  // nothing more is started for this source; its preview slots are given
+  // back to the others
+  disconnect( PreviewSlots::self(), 0, this, 0 );
+  mPreviewQueue.clear();
+  QMap<KIO::Job *, Request> requests = mRequests;
+  mRequests.clear();
   QMap<KIO::Job *, Request>::Iterator it;
-  for ( it = mRequests.begin(); it != mRequests.end(); ++it )
+  for ( it = requests.begin(); it != requests.end(); ++it )
     it.key()->kill( true );
+  for ( ; mPreviewsRunning > 0; --mPreviewsRunning )
+    PreviewSlots::self()->release();
 }
 
 QValueList<WallpaperSource::Tab> WallpaperSource::tabs() const
@@ -454,7 +464,52 @@ void WallpaperSource::start( const Request &r )
            SLOT( slotData( KIO::Job *, const QByteArray & ) ) );
   connect( job, SIGNAL( result( KIO::Job * ) ),
            SLOT( slotResult( KIO::Job * ) ) );
-  mRequests.insert( job, r );
+  QMap<KIO::Job *, Request>::Iterator it = mRequests.insert( job, r );
+  it.data().active = mClock.elapsed();
+  if ( !mWatchdog->isActive() )
+    mWatchdog->start( 5000 );
+}
+
+// Cancels the requests that got no data for requestTimeout seconds.
+void WallpaperSource::slotWatchdog()
+{
+  int now = mClock.elapsed();
+  QMap<KIO::Job *, Request>::Iterator it = mRequests.begin();
+  while ( it != mRequests.end() ) {
+    if ( now - it.data().active < requestTimeout * 1000 && now >= it.data().active ) {
+      ++it;
+      continue;
+    }
+    KIO::Job *job = it.key();
+    Request r = it.data();
+    mRequests.remove( it );
+    job->kill( true );
+    failed( r, i18n( "The server did not answer in time." ) );
+    it = mRequests.begin();         // failed() may have started others
+  }
+  if ( mRequests.isEmpty() )
+    mWatchdog->stop();
+}
+
+void WallpaperSource::cancelDownload()
+{
+  QMap<KIO::Job *, Request>::Iterator it = mRequests.begin();
+  while ( it != mRequests.end() ) {
+    if ( it.data().kind == Resolve ) {
+      it.key()->kill( true );
+      mRequests.remove( it );
+      it = mRequests.begin();
+    } else
+      ++it;
+  }
+  QValueList<Request>::Iterator qit = mQueue.begin();
+  while ( qit != mQueue.end() ) {
+    if ( ( *qit ).kind == Resolve )
+      qit = mQueue.remove( qit );
+    else
+      ++qit;
+  }
+  mResolved.clear();
 }
 
 void WallpaperSource::resolveDownload( const QString &id, int number )
@@ -511,25 +566,43 @@ void WallpaperSource::fetchPreview( const KURL &url, int key )
 {
   if ( !isAllowedUrl( url ) )
     return;
-  mPreviewQueue.append( qMakePair( url, key ) );
-  startPreviews();
+  QMap<QString, QValueList<int> >::Iterator it = mPreviewKeys.find( url.url() );
+  if ( it != mPreviewKeys.end() ) {
+    // queued or loading already
+    it.data().append( key );
+    return;
+  }
+  mPreviewKeys[ url.url() ].append( key );
+  mPreviewQueue.append( url );
+  slotStartPreviews();
 }
 
-void WallpaperSource::startPreviews()
+void WallpaperSource::slotStartPreviews()
 {
-  while ( mPreviewsRunning < maxPreviewJobs && !mPreviewQueue.isEmpty() ) {
-    QPair<KURL, int> next = mPreviewQueue.first();
-    mPreviewQueue.remove( mPreviewQueue.begin() );
+  while ( !mPreviewQueue.isEmpty() && PreviewSlots::self()->take() ) {
     Request r;
     r.kind = Preview;
     r.tab = 0;
     r.page = 0;
-    r.url = next.first;
-    r.key = next.second;
+    r.url = mPreviewQueue.first();
+    r.key = 0;
     r.apodFeed = false;
+    mPreviewQueue.remove( mPreviewQueue.begin() );
     ++mPreviewsRunning;
     start( r );
   }
+}
+
+// A preview ended, loaded or not: its slot is given back.
+void WallpaperSource::previewDone( const Request &r, const QImage &image )
+{
+  QValueList<int> keys = mPreviewKeys[ r.url.url() ];
+  mPreviewKeys.remove( r.url.url() );
+  if ( !image.isNull() )
+    for ( QValueList<int>::ConstIterator it = keys.begin(); it != keys.end(); ++it )
+      emit previewLoaded( *it, image );
+  --mPreviewsRunning;
+  PreviewSlots::self()->release();
 }
 
 void WallpaperSource::slotData( KIO::Job *job, const QByteArray &data )
@@ -538,6 +611,7 @@ void WallpaperSource::slotData( KIO::Job *job, const QByteArray &data )
   if ( it == mRequests.end() || data.isEmpty() )
     return;
   Request &r = it.data();
+  r.active = mClock.elapsed();
   uint limit = ( r.kind == List || r.kind == PotdFiles ) ? maxListResponse :
                r.kind == Resolve ? maxResolveResponse : maxPreviewResponse;
   uint size = r.data.size();
@@ -619,8 +693,7 @@ void WallpaperSource::failed( const Request &r, const QString &message )
       emit downloadFailed( r.id, r.key, message );
       break;
     case Preview:
-      --mPreviewsRunning;
-      startPreviews();
+      previewDone( r, QImage() );
       break;
   }
 }
@@ -674,16 +747,15 @@ static const char *previewFormat( const QByteArray &data )
 void WallpaperSource::finished( Request &r )
 {
   if ( r.kind == Preview ) {
-    --mPreviewsRunning;
     // the size is read from the header: only small pictures are decoded
     QImage image;
     int width = 0, height = 0;
-    if ( imageHeaderSize( r.data, &width, &height ) &&
-         width > 0 && height > 0 &&
-         width <= maxPreviewDimension && height <= maxPreviewDimension &&
-         image.loadFromData( r.data, previewFormat( r.data ) ) )
-      emit previewLoaded( r.key, image );
-    startPreviews();
+    if ( !( imageHeaderSize( r.data, &width, &height ) &&
+            width > 0 && height > 0 &&
+            width <= maxPreviewDimension && height <= maxPreviewDimension &&
+            image.loadFromData( r.data, previewFormat( r.data ) ) ) )
+      image = QImage();
+    previewDone( r, image );
     return;
   }
 

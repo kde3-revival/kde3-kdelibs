@@ -262,6 +262,8 @@ class KDE_EXPORT DownloadDialog : public KDialogBase
     void slotOcsInstallAndSet();
     void slotOcsSearch();
     void slotOcsApiKey();
+    void slotOcsCancel();
+    void slotOcsWatchdog();
 
   private:
     void init(Engine *e);
@@ -280,6 +282,10 @@ class KDE_EXPORT DownloadDialog : public KDialogBase
     QPixmap ocsItemPixmap(Entry *e, const QColor &background);
     QString ocsStatusKey(Entry *e);
     void ocsSetPicture(const QStringList &files);
+    QWidget *activeFrame();
+    void ocsSyncPage();
+    void ocsUpdateButtons();
+    void ocsProgress(const QString &text);
 
     ProviderLoader *m_loader;
     QString m_entryname;

@@ -116,8 +116,12 @@ class WallpaperSource : public QObject
     void listContents( int tab, int page );
     /** Finds the link of the picture to install of item @p id. */
     void resolveDownload( const QString &id, int number );
-    /** Loads a preview picture; @p key is returned with the image. */
+    /** Loads a preview picture; @p key is returned with the image. The
+        same picture asked for several times is loaded once. */
     void fetchPreview( const KURL &url, int key );
+    /** Cancels the resolution of download links in progress: no signal
+        is emitted for them. */
+    void cancelDownload();
 
     /** Whether @p url may be fetched: https in the source's domains. */
     bool isAllowedUrl( const KURL &url ) const;
@@ -139,6 +143,8 @@ class WallpaperSource : public QObject
     void slotRedirection( KIO::Job *job, const KURL &url );
     void slotStartQueued();
     void slotResolved();
+    void slotStartPreviews();
+    void slotWatchdog();
 
   private:
     enum Kind { List, PotdFiles, Resolve, Preview };
@@ -154,12 +160,13 @@ class WallpaperSource : public QObject
       QByteArray data;
       int key;
       bool apodFeed;
+      int active;             // when data last came (mClock)
     };
 
     void queue( const Request &r );
     void start( const Request &r );
-    void startPreviews();
     void failed( const Request &r, const QString &message );
+    void previewDone( const Request &r, const QImage &image );
     QString httpError( KIO::Job *job ) const;
     void finished( Request &r );
 
@@ -179,8 +186,10 @@ class WallpaperSource : public QObject
     QMap<KIO::Job *, Request> mRequests;
     QValueList<Request> mQueue;     // waiting for the request spacing
     QTimer *mQueueTimer;
-    QValueList<QPair<KURL, int> > mPreviewQueue;
+    QValueList<KURL> mPreviewQueue;
+    QMap<QString, QValueList<int> > mPreviewKeys;  // queued or loading
     int mPreviewsRunning;
+    QTimer *mWatchdog;
     QMap<int, QString> mSearch;     // tab -> words
     QMap<QString, OcsContent> mItems;  // by id, for the download
     QMap<int, QString> mContinue;   // Wikimedia featured: page -> continuation

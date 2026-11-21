@@ -45,6 +45,7 @@
 #include "wallpapersources.h"
 
 #include <qfileinfo.h>
+#include <qguardedptr.h>
 #include <qlayout.h>
 #include <qlineedit.h>
 #include <qpushbutton.h>
@@ -115,6 +116,11 @@ struct DownloadDialog::Private
         if(source) source->resolveDownload(id, number);
         else client->resolveDownload(id, number);
       }
+      void cancelDownload()
+      {
+        if(source) source->cancelDownload();
+        else client->cancelDownload();
+      }
       bool isAllowedUrl(const KURL &url) const
       {
         return source ? source->isAllowedUrl(url) : client->isAllowedUrl(url);
@@ -136,10 +142,20 @@ struct DownloadDialog::Private
     OcsDownload m_ocsFile;
     KTempFile *m_ocsTemp;
     KTempFile *m_ocsEngineTemp;
-    KIO::TransferJob *m_ocsJob;           // the download in progress
+    QGuardedPtr<KIO::TransferJob> m_ocsJob;  // the download in progress
     Q_ULLONG m_ocsWritten;
+    Q_ULLONG m_ocsShown;                  // m_ocsWritten when last shown
     bool m_ocsTooLarge;
     bool m_ocsBadRedirect;
+    bool m_ocsCancelled;                  // by the user
+    bool m_ocsTimedOut;                   // by m_ocsWatchdog
+    QTimer *m_ocsWatchdog;                // nothing came for too long
+    QString m_ocsName;
+
+    // per page: its tabs, the installation in progress and its Cancel
+    QMap<QWidget*, QTabWidget*> m_tabWidgets;
+    QMap<QWidget*, QLabel*> m_progress;
+    QMap<QWidget*, QPushButton*> m_cancelButtons;
 
     OcsPage *ocsPageFor(QObject *client)
     {
@@ -250,8 +266,13 @@ void DownloadDialog::init(Engine *engine)
   d->m_ocsEngineTemp = 0;
   d->m_ocsJob = 0;
   d->m_ocsWritten = 0;
+  d->m_ocsShown = 0;
   d->m_ocsTooLarge = false;
   d->m_ocsBadRedirect = false;
+  d->m_ocsCancelled = false;
+  d->m_ocsTimedOut = false;
+  d->m_ocsWatchdog = new QTimer(this);
+  connect(d->m_ocsWatchdog, SIGNAL(timeout()), SLOT(slotOcsWatchdog()));
   d->m_installAndSet = false;
   d->m_ocsSet = false;
 
@@ -305,10 +326,12 @@ void DownloadDialog::clear()
   {
     if(d->m_ocsJob) d->m_ocsJob->kill(true);
     d->m_ocsJob = 0;
+    d->m_ocsWatchdog->stop();
     delete d->m_ocsTemp;
     d->m_ocsTemp = 0;
     d->m_ocsEntry = 0;
     d->m_ocsPage = 0;
+    d->m_ocsSet = false;
   }
 
   QMap<QWidget*, QValueList<KListView*>* >::Iterator it;
@@ -338,6 +361,10 @@ void DownloadDialog::clear()
     d->m_setButtons.remove(it.key());
     d->m_keyButtons.remove(it.key());
     d->m_notes.remove(it.key());
+    d->m_tabWidgets.remove(it.key());
+    d->m_progress.remove(it.key());
+    d->m_cancelButtons.remove(it.key());
+    if(d->m_page == it.key()) d->m_page = 0;
     delete it.key();
   }
   m_map.clear();
@@ -417,6 +444,7 @@ void DownloadDialog::addProvider(Provider *p)
 
   m_curtab = 0;
   connect(ctl, SIGNAL(currentChanged(QWidget *)), SLOT(slotTab()));
+  d->m_tabWidgets[frame] = ctl;
 
   QHBoxLayout *box = new QHBoxLayout(frame);
 
@@ -551,6 +579,28 @@ void DownloadDialog::addProvider(Provider *p)
     vbox->add(key);
     connect(key, SIGNAL(clicked()), SLOT(slotOcsApiKey()));
     d->m_keyButtons[frame] = key;
+  }
+  if(ocs)
+  {
+    // the installation in progress (on every page) and its Cancel
+    QLabel *progress = new QLabel(frame);
+    progress->setTextFormat(Qt::PlainText);
+    progress->setAlignment(Qt::WordBreak | Qt::AlignLeft | Qt::AlignVCenter);
+    progress->setSizePolicy(QSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred));
+    QPushButton *cancel = new QPushButton(i18n("&Cancel Download"), frame);
+    vbox->addSpacing(spacingHint());
+    vbox->add(progress);
+    vbox->add(cancel);
+    connect(cancel, SIGNAL(clicked()), SLOT(slotOcsCancel()));
+    d->m_progress[frame] = progress;
+    d->m_cancelButtons[frame] = cancel;
+    if(d->m_ocsEntry)
+      progress->setText(d->m_ocsName);
+    else
+    {
+      progress->hide();
+      cancel->hide();
+    }
   }
 
   connect(rt, SIGNAL(linkClicked(const QString&)), SLOT(slotEmail(const QString&)));
@@ -727,6 +777,7 @@ void DownloadDialog::slotData(KIO::Job *job, const QByteArray &a)
 
 void DownloadDialog::slotDetails()
 {
+  ocsSyncPage();
   Entry *e = getEntry();
   if(!e) return;
 
@@ -781,6 +832,7 @@ QListViewItem *DownloadDialog::currentEntryItem()
 
 void DownloadDialog::slotInstall()
 {
+  ocsSyncPage();
   Entry *e = getEntry();
   if(!e) return;
 
@@ -888,8 +940,13 @@ void DownloadDialog::slotInstalled(KIO::Job *job)
 
 void DownloadDialog::slotTab()
 {
-  int tab = static_cast<const QTabWidget *>(sender())->currentPageIndex();
+  const QTabWidget *ctl = static_cast<const QTabWidget *>(sender());
+  int tab = ctl->currentPageIndex();
   kdDebug() << "switch tab to: " << tab << endl;
+
+  // the tabs of another page (shown with its page): taken by slotPage()
+  for(QMap<QWidget*, QTabWidget*>::ConstIterator it = d->m_tabWidgets.begin(); it != d->m_tabWidgets.end(); ++it)
+    if(it.data() == ctl && it.key() != d->m_page) return;
 
   if(d->m_ocs.contains(d->m_page) && tab >= 0 && tab < 3 &&
      !d->m_ocs[d->m_page]->tabs[tab].started)
@@ -898,6 +955,17 @@ void DownloadDialog::slotTab()
   Entry *eold = getEntry();
   m_curtab = tab;
   Entry *e = getEntry();
+
+  if(d->m_ocs.contains(d->m_page))
+  {
+    if(e && d->m_entryPage.contains(e)) ocsShowDetails(e);
+    else
+    {
+      m_rt->clear();
+      ocsUpdateButtons();
+    }
+    return;
+  }
 
   if(e == eold) return;
 
@@ -922,13 +990,15 @@ void DownloadDialog::slotSelected()
 {
   QString tmp;
   bool enabled;
+  ocsSyncPage();
   Entry *e = getEntry();
   QString lang = KGlobal::locale()->language();
   bool ret;
 
-  if(e && d->m_entryPage.contains(e))
+  if(d->m_ocs.contains(d->m_page))
   {
-    ocsShowDetails(e);
+    if(e && d->m_entryPage.contains(e)) ocsShowDetails(e);
+    else ocsUpdateButtons();
     return;
   }
 
@@ -1048,7 +1118,18 @@ void DownloadDialog::slotPage(QWidget *w)
 
   kdDebug() << "valid change!!!; lv_r = " << lv_r << endl;
 
-  if(d->m_ocs.contains(w)) return;
+  // the tab shown on this page, not the one of the page shown before
+  if(d->m_tabWidgets.contains(w))
+    m_curtab = d->m_tabWidgets[w]->currentPageIndex();
+
+  if(d->m_ocs.contains(w))
+  {
+    // listed when first shown
+    if(m_curtab >= 0 && m_curtab < 3 && !d->m_ocs[w]->tabs[m_curtab].started)
+      ocsFetch(w, m_curtab);
+    ocsUpdateButtons();
+    return;
+  }
 
   if(m_engine) return;
 
@@ -1073,7 +1154,10 @@ void DownloadDialog::loadProvider(Provider *p)
     for(QMap<QWidget*, Provider*>::Iterator pit = m_providers.begin(); pit != m_providers.end(); ++pit)
       if(pit.data() == p && d->m_ocs.contains(pit.key())) return;
     addProvider(p);
-    slotPage(m_frame);
+    // the page shown, which is not the one just added (every page is
+    // added before the first is shown): the selection, the details and
+    // the buttons are those of that page
+    ocsSyncPage();
     return;
   }
 
@@ -1174,6 +1258,7 @@ void DownloadDialog::open(const QString& type, const QString& caption)
 void DownloadDialog::slotFinish()
 {
   showPage(1);
+  ocsSyncPage();
   //updateBackground();
 }
 
@@ -1285,8 +1370,7 @@ void DownloadDialog::ocsAddPage(QWidget *frame, Provider *p, QTextBrowser *rt,
     d->m_ocsResized = true;
     resize(QMAX(width(), 960), QMAX(height(), 640));
   }
-
-  ocsFetch(frame, 0);
+  // listed when it is first shown (slotPage())
 }
 
 void DownloadDialog::ocsFetch(QWidget *frame, int tab)
@@ -1525,14 +1609,65 @@ void DownloadDialog::ocsShowDetails(Entry *e)
   desc += "</qt>";
 
   m_rt->setText(desc);
+  ocsUpdateButtons();
+}
 
+// The page shown in the dialog.
+QWidget *DownloadDialog::activeFrame()
+{
+  int index = activePageIndex();
+  for(QMap<QWidget*, QValueList<KListView*>* >::Iterator it = m_map.begin(); it != m_map.end(); ++it)
+    if(pageIndex(it.key()) == index) return it.key();
+  return 0;
+}
+
+// The lists, details and buttons used are those of the page shown.
+void DownloadDialog::ocsSyncPage()
+{
+  QWidget *w = activeFrame();
+  if(w && w != d->m_page) slotPage(w);
+}
+
+// The buttons of the page shown, from its selected item and the
+// installation in progress.
+void DownloadDialog::ocsUpdateButtons()
+{
+  QWidget *frame = d->m_page;
+  if(!frame || !d->m_ocs.contains(frame) || !m_buttons.contains(frame)) return;
+  Private::OcsPage *page = d->m_ocs[frame];
+  Entry *e = getEntry();
+  bool known = e && d->m_entryPage.contains(e) && d->m_entryPage[e] == frame &&
+               page->content.contains(e);
+  bool files = known && !page->content[e].files.isEmpty();
   bool busy = d->m_ocsEntry != 0;
-  QPushButton *in = *(m_buttons[d->m_page]->at(0));
-  QPushButton *de = *(m_buttons[d->m_page]->at(1));
-  if(in) in->setEnabled(!busy && installStatus(e) != 1 && !c.files.isEmpty());
-  if(de) de->setEnabled(true);
-  if(d->m_setButtons.contains(d->m_page))
-    d->m_setButtons[d->m_page]->setEnabled(!busy && !c.files.isEmpty());
+
+  QPushButton *in = *(m_buttons[frame]->at(0));
+  QPushButton *de = *(m_buttons[frame]->at(1));
+  if(in) in->setEnabled(files && !busy && installStatus(e) != 1);
+  if(de) de->setEnabled(known);
+  if(d->m_setButtons.contains(frame))
+    d->m_setButtons[frame]->setEnabled(files && !busy);
+}
+
+// Shows the installation in progress on every page, or hides it.
+void DownloadDialog::ocsProgress(const QString &text)
+{
+  d->m_ocsName = text;
+  for(QMap<QWidget*, QLabel*>::Iterator it = d->m_progress.begin(); it != d->m_progress.end(); ++it)
+  {
+    QPushButton *cancel = d->m_cancelButtons[it.key()];
+    if(text.isEmpty())
+    {
+      it.data()->hide();
+      cancel->hide();
+    }
+    else
+    {
+      it.data()->setText(text);
+      it.data()->show();
+      cancel->show();
+    }
+  }
 }
 
 void DownloadDialog::ocsInstall(Entry *e)
@@ -1586,32 +1721,40 @@ void DownloadDialog::ocsInstall(Entry *e)
   d->m_ocsFile = c.files[index];
   d->m_ocsTooLarge = false;
   d->m_ocsBadRedirect = false;
+  d->m_ocsCancelled = false;
+  d->m_ocsTimedOut = false;
 
   m_entryitem = currentEntryItem();
   m_entryname = m_entryitem ? m_entryitem->text(0) : c.name;
 
-  d->m_lvtmp_r->setEnabled(false);
-  d->m_lvtmp_l->setEnabled(false);
-  d->m_lvtmp_d->setEnabled(false);
-  QPushButton *in = *(m_buttons[d->m_page]->at(0));
-  if(in) in->setEnabled(false);
+  // the other items can be looked at meanwhile; none is installed
+  // before this one is done (or cancelled, or timed out)
+  ocsProgress(i18n("Getting the download link of \"%1\"...").arg(c.name));
+  ocsUpdateButtons();
+  d->m_ocsWatchdog->start(requestTimeout * 1000, true);
 
   page->resolveDownload(c.id, d->m_ocsFile.number);
 }
 
-void DownloadDialog::slotOcsResolveFailed(const QString &, int, const QString &message)
+void DownloadDialog::slotOcsResolveFailed(const QString &id, int number, const QString &message)
 {
-  if(!d->m_ocsEntry) return;
-  KMessageBox::error(this, "<qt>" + i18n("Could not get the download link: %1").arg(QStyleSheet::escape(message)) + "</qt>");
+  Entry *e = d->m_ocsEntry;
+  if(!e || d->m_ocsJob || !d->m_ocs.contains(d->m_ocsPage)) return;
+  Private::OcsPage *page = d->m_ocs[d->m_ocsPage];
+  // only the link asked for, from its own page
+  if(d->ocsPageFor(const_cast<QObject*>(sender())) != page ||
+     page->content[e].id != id || d->m_ocsFile.number != number) return;
   ocsFinish();
+  KMessageBox::error(this, "<qt>" + i18n("Could not get the download link: %1").arg(QStyleSheet::escape(message)) + "</qt>");
 }
 
 void DownloadDialog::slotOcsResolved(const QString &id, int number, const KURL &link)
 {
   Entry *e = d->m_ocsEntry;
-  if(!e || !d->m_ocs.contains(d->m_ocsPage)) return;
+  if(!e || d->m_ocsJob || !d->m_ocs.contains(d->m_ocsPage)) return;
   Private::OcsPage *page = d->m_ocs[d->m_ocsPage];
-  if(page->content[e].id != id || d->m_ocsFile.number != number) return;
+  if(d->ocsPageFor(const_cast<QObject*>(sender())) != page ||
+     page->content[e].id != id || d->m_ocsFile.number != number) return;
 
   kdDebug() << "OCS: downloading " << link.url() << endl;
 
@@ -1619,16 +1762,18 @@ void DownloadDialog::slotOcsResolved(const QString &id, int number, const KURL &
   d->m_ocsTemp = new KTempFile(locateLocal("tmp", "knewstuff-ocs-"), ".download");
   d->m_ocsTemp->setAutoDelete(true);
   d->m_ocsWritten = 0;
+  d->m_ocsShown = 0;
   if(d->m_ocsTemp->status() != 0 || !d->m_ocsTemp->file())
   {
-    KMessageBox::error(this, i18n("Could not create a temporary file."));
     ocsFinish();
+    KMessageBox::error(this, i18n("Could not create a temporary file."));
     return;
   }
 
   // a plain GET, so that the transfer can be anonymous (no cookies) and
-  // limited in size; the server redirects to its file storage
-  KIO::TransferJob *job = KIO::get(link, true, true);
+  // limited in size; the server redirects to its file storage. The
+  // progress and its Cancel are shown in the dialog (ocsProgress()).
+  KIO::TransferJob *job = KIO::get(link, true, false);
   if(page->source)
     WallpaperSource::setupJob(job);
   job->addMetaData("errorPage", "false");
@@ -1640,11 +1785,14 @@ void DownloadDialog::slotOcsResolved(const QString &id, int number, const KURL &
   connect(job, SIGNAL(data(KIO::Job*, const QByteArray&)),
           SLOT(slotOcsDownloadData(KIO::Job*, const QByteArray&)));
   connect(job, SIGNAL(result(KIO::Job*)), SLOT(slotOcsDownloaded(KIO::Job*)));
+  ocsProgress(i18n("Downloading \"%1\"...").arg(page->content[e].name));
+  d->m_ocsWatchdog->start(requestTimeout * 1000, true);
 }
 
 void DownloadDialog::slotOcsRedirection(KIO::Job *job, const KURL &url)
 {
   if(job != d->m_ocsJob || !d->m_ocs.contains(d->m_ocsPage)) return;
+  d->m_ocsWatchdog->start(requestTimeout * 1000, true);
   if(d->m_ocs[d->m_ocsPage]->isAllowedUrl(url)) return;
   // reported by slotOcsDownloaded()
   d->m_ocsBadRedirect = true;
@@ -1655,7 +1803,15 @@ void DownloadDialog::slotOcsDownloadData(KIO::Job *job, const QByteArray &data)
 {
   if(job != d->m_ocsJob || !d->m_ocsTemp || d->m_ocsTooLarge || data.isEmpty()) return;
 
+  d->m_ocsWatchdog->start(requestTimeout * 1000, true);
   d->m_ocsWritten += data.size();
+  if(d->m_ocsWritten - d->m_ocsShown >= 256 * 1024 && d->m_ocsEntry && d->m_ocs.contains(d->m_ocsPage))
+  {
+    d->m_ocsShown = d->m_ocsWritten;
+    ocsProgress(i18n("Downloading \"%1\": %2")
+                .arg(d->m_ocs[d->m_ocsPage]->content[d->m_ocsEntry].name)
+                .arg(KIO::convertSize(d->m_ocsWritten)));
+  }
   QFile *f = d->m_ocsTemp->file();
   Q_ULLONG limit = OcsInstaller::maxDownloadSize;
   if(d->m_ocs.contains(d->m_ocsPage) && d->m_ocs[d->m_ocsPage]->source)
@@ -1671,8 +1827,9 @@ void DownloadDialog::slotOcsDownloadData(KIO::Job *job, const QByteArray &data)
 
 void DownloadDialog::slotOcsDownloaded(KIO::Job *job)
 {
-  if(job != d->m_ocsJob) return;
+  if(!job || job != d->m_ocsJob) return;
   d->m_ocsJob = 0;
+  d->m_ocsWatchdog->stop();
   Entry *e = d->m_ocsEntry;
   if(!e || !d->m_ocs.contains(d->m_ocsPage))
   {
@@ -1680,19 +1837,31 @@ void DownloadDialog::slotOcsDownloaded(KIO::Job *job)
     return;
   }
 
-  if(job->error() || d->m_ocsTooLarge || d->m_ocsBadRedirect || !d->m_ocsTemp->close())
+  if(d->m_ocsCancelled || d->m_ocsTimedOut || job->error() || d->m_ocsTooLarge ||
+     d->m_ocsBadRedirect || !d->m_ocsTemp->close())
   {
-    if(d->m_ocsBadRedirect)
-      KMessageBox::error(this, i18n("The server redirected the download to a location that is not allowed."));
+    // the buttons are usable again before any message is shown
+    QString message;
+    if(d->m_ocsCancelled)
+      ;
+    else if(d->m_ocsTimedOut)
+      message = i18n("The server did not send anything for %1 seconds: the download was cancelled. Please try again later.").arg(requestTimeout);
+    else if(d->m_ocsBadRedirect)
+      message = i18n("The server redirected the download to a location that is not allowed.");
     else if(d->m_ocsTooLarge)
-      KMessageBox::error(this, i18n("The download is too large, or it could not be saved."));
+      message = i18n("The download is too large, or it could not be saved.");
     else if(!job->error())
-      KMessageBox::error(this, i18n("The download could not be saved."));
+      message = i18n("The download could not be saved.");
     else if(job->error() != KIO::ERR_USER_CANCELED)
-      job->showErrorDialog(this);
+      message = job->errorString();
     ocsFinish();
+    if(!message.isEmpty())
+      KMessageBox::error(this, "<qt>" + QStyleSheet::escape(message) + "</qt>");
     return;
   }
+
+  // installing: nothing to cancel any more
+  ocsProgress(QString::null);
 
   if(m_engine)
   {
@@ -1718,44 +1887,80 @@ void DownloadDialog::slotOcsDownloaded(KIO::Job *job)
     OcsInstaller::install(d->m_ocsTemp->name(), dir, wallpaper, page->content[e],
                           d->m_ocsFile, this, &installed);
 
+  bool set = d->m_ocsSet;
+  if(error.isEmpty() && !installed.isEmpty())
+  {
+    install(e);
+    // the pictures, for "Install and Set" of an installed item
+    KConfigGroupSaver saver(kapp->config(), "KNewStuffStatus");
+    kapp->config()->writePathEntry(ocsStatusKey(e) + ":files", installed);
+    kapp->config()->sync();
+  }
+  // done: the buttons are usable again before any message is shown
+  ocsFinish();
+
   if(!error.isEmpty())
     KMessageBox::error(this, "<qt>" + QStyleSheet::escape(error) + "</qt>", i18n("Installation"));
   else if(!installed.isEmpty())
   {
-    install(e);
-    // the pictures, for "Install and Set" of an installed item
-    {
-      KConfigGroupSaver saver(kapp->config(), "KNewStuffStatus");
-      kapp->config()->writePathEntry(ocsStatusKey(e) + ":files", installed);
-      kapp->config()->sync();
-    }
-    if(d->m_ocsSet)
-    {
-      ocsFinish();
+    if(set)
       ocsSetPicture(installed);
-      return;
-    }
-    KMessageBox::information(this, i18n("Installation successful."), i18n("Installation"));
+    else
+      KMessageBox::information(this, i18n("Installation successful."), i18n("Installation"));
   }
-
-  ocsFinish();
 }
 
+// Ends the installation, whatever way it ends: every path of
+// ocsInstall() comes here exactly once.
 void DownloadDialog::ocsFinish()
 {
-  Entry *e = d->m_ocsEntry;
+  if(d->m_ocsJob)
+    d->m_ocsJob->kill(true);
+  d->m_ocsJob = 0;
+  d->m_ocsWatchdog->stop();
   d->m_ocsEntry = 0;
   d->m_ocsSet = false;
   d->m_ocsPage = 0;
-  d->m_ocsJob = 0;
+  d->m_ocsCancelled = false;
+  d->m_ocsTimedOut = false;
   delete d->m_ocsTemp;
   d->m_ocsTemp = 0;
 
-  d->m_lvtmp_r->setEnabled(true);
-  d->m_lvtmp_l->setEnabled(true);
-  d->m_lvtmp_d->setEnabled(true);
+  ocsProgress(QString::null);
+  ocsUpdateButtons();
+}
 
-  if(e && getEntry() == e) ocsShowDetails(e);
+// "Cancel Download"
+void DownloadDialog::slotOcsCancel()
+{
+  if(!d->m_ocsEntry) return;
+  if(d->m_ocsJob)
+  {
+    // reported (silently) by slotOcsDownloaded()
+    d->m_ocsCancelled = true;
+    d->m_ocsJob->kill(false);
+    return;
+  }
+  if(d->m_ocs.contains(d->m_ocsPage))
+    d->m_ocs[d->m_ocsPage]->cancelDownload();
+  ocsFinish();
+}
+
+// Nothing came for requestTimeout seconds: the server does not answer.
+void DownloadDialog::slotOcsWatchdog()
+{
+  if(!d->m_ocsEntry) return;
+  if(d->m_ocsJob)
+  {
+    // reported by slotOcsDownloaded()
+    d->m_ocsTimedOut = true;
+    d->m_ocsJob->kill(false);
+    return;
+  }
+  if(d->m_ocs.contains(d->m_ocsPage))
+    d->m_ocs[d->m_ocsPage]->cancelDownload();
+  ocsFinish();
+  KMessageBox::error(this, i18n("The server did not answer in time. Please try again later."));
 }
 
 void DownloadDialog::ocsSetPicture(const QStringList &files)
@@ -1782,6 +1987,7 @@ void DownloadDialog::ocsSetPicture(const QStringList &files)
 
 void DownloadDialog::slotOcsInstallAndSet()
 {
+  ocsSyncPage();
   Entry *e = getEntry();
   if(!e || !d->m_entryPage.contains(e) || d->m_ocsEntry) return;
 
@@ -1823,7 +2029,9 @@ void DownloadDialog::slotOcsSearch()
       t.list->clear();
       t.loaded = 0;
       t.nextPage = 0;
+      if(it.key() == d->m_page && i == m_curtab) m_rt->clear();
       ocsFetch(it.key(), i);
+      ocsUpdateButtons();
       return;
     }
   }
@@ -1868,7 +2076,9 @@ void DownloadDialog::slotOcsApiKey()
   }
   if(d->m_notes.contains(frame))
     d->m_notes[frame]->setText(WallpaperSource::note(id));
+  if(d->m_page == frame) m_rt->clear();
   ocsFetch(frame, d->m_page == frame ? m_curtab : 0);
+  ocsUpdateButtons();
 }
 
 void DownloadDialog::setInstallAndSetEnabled(bool enable)
