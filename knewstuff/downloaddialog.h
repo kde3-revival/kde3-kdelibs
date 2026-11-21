@@ -204,6 +204,27 @@ class KDE_EXPORT DownloadDialog : public KDialogBase
     QPtrList<Entry> installedEntries();
     // ### KDE 4.0: the open() method should return this
 
+    /**
+      Shows an "Install and Set" button next to "Install" on the pages of
+      the KDE Store and of the other wallpaper sources: it installs the
+      picture (or takes it, when it is installed already) and closes the
+      dialog; installedAndSetFile() then names the picture, which the
+      application uses at once (the background module as the wallpaper).
+      Not offered with an engine.
+
+      @param enable whether the button is shown
+
+      @since 3.5.11
+    */
+    void setInstallAndSetEnabled(bool enable);
+
+    /**
+      The picture chosen with "Install and Set", or QString::null.
+
+      @since 3.5.11
+    */
+    QString installedAndSetFile() const;
+
   public slots:
     /**
       Availability of the provider list.
@@ -237,6 +258,10 @@ class KDE_EXPORT DownloadDialog : public KDialogBase
     void slotOcsDownloaded(KIO::Job *job);
     void slotOcsDownloadData(KIO::Job *job, const QByteArray &data);
     void slotOcsRedirection(KIO::Job *job, const KURL &url);
+    // other wallpaper sources, "Install and Set"
+    void slotOcsInstallAndSet();
+    void slotOcsSearch();
+    void slotOcsApiKey();
 
   private:
     void init(Engine *e);
@@ -254,6 +279,7 @@ class KDE_EXPORT DownloadDialog : public KDialogBase
     void ocsUpdateItems(Entry *e);
     QPixmap ocsItemPixmap(Entry *e, const QColor &background);
     QString ocsStatusKey(Entry *e);
+    void ocsSetPicture(const QStringList &files);
 
     ProviderLoader *m_loader;
     QString m_entryname;

@@ -149,9 +149,7 @@ static bool isAcceptableXml( const QString &text )
   return true;
 }
 
-// Parses an OCS response; returns the <data> element.
-static bool parseOcsDocument( const QByteArray &data, QDomElement *dataElement,
-                              int *total, QString *error )
+bool KNS::parseUntrustedXml( const QByteArray &data, QDomDocument *doc )
 {
   // Decode the bytes the way the XML reader does (UTF-8, or UTF-16 with a
   // byte order mark, or the declared encoding), so that the checks see
@@ -162,16 +160,24 @@ static bool parseOcsDocument( const QByteArray &data, QDomElement *dataElement,
   buffer.open( IO_ReadOnly );
   QXmlInputSource source( &buffer );
   QString text = source.data();
-  if ( text.find( QChar( 0 ) ) >= 0 || !isAcceptableXml( text ) ) {
-    *error = i18n( "The server sent an invalid response." );
+  if ( text.find( QChar( 0 ) ) >= 0 || !isAcceptableXml( text ) )
     return false;
-  }
 
-  QDomDocument doc;
   QString message;
   int line, column;
-  if ( !doc.setContent( text, false, &message, &line, &column ) ) {
+  if ( !doc->setContent( text, false, &message, &line, &column ) ) {
     kdDebug() << "OCS: parse error " << message << " at " << line << ":" << column << endl;
+    return false;
+  }
+  return true;
+}
+
+// Parses an OCS response; returns the <data> element.
+static bool parseOcsDocument( const QByteArray &data, QDomElement *dataElement,
+                              int *total, QString *error )
+{
+  QDomDocument doc;
+  if ( !parseUntrustedXml( data, &doc ) ) {
     *error = i18n( "The server sent an invalid response." );
     return false;
   }
@@ -407,6 +413,11 @@ static bool pictureSize( const QByteArray &data, int *width, int *height )
   }
 
   return false;
+}
+
+bool KNS::imageHeaderSize( const QByteArray &data, int *width, int *height )
+{
+  return pictureSize( data, width, height );
 }
 
 // "cc-by-sa" -> "CC-BY-SA" etc.; the OCS servers carry the license as a tag.
@@ -944,8 +955,23 @@ static void writeWallpaperDesktop( const QString &imagePath, const QString &capt
     cfg.writeEntry( "Author", content.author );
   if ( !content.license.isEmpty() )
     cfg.writeEntry( "License", content.license );
+  if ( !content.licenseUrl.isEmpty() )
+    cfg.writeEntry( "LicenseUrl", content.licenseUrl );
   if ( content.detailPage.isValid() )
     cfg.writeEntry( "Url", content.detailPage.url() );
+  if ( !content.source.isEmpty() )
+    cfg.writeEntry( "Source", content.source );
+  // the size of the picture installed (a source may send a smaller one
+  // than the original it lists)
+  {
+    QFile f( imagePath );
+    int width = 0, height = 0;
+    if ( f.open( IO_ReadOnly ) && pictureSize( readHead( &f, headSize ), &width, &height ) &&
+         width > 0 && height > 0 )
+      cfg.writeEntry( "Resolution", QString( "%1x%2" ).arg( width ).arg( height ) );
+  }
+  if ( !content.source.isEmpty() && !content.summary.isEmpty() )
+    cfg.writeEntry( "Comment", content.summary );
   cfg.sync();
 }
 
@@ -1343,5 +1369,32 @@ QString OcsInstaller::install( const QString &file, const QString &dir, bool wal
     }
   }
 
+  return QString::null;
+}
+
+QString OcsInstaller::installPicture( const QString &file, const QString &dir,
+                                      const OcsContent &content, const OcsDownload &download,
+                                      QString *installed )
+{
+  KImageIO::registerFormats();
+
+  QString target = dir;
+  if ( !target.endsWith( "/" ) )
+    target += '/';
+
+  const char *format = installableFormat( file );
+  if ( !format )
+    return i18n( "The downloaded file is not a picture in a supported format "
+                 "(JPEG, PNG, GIF, BMP, WebP, AVIF, JPEG XL), or it is too large." );
+
+  QString path = target + imageFileName( safeFileName( download.name, "picture" ), format );
+  QFile source( file );
+  if ( !source.open( IO_ReadOnly ) ||
+       !saveDevice( QByteArray(), &source, path, maxDownloadSize ) )
+    return i18n( "Could not write the file '%1'." ).arg( path );
+
+  writeWallpaperDesktop( path, content.name, content );
+  if ( installed )
+    *installed = path;
   return QString::null;
 }

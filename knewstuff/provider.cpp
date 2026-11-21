@@ -31,6 +31,7 @@
 #include "provider.h"
 #include "provider.moc"
 #include "ocs.h"
+#include "wallpapersources.h"
 
 using namespace KNS;
 
@@ -47,6 +48,8 @@ class ProviderPrivate
   bool mOcs;
   KURL mOcsUrl;
   QString mOcsCategories;
+  // a wallpaper source (see wallpapersources.h)
+  QString mSource;
 };
 
 static QPtrDict<ProviderPrivate> *d_ptr_prov = 0;
@@ -100,6 +103,24 @@ void KNS::ocsSetProvider( Provider *p, const KURL &base, const QString &categori
   d->mOcs = true;
   d->mOcsUrl = base;
   d->mOcsCategories = categories;
+}
+
+bool KNS::sourceIsProvider( const Provider *p )
+{
+  return p && !d_prov(p)->mSource.isEmpty();
+}
+
+QString KNS::sourceId( const Provider *p )
+{
+  return d_prov(p)->mSource;
+}
+
+void KNS::sourceSetProvider( Provider *p, const QString &id )
+{
+  ProviderPrivate *d = d_prov(p);
+  // listed like an OCS provider, page by page
+  d->mOcs = true;
+  d->mSource = id;
 }
 
 // BCI part ends here
@@ -266,6 +287,19 @@ void ProviderLoader::load( const QString &type, const QString &providersList )
       ocsSetProvider( provider, ocsUrl, cfg->readEntry( "OcsCategories" ) );
       mProviders.append( provider );
       kdDebug() << "ProviderLoader::load(): OCS provider " << ocsUrl.url() << endl;
+
+      // other wallpaper sources, after the store
+      QStringList sources = cfg->readListEntry( "WallpaperSources" );
+      for ( QStringList::ConstIterator it = sources.begin(); it != sources.end(); ++it ) {
+        QString id = ( *it ).stripWhiteSpace();
+        if ( !WallpaperSource::isKnown( id ) )
+          continue;
+        Provider *source = new Provider;
+        source->setName( WallpaperSource::displayName( id ) );
+        source->setNoUpload( true );
+        sourceSetProvider( source, id );
+        mProviders.append( source );
+      }
       emit providersLoaded( &mProviders );
       return;
     }

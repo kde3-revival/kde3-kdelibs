@@ -33,6 +33,7 @@
 #include <kiconloader.h>
 
 #include <kinputdialog.h>
+#include <klineedit.h>
 #include <kstandarddirs.h>
 #include <ktempfile.h>
 
@@ -41,8 +42,11 @@
 #include <knewstuff/engine.h>
 
 #include "ocs.h"
+#include "wallpapersources.h"
 
+#include <qfileinfo.h>
 #include <qlayout.h>
+#include <qlineedit.h>
 #include <qpushbutton.h>
 #include <qdom.h>
 #include <qlabel.h>
@@ -55,6 +59,7 @@
 #include <qpainter.h>
 #include <qregexp.h>
 #include <qstylesheet.h>
+#include <qwhatsthis.h>
 
 using namespace KNS;
 
@@ -84,6 +89,8 @@ struct DownloadDialog::Private
       Provider *provider;
       QString host;                       // of the provider, for the install status
       OcsClient *client;
+      WallpaperSource *source;            // instead of client for other sources
+      QLineEdit *search[3];               // the search words of a tab, or 0
       QTextBrowser *browser;
       QMimeSourceFactory *factory;
       OcsTab tabs[3];
@@ -91,6 +98,31 @@ struct DownloadDialog::Private
       QMap<Entry*, OcsContent> content;
       QMap<Entry*, QImage> previews;
       QMap<int, Entry*> previewKeys;
+
+      // the OCS client or the wallpaper source
+      void list(int tab, int pageNumber)
+      {
+        if(source) source->listContents(tab, pageNumber);
+        else client->listContents(tab, pageNumber);
+      }
+      void fetchPreview(const KURL &url, int key)
+      {
+        if(source) source->fetchPreview(url, key);
+        else client->fetchPreview(url, key);
+      }
+      void resolveDownload(const QString &id, int number)
+      {
+        if(source) source->resolveDownload(id, number);
+        else client->resolveDownload(id, number);
+      }
+      bool isAllowedUrl(const KURL &url) const
+      {
+        return source ? source->isAllowedUrl(url) : client->isAllowedUrl(url);
+      }
+      int tabCount() const
+      {
+        return source ? int(source->tabs().count()) : 3;
+      }
     };
     QMap<QWidget*, OcsPage*> m_ocs;
     QMap<QListViewItem*, Entry*> m_itemEntries;
@@ -112,9 +144,16 @@ struct DownloadDialog::Private
     OcsPage *ocsPageFor(QObject *client)
     {
       for(QMap<QWidget*, OcsPage*>::Iterator it = m_ocs.begin(); it != m_ocs.end(); ++it)
-        if(it.data()->client == client) return it.data();
+        if(client && (it.data()->client == client || it.data()->source == client)) return it.data();
       return 0;
     }
+
+    // "Install and Set"
+    bool m_installAndSet;
+    bool m_ocsSet;                        // the installation in progress sets
+    QString m_setFile;
+    QMap<QWidget*, QPushButton*> m_setButtons;
+    QMap<QWidget*, QPushButton*> m_keyButtons;
 };
 
 // Thumbnails in the OCS lists
@@ -212,6 +251,8 @@ void DownloadDialog::init(Engine *engine)
   d->m_ocsWritten = 0;
   d->m_ocsTooLarge = false;
   d->m_ocsBadRedirect = false;
+  d->m_installAndSet = false;
+  d->m_ocsSet = false;
 
   m_engine = engine;
   d->m_page = NULL;
@@ -293,6 +334,8 @@ void DownloadDialog::clear()
       d->m_ocs.remove(it.key());
     }
 
+    d->m_setButtons.remove(it.key());
+    d->m_keyButtons.remove(it.key());
     delete it.key();
   }
   m_map.clear();
@@ -338,7 +381,11 @@ void DownloadDialog::addProvider(Provider *p)
   kdDebug() << "addProvider()/begin" << endl;
 
   ret = true;
-  if(p->icon().path().isEmpty()) ret = false;
+  if(sourceIsProvider(p))
+  {
+    pix = KGlobal::iconLoader()->loadIcon(WallpaperSource::iconName(sourceId(p)), KIcon::Panel);
+  }
+  else if(p->icon().path().isEmpty()) ret = false;
   else
   {
     if(!p->icon().protocol().isEmpty())
@@ -370,9 +417,38 @@ void DownloadDialog::addProvider(Provider *p)
   connect(ctl, SIGNAL(currentChanged(QWidget *)), SLOT(slotTab()));
 
   QHBoxLayout *box = new QHBoxLayout(frame);
-  box->add(ctl);
 
   bool ocs = ocsIsProvider(p);
+  bool source = sourceIsProvider(p);
+  if(source)
+  {
+    // the tabs of the source; a note about its pictures under them
+    QValueList<WallpaperSource::Tab> sourceTabs = WallpaperSource(sourceId(p), 0).tabs();
+    QWidget *pages[] = { w_r, w_d, w_l };
+    for(int i = 2; i >= 0; i--)
+    {
+      if(i < int(sourceTabs.count())) ctl->changeTab(pages[i], sourceTabs[i].name);
+      else
+      {
+        ctl->removePage(pages[i]);
+        pages[i]->hide();
+      }
+    }
+    QVBoxLayout *left = new QVBoxLayout(box);
+    left->setSpacing(spacingHint());
+    left->add(ctl);
+    QString text = WallpaperSource::note(sourceId(p));
+    if(!text.isEmpty())
+    {
+      QLabel *note = new QLabel(frame);
+      note->setTextFormat(Qt::PlainText);
+      note->setAlignment(Qt::WordBreak | Qt::AlignLeft | Qt::AlignTop);
+      note->setText(text);
+      left->add(note);
+    }
+  }
+  else
+    box->add(ctl);
 
   d->m_lvtmp_r = new KListView(w_r);
   d->m_lvtmp_d = new KListView(w_d);
@@ -387,11 +463,26 @@ void DownloadDialog::addProvider(Provider *p)
       KListView *lv = lists[i];
       lv->addColumn(i18n("Name"));
       lv->addColumn(i18n("Author"));
+      if(source)
+      {
+        lv->addColumn(i18n("Resolution"));
+        lv->addColumn(i18n("License"));
+        lv->addColumn(i18n("Date"));
+        lv->setColumnWidthMode(0, QListView::Manual);
+        lv->setColumnWidth(0, 260);
+        lv->setColumnWidthMode(1, QListView::Manual);
+        lv->setColumnWidth(1, 140);
+        lv->setColumnWidthMode(3, QListView::Manual);
+        lv->setColumnWidth(3, 120);
+      }
+      else
+      {
       lv->addColumn(i18n("Rating"));
       lv->addColumn(i18n("Downloads"));
       lv->addColumn(i18n("Updated"));
       lv->setColumnAlignment(2, Qt::AlignRight);
       lv->setColumnAlignment(3, Qt::AlignRight);
+      }
       lv->setSorting(-1);
       lv->setAllColumnsShowFocus(true);
       connect(lv, SIGNAL(selectionChanged()), SLOT(slotSelected()));
@@ -439,6 +530,25 @@ void DownloadDialog::addProvider(Provider *p)
   vbox->addSpacing(spacingHint());
   vbox->add(de);
   vbox->add(in);
+
+  if(ocs && !m_engine)
+  {
+    // installs the picture and closes the dialog: the application uses it
+    QPushButton *set = new QPushButton(i18n("Install and &Set"), frame);
+    set->setEnabled(false);
+    QWhatsThis::add(set, i18n("Installs the picture and uses it as the wallpaper at once."));
+    vbox->add(set);
+    if(!d->m_installAndSet) set->hide();
+    connect(set, SIGNAL(clicked()), SLOT(slotOcsInstallAndSet()));
+    d->m_setButtons[frame] = set;
+  }
+  if(source && WallpaperSource::usesApiKey(sourceId(p)))
+  {
+    QPushButton *key = new QPushButton(i18n("API &Key..."), frame);
+    vbox->add(key);
+    connect(key, SIGNAL(clicked()), SLOT(slotOcsApiKey()));
+    d->m_keyButtons[frame] = key;
+  }
 
   connect(rt, SIGNAL(linkClicked(const QString&)), SLOT(slotEmail(const QString&)));
 
@@ -644,7 +754,12 @@ void DownloadDialog::slotDetails()
   if(d->m_entryPage.contains(e))
   {
     Private::OcsPage *page = d->m_ocs[d->m_entryPage[e]];
-    info.append(i18n("Web page: %1\n").arg(page->content[e].detailPage.url()));
+    const OcsContent &c = page->content[e];
+    if(!c.licenseUrl.isEmpty())
+      info.append(i18n("License text: %1\n").arg(c.licenseUrl));
+    if(!c.source.isEmpty())
+      info.append(i18n("Source: %1\n").arg(c.source));
+    info.append(i18n("Web page: %1\n").arg(c.detailPage.url()));
   }
   else
   info.append(i18n
@@ -1098,21 +1213,34 @@ void DownloadDialog::ocsAddPage(QWidget *frame, Provider *p, QTextBrowser *rt,
 {
   Private::OcsPage *page = new Private::OcsPage;
   page->provider = p;
-  page->host = ocsBaseUrl(p).host();
   page->browser = rt;
   page->factory = new QMimeSourceFactory;
   rt->setMimeSourceFactory(page->factory);
 
-  page->client = new OcsClient(ocsBaseUrl(p), ocsCategories(p), frame);
-  connect(page->client, SIGNAL(contentsListed(int, int, const QValueList<KNS::OcsContent> &, int, bool)),
+  QObject *client;
+  if(sourceIsProvider(p))
+  {
+    page->host = sourceId(p);
+    page->client = 0;
+    page->source = new WallpaperSource(sourceId(p), frame);
+    client = page->source;
+  }
+  else
+  {
+    page->host = ocsBaseUrl(p).host();
+    page->source = 0;
+    page->client = new OcsClient(ocsBaseUrl(p), ocsCategories(p), frame);
+    client = page->client;
+  }
+  connect(client, SIGNAL(contentsListed(int, int, const QValueList<KNS::OcsContent> &, int, bool)),
           SLOT(slotOcsListed(int, int, const QValueList<KNS::OcsContent> &, int, bool)));
-  connect(page->client, SIGNAL(listingFailed(int, const QString &)),
+  connect(client, SIGNAL(listingFailed(int, const QString &)),
           SLOT(slotOcsListingFailed(int, const QString &)));
-  connect(page->client, SIGNAL(previewLoaded(int, const QImage &)),
+  connect(client, SIGNAL(previewLoaded(int, const QImage &)),
           SLOT(slotOcsPreview(int, const QImage &)));
-  connect(page->client, SIGNAL(downloadResolved(const QString &, int, const KURL &)),
+  connect(client, SIGNAL(downloadResolved(const QString &, int, const KURL &)),
           SLOT(slotOcsResolved(const QString &, int, const KURL &)));
-  connect(page->client, SIGNAL(downloadFailed(const QString &, int, const QString &)),
+  connect(client, SIGNAL(downloadFailed(const QString &, int, const QString &)),
           SLOT(slotOcsResolveFailed(const QString &, int, const QString &)));
 
   for(int i = 0; i < 3; i++)
@@ -1123,11 +1251,32 @@ void DownloadDialog::ocsAddPage(QWidget *frame, Provider *p, QTextBrowser *rt,
     t.loaded = 0;
     t.busy = false;
     t.started = false;
+    page->search[i] = 0;
+
+    if(page->source && i < page->tabCount() && page->source->tabs()[i].search)
+    {
+      // the search words above the list
+      QHBoxLayout *top = new QHBoxLayout(spacingHint());
+      layouts[i]->insertLayout(0, top);
+      KLineEdit *edit = new KLineEdit(tabs[i]);
+      edit->setMaxLength(100);
+      // Return searches, it does not close the dialog
+      edit->setTrapReturnKey(true);
+      QPushButton *go = new QPushButton(i18n("S&earch"), tabs[i]);
+      top->addWidget(edit, 1);
+      top->addWidget(go);
+      connect(edit, SIGNAL(returnPressed()), SLOT(slotOcsSearch()));
+      connect(go, SIGNAL(clicked()), SLOT(slotOcsSearch()));
+      page->search[i] = edit;
+    }
 
     QHBoxLayout *row = new QHBoxLayout(layouts[i]);
     row->setSpacing(spacingHint());
     t.status = new QLabel(tabs[i]);
     t.status->setTextFormat(Qt::PlainText);
+    // a long message (a server's error with its URL) does not widen the
+    // dialog
+    t.status->setSizePolicy(QSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred));
     t.more = new QPushButton(i18n("&More"), tabs[i]);
     t.more->setEnabled(false);
     row->addWidget(t.status, 1);
@@ -1150,13 +1299,14 @@ void DownloadDialog::ocsFetch(QWidget *frame, int tab)
 {
   if(!d->m_ocs.contains(frame) || tab < 0 || tab > 2) return;
   Private::OcsPage *page = d->m_ocs[frame];
+  if(tab >= page->tabCount()) return;
   Private::OcsTab &t = page->tabs[tab];
 
   t.started = true;
   t.busy = true;
   t.more->setEnabled(false);
   t.status->setText(i18n("Loading..."));
-  page->client->listContents(tab, t.nextPage);
+  page->list(tab, t.nextPage);
 }
 
 void DownloadDialog::slotOcsListed(int sortMode, int pageNumber, const QValueList<KNS::OcsContent> &items, int total, bool more)
@@ -1201,14 +1351,22 @@ void DownloadDialog::slotOcsListed(int sortMode, int pageNumber, const QValueLis
       {
         int key = d->m_nextPreviewKey++;
         page->previewKeys[key] = e;
-        page->client->fetchPreview(ocsPreviewUrl(c.preview), key);
+        page->fetchPreview(page->source ? c.preview : ocsPreviewUrl(c.preview), key);
       }
     }
 
-    KListViewItem *item = new KListViewItem(t.list, t.list->lastItem(),
-      c.name, c.author, QString("%1%").arg(c.score),
-      KGlobal::locale()->formatNumber(c.downloads, 0),
-      KGlobal::locale()->formatDate(c.changed.date(), true));
+    KListViewItem *item;
+    if(page->source)
+      item = new KListViewItem(t.list, t.list->lastItem(),
+        c.name, c.author,
+        (c.width > 0 && c.height > 0) ? QString("%1 x %2").arg(c.width).arg(c.height) : QString::null,
+        c.license,
+        c.changed.isValid() ? KGlobal::locale()->formatDate(c.changed.date(), true) : QString::null);
+    else
+      item = new KListViewItem(t.list, t.list->lastItem(),
+        c.name, c.author, QString("%1%").arg(c.score),
+        KGlobal::locale()->formatNumber(c.downloads, 0),
+        KGlobal::locale()->formatDate(c.changed.date(), true));
     item->setPixmap(0, ocsItemPixmap(e, background));
     d->m_itemEntries[item] = e;
     t.loaded++;
@@ -1218,7 +1376,7 @@ void DownloadDialog::slotOcsListed(int sortMode, int pageNumber, const QValueLis
   t.more->setEnabled(more);
   if(t.loaded == 0)
     t.status->setText(i18n("No items found."));
-  else if(total >= t.loaded)
+  else if(total >= t.loaded && total > 0)
     t.status->setText(i18n("%1 of %2 items").arg(t.loaded).arg(total));
   else
     t.status->setText(i18n("%1 items").arg(t.loaded));
@@ -1231,6 +1389,13 @@ void DownloadDialog::slotOcsListingFailed(int sortMode, const QString &message)
   Private::OcsTab &t = page->tabs[sortMode];
 
   t.busy = false;
+  if(page->search[sortMode] && page->source && page->source->searchText(sortMode).isEmpty())
+  {
+    // nothing to search for yet
+    t.status->setText(message);
+    t.more->setEnabled(false);
+    return;
+  }
   t.status->setText(i18n("Could not load the list: %1").arg(message));
   t.more->setText(i18n("&Retry"));
   t.more->setEnabled(true);
@@ -1331,14 +1496,36 @@ void DownloadDialog::ocsShowDetails(Entry *e)
     desc += i18n("Loading preview...");
   else
     desc += i18n("Preview not available.");
-  if(!c.summary.isEmpty())
+  if(!c.summary.isEmpty() && !page->source)
     desc += "<br><br><i>" + QStyleSheet::escape(c.summary) + "</i>";
+  if(page->source)
+  {
+    // the attribution: who made it, under which license, from where
+    desc += "<br>";
+    if(c.width > 0 && c.height > 0)
+      desc += "<br>" + i18n("Resolution: %1 x %2").arg(c.width).arg(c.height);
+    if(!c.author.isEmpty())
+      desc += "<br>" + i18n("Author: %1").arg(QStyleSheet::escape(c.author));
+    if(!c.license.isEmpty())
+      desc += "<br>" + i18n("License: %1").arg(QStyleSheet::escape(c.license));
+    if(!c.licenseUrl.isEmpty())
+      desc += "<br><small>" + QStyleSheet::escape(c.licenseUrl) + "</small>";
+    desc += "<br>" + i18n("Source: %1").arg(QStyleSheet::escape(c.source));
+    if(c.detailPage.isValid())
+      desc += "<br><small>" + QStyleSheet::escape(c.detailPage.prettyURL()) + "</small>";
+    // the description after the attribution, which stays in view
+    if(!c.summary.isEmpty())
+      desc += "<br><br><i>" + QStyleSheet::escape(c.summary) + "</i>";
+  }
+  else
+  {
   desc += "<br><br>" + i18n("Rating: %1%").arg(c.score);
   desc += "<br>" + i18n("Downloads: %1").arg(KGlobal::locale()->formatNumber(c.downloads, 0));
   if(c.changed.isValid())
     desc += "<br>" + i18n("Updated: %1").arg(KGlobal::locale()->formatDate(c.changed.date()));
   if(!c.license.isEmpty())
     desc += "<br>" + i18n("License: %1").arg(QStyleSheet::escape(c.license));
+  }
   desc += "</qt>";
 
   m_rt->setText(desc);
@@ -1348,6 +1535,8 @@ void DownloadDialog::ocsShowDetails(Entry *e)
   QPushButton *de = *(m_buttons[d->m_page]->at(1));
   if(in) in->setEnabled(!busy && installStatus(e) != 1 && !c.files.isEmpty());
   if(de) de->setEnabled(true);
+  if(d->m_setButtons.contains(d->m_page))
+    d->m_setButtons[d->m_page]->setEnabled(!busy && !c.files.isEmpty());
 }
 
 void DownloadDialog::ocsInstall(Entry *e)
@@ -1411,7 +1600,7 @@ void DownloadDialog::ocsInstall(Entry *e)
   QPushButton *in = *(m_buttons[d->m_page]->at(0));
   if(in) in->setEnabled(false);
 
-  page->client->resolveDownload(c.id, d->m_ocsFile.number);
+  page->resolveDownload(c.id, d->m_ocsFile.number);
 }
 
 void DownloadDialog::slotOcsResolveFailed(const QString &, int, const QString &message)
@@ -1444,6 +1633,8 @@ void DownloadDialog::slotOcsResolved(const QString &id, int number, const KURL &
   // a plain GET, so that the transfer can be anonymous (no cookies) and
   // limited in size; the server redirects to its file storage
   KIO::TransferJob *job = KIO::get(link, true, true);
+  if(page->source)
+    WallpaperSource::setupJob(job);
   job->addMetaData("errorPage", "false");
   job->addMetaData("cookies", "none");
   job->addMetaData("ssl_militant", "TRUE");
@@ -1458,7 +1649,7 @@ void DownloadDialog::slotOcsResolved(const QString &id, int number, const KURL &
 void DownloadDialog::slotOcsRedirection(KIO::Job *job, const KURL &url)
 {
   if(job != d->m_ocsJob || !d->m_ocs.contains(d->m_ocsPage)) return;
-  if(d->m_ocs[d->m_ocsPage]->client->isAllowedUrl(url)) return;
+  if(d->m_ocs[d->m_ocsPage]->isAllowedUrl(url)) return;
   // reported by slotOcsDownloaded()
   d->m_ocsBadRedirect = true;
   job->kill(false);
@@ -1470,7 +1661,10 @@ void DownloadDialog::slotOcsDownloadData(KIO::Job *job, const QByteArray &data)
 
   d->m_ocsWritten += data.size();
   QFile *f = d->m_ocsTemp->file();
-  if(d->m_ocsWritten > OcsInstaller::maxDownloadSize ||
+  Q_ULLONG limit = OcsInstaller::maxDownloadSize;
+  if(d->m_ocs.contains(d->m_ocsPage) && d->m_ocs[d->m_ocsPage]->source)
+    limit = WallpaperSource::maxDownloadSize;
+  if(d->m_ocsWritten > limit ||
      !f || f->writeBlock(data.data(), data.size()) != (Q_LONG)data.size())
   {
     // reported by slotOcsDownloaded()
@@ -1533,6 +1727,18 @@ void DownloadDialog::slotOcsDownloaded(KIO::Job *job)
   else if(!installed.isEmpty())
   {
     install(e);
+    // the pictures, for "Install and Set" of an installed item
+    {
+      KConfigGroupSaver saver(kapp->config(), "KNewStuffStatus");
+      kapp->config()->writePathEntry(ocsStatusKey(e) + ":files", installed);
+      kapp->config()->sync();
+    }
+    if(d->m_ocsSet)
+    {
+      ocsFinish();
+      ocsSetPicture(installed);
+      return;
+    }
     KMessageBox::information(this, i18n("Installation successful."), i18n("Installation"));
   }
 
@@ -1543,6 +1749,7 @@ void DownloadDialog::ocsFinish()
 {
   Entry *e = d->m_ocsEntry;
   d->m_ocsEntry = 0;
+  d->m_ocsSet = false;
   d->m_ocsPage = 0;
   d->m_ocsJob = 0;
   delete d->m_ocsTemp;
@@ -1553,6 +1760,131 @@ void DownloadDialog::ocsFinish()
   d->m_lvtmp_d->setEnabled(true);
 
   if(e && getEntry() == e) ocsShowDetails(e);
+}
+
+void DownloadDialog::ocsSetPicture(const QStringList &files)
+{
+  if(files.isEmpty()) return;
+  QString file = files.first();
+  if(files.count() > 1)
+  {
+    // a pack of pictures: which one
+    QStringList names;
+    for(QStringList::ConstIterator it = files.begin(); it != files.end(); ++it)
+      names << QFileInfo(*it).fileName();
+    bool ok = false;
+    QString choice = KInputDialog::getItem(i18n("Choose Picture"),
+      i18n("Which picture do you want to use as the wallpaper?"), names, 0, false, &ok, this);
+    if(!ok) return;
+    int index = names.findIndex(choice);
+    if(index < 0) return;
+    file = files[index];
+  }
+  d->m_setFile = file;
+  accept();
+}
+
+void DownloadDialog::slotOcsInstallAndSet()
+{
+  Entry *e = getEntry();
+  if(!e || !d->m_entryPage.contains(e) || d->m_ocsEntry) return;
+
+  if(installStatus(e) == 1)
+  {
+    // installed before: its pictures, if they are still there
+    KConfigGroupSaver saver(kapp->config(), "KNewStuffStatus");
+    QStringList files = kapp->config()->readPathListEntry(ocsStatusKey(e) + ":files");
+    QStringList existing;
+    for(QStringList::ConstIterator it = files.begin(); it != files.end(); ++it)
+      if(QFileInfo(*it).isFile()) existing << *it;
+    if(!existing.isEmpty())
+    {
+      ocsSetPicture(existing);
+      return;
+    }
+  }
+
+  d->m_ocsSet = true;
+  ocsInstall(e);
+  if(!d->m_ocsEntry) d->m_ocsSet = false;
+}
+
+void DownloadDialog::slotOcsSearch()
+{
+  const QObject *s = sender();
+  for(QMap<QWidget*, Private::OcsPage*>::Iterator it = d->m_ocs.begin(); it != d->m_ocs.end(); ++it)
+  {
+    Private::OcsPage *page = it.data();
+    for(int i = 0; i < 3; i++)
+    {
+      QLineEdit *edit = page->search[i];
+      if(!edit || !page->source || (s != edit && s->parent() != edit->parent())) continue;
+
+      page->source->setSearchText(i, edit->text());
+      Private::OcsTab &t = page->tabs[i];
+      for(QListViewItem *item = t.list->firstChild(); item; item = item->nextSibling())
+        d->m_itemEntries.remove(item);
+      t.list->clear();
+      t.loaded = 0;
+      t.nextPage = 0;
+      ocsFetch(it.key(), i);
+      return;
+    }
+  }
+}
+
+void DownloadDialog::slotOcsApiKey()
+{
+  QWidget *frame = 0;
+  for(QMap<QWidget*, QPushButton*>::Iterator it = d->m_keyButtons.begin(); it != d->m_keyButtons.end(); ++it)
+    if(it.data() == sender()) frame = it.key();
+  if(!frame || !d->m_ocs.contains(frame) || !d->m_ocs[frame]->source) return;
+  Private::OcsPage *page = d->m_ocs[frame];
+  QString id = page->source->id();
+
+  QString text = id == "apod" ?
+    i18n("Your API key from api.nasa.gov for older pictures (leave it empty to use the shared DEMO_KEY):") :
+    i18n("The access key of your Unsplash application (unsplash.com/developers); leave it empty to remove it:");
+  text += "\n" + i18n("The key is kept in a file only you can read.");
+
+  bool ok = false;
+  QString key = KInputDialog::getText(i18n("API Key for %1").arg(WallpaperSource::displayName(id)),
+                                      text, WallpaperSource::apiKey(id), &ok, this);
+  if(!ok) return;
+  if(!WallpaperSource::setApiKey(id, key))
+  {
+    KMessageBox::sorry(this, i18n("This is not a valid key: a key has only letters, digits, '-' and '_'."));
+    return;
+  }
+
+  // list again with the new key
+  for(int i = 0; i < page->tabCount(); i++)
+  {
+    Private::OcsTab &t = page->tabs[i];
+    if(t.busy) continue;
+    for(QListViewItem *item = t.list->firstChild(); item; item = item->nextSibling())
+      d->m_itemEntries.remove(item);
+    t.list->clear();
+    t.loaded = 0;
+    t.nextPage = 0;
+    t.started = false;
+  }
+  ocsFetch(frame, d->m_page == frame ? m_curtab : 0);
+}
+
+void DownloadDialog::setInstallAndSetEnabled(bool enable)
+{
+  d->m_installAndSet = enable && !m_engine;
+  for(QMap<QWidget*, QPushButton*>::Iterator it = d->m_setButtons.begin(); it != d->m_setButtons.end(); ++it)
+  {
+    if(d->m_installAndSet) it.data()->show();
+    else it.data()->hide();
+  }
+}
+
+QString DownloadDialog::installedAndSetFile() const
+{
+  return d->m_setFile;
 }
 
 // END Open Collaboration Services

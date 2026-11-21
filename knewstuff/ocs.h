@@ -63,10 +63,11 @@ struct OcsDownload
   int sizeKiB;         // size announced by the server, 0 if unknown
 };
 
-/** One OCS content item. */
+/** One OCS content item, or a picture of a wallpaper source. */
 struct OcsContent
 {
-  QString id;          // digits only
+  OcsContent() : score( 0 ), downloads( 0 ), width( 0 ), height( 0 ) {}
+  QString id;          // digits only (OCS), letters, digits, '-' and '_' (sources)
   QString name;
   QString version;
   QString author;
@@ -78,6 +79,12 @@ struct OcsContent
   KURL preview;        // small preview picture
   KURL detailPage;
   QValueList<OcsDownload> files;
+  // wallpaper sources (wallpapersources.h)
+  QString licenseUrl;
+  QString source;      // the name of the source, for the attribution
+  int width;           // of the picture, 0 if unknown
+  int height;
+  KURL download;       // the picture, or where to ask for it
 };
 
 typedef QValueList<OcsContent> OcsContentList;
@@ -87,6 +94,18 @@ bool ocsIsProvider( const Provider *p );
 KURL ocsBaseUrl( const Provider *p );
 QString ocsCategories( const Provider *p );
 void ocsSetProvider( Provider *p, const KURL &base, const QString &categories );
+
+/**
+ * Parses an untrusted XML document: refused if it has a DTD or other
+ * markup declarations, or elements nested deeper than 32 levels.
+ */
+bool parseUntrustedXml( const QByteArray &data, QDomDocument *doc );
+
+/**
+ * The size of a picture (JPEG, PNG, GIF, BMP, WebP, AVIF, JPEG XL) read
+ * from its header, without decoding it.
+ */
+bool imageHeaderSize( const QByteArray &data, int *width, int *height );
 
 /**
  * Asynchronous, anonymous OCS client: content listing, resolution of the
@@ -186,6 +205,19 @@ class OcsInstaller
     static QString install( const QString &file, const QString &dir, bool wallpaper,
                             const OcsContent &content, const OcsDownload &download,
                             QWidget *parent, QStringList *installed );
+
+    /**
+     * Installs the single picture @p file into @p dir without asking
+     * anything (an existing file of the same name is replaced): for the
+     * pictures of the day of the desktop. The name is @p download's name
+     * with the extension of the picture's format; a .desktop file with
+     * the name, author and license is written next to it.
+     *
+     * @return QString::null on success, otherwise an error message
+     */
+    static QString installPicture( const QString &file, const QString &dir,
+                                   const OcsContent &content, const OcsDownload &download,
+                                   QString *installed );
 
     /** Limits for downloads and extraction. */
     static const Q_ULLONG maxDownloadSize;

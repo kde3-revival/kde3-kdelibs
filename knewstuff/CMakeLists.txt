@@ -13,6 +13,9 @@ kde3_add_library(knewstuff SHARED
     knewstuffsecure.cpp
     security.cpp
     ocs.cpp
+    json.cpp
+    wallpapersources.cpp
+    dailypicture.cpp
   MOC
     downloaddialog.h
     engine.h
@@ -23,6 +26,8 @@ kde3_add_library(knewstuff SHARED
     security.h
     uploaddialog.h
     ocs.h
+    wallpapersources.h
+    dailypicture.h
   LINK
     kio
 )
@@ -55,6 +60,7 @@ install(FILES
   uploaddialog.h
   knewstuffbutton.h
   knewstuffsecure.h
+  dailypicture.h
   DESTINATION ${KDE3_INCLUDE_INSTALL_DIR}/knewstuff)
 
 kde3_install_icons(AUTO)
