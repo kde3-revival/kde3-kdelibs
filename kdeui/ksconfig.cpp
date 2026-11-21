@@ -38,6 +38,78 @@
 
 #include "ksconfig.h"
 
+#include <stdio.h>
+#include <qregexp.h>
+
+// The first capture of <match> in the first line of the output of <cmd>
+// (a fixed command, run with the shell) that it matches, or null.
+static QString commandOutput(const char *cmd, QRegExp match)
+{
+  QString res;
+  FILE *f = popen(cmd, "r");
+  if (!f)
+    return res;
+  char buf[1024];
+  while (fgets(buf, sizeof(buf), f)) {
+    QString line = QString::fromLocal8Bit(buf).stripWhiteSpace();
+    if (match.search(line) >= 0) {
+      res = match.cap(1);
+      break;
+    }
+  }
+  pclose(f);
+  return res;
+}
+
+// The first of the candidate directories that exists, or null.
+static QString firstDir(const QStringList &dirs)
+{
+  for (QStringList::ConstIterator it = dirs.begin(); it != dirs.end(); ++it) {
+    QFileInfo dir(*it);
+    if (!(*it).isEmpty() && dir.exists() && dir.isDir())
+      return *it;
+  }
+  return QString::null;
+}
+
+// Where the ispell dictionaries are: ispell's own LIBDIR ("ispell -vv"),
+// then the usual places.  Before, "/usr/lib" KDELIBSUFF "/ispell" was
+// tried first; KDELIBSUFF is the layout of the KDE prefix, not of the
+// system.
+static QString ispellDictDir()
+{
+  static QString dir;
+  static bool done = false;
+  if (!done) {
+    done = true;
+    dir = firstDir(QStringList(commandOutput("ispell -vv </dev/null 2>/dev/null",
+                                             QRegExp("^LIBDIR = \"(.+)\"$")))
+                   << "/usr/lib/ispell" << "/usr/local/lib/ispell"
+                   << "/usr/local/share/ispell" << "/usr/share/ispell"
+                   << "/usr/pkg/lib");
+  }
+  return dir;
+}
+
+// Where the aspell dictionaries are: what aspell says ("aspell config
+// dict-dir", e.g. /usr/lib64/aspell-0.60), then ASPELL_DATADIR (set at
+// build time) and the usual places.
+static QString aspellDictDir()
+{
+  static QString dir;
+  static bool done = false;
+  if (!done) {
+    done = true;
+    dir = firstDir(QStringList(commandOutput("aspell config dict-dir </dev/null 2>/dev/null",
+                                             QRegExp("^(/.*)$")))
+                   << ASPELL_DATADIR
+                   << "/usr/lib/aspell" << "/usr/lib/aspell-0.60"
+                   << "/usr/local/lib/aspell" << "/usr/share/aspell"
+                   << "/usr/local/share/aspell" << "/usr/pkg/lib/aspell");
+  }
+  return dir;
+}
+
 class KSpellConfigPrivate
 {
 public:
@@ -440,21 +512,9 @@ void KSpellConfig::getAvailDictsIspell () {
   dictcombo->insertItem( i18n("ISpell Default") );
 
   // dictionary path
-  QFileInfo dir ("/usr/lib" KDELIBSUFF "/ispell");
-  if (!dir.exists() || !dir.isDir())
-    dir.setFile ("/usr/local/lib" KDELIBSUFF "/ispell");
-  if (!dir.exists() || !dir.isDir())
-    dir.setFile ("/usr/local/share/ispell");
-  if (!dir.exists() || !dir.isDir())
-    dir.setFile ("/usr/share/ispell");
-  if (!dir.exists() || !dir.isDir())
-    dir.setFile ("/usr/pkg/lib");
-  /* TODO get them all instead of just one of them.
-   * If /usr/local/lib exists, it skips the rest
-  if (!dir.exists() || !dir.isDir())
-    dir.setFile ("/usr/local/lib");
-  */
-  if (!dir.exists() || !dir.isDir()) return;
+  QString dictDir = ispellDictDir();
+  if (dictDir.isEmpty()) return;
+  QFileInfo dir (dictDir);
 
   kdDebug(750) << "KSpellConfig::getAvailDictsIspell "
 	       << dir.filePath() << " " << dir.dirPath() << endl;
@@ -507,20 +567,9 @@ void KSpellConfig::getAvailDictsAspell () {
   langfnames.append(""); // Default
   dictcombo->insertItem (i18n("ASpell Default"));
 
-  // Aspell now have /usr/lib/aspell as
-  // ASPELL_DATADIR default.
-  QFileInfo dir ( ASPELL_DATADIR );
-  if (!dir.exists() || !dir.isDir())
-    dir.setFile ("/usr/lib" KDELIBSUFF "/aspell-0.60");
-  if (!dir.exists() || !dir.isDir())
-    dir.setFile ("/usr/local/lib" KDELIBSUFF "/aspell");
-  if (!dir.exists() || !dir.isDir())
-    dir.setFile ("/usr/share/aspell");
-  if (!dir.exists() || !dir.isDir())
-    dir.setFile ("/usr/local/share/aspell");
-  if (!dir.exists() || !dir.isDir())
-    dir.setFile ("/usr/pkg/lib/aspell");
-  if (!dir.exists() || !dir.isDir()) return;
+  QString dictDir = aspellDictDir();
+  if (dictDir.isEmpty()) return;
+  QFileInfo dir (dictDir);
 
   kdDebug(750) << "KSpellConfig::getAvailDictsAspell "
 	       << dir.filePath() << " " << dir.dirPath() << endl;
@@ -594,21 +643,9 @@ KSpellConfig::fillDicts( QComboBox* box, QStringList* dictionaries )
       box->insertItem( i18n("ISpell Default") );
 
       // dictionary path
-      QFileInfo dir ("/usr/lib/ispell");
-      if (!dir.exists() || !dir.isDir())
-        dir.setFile ("/usr/local/lib/ispell");
-      if (!dir.exists() || !dir.isDir())
-        dir.setFile ("/usr/local/share/ispell");
-      if (!dir.exists() || !dir.isDir())
-        dir.setFile ("/usr/share/ispell");
-      if (!dir.exists() || !dir.isDir())
-        dir.setFile ("/usr/pkg/lib");
-      /* TODO get them all instead of just one of them.
-       * If /usr/local/lib exists, it skips the rest
-       if (!dir.exists() || !dir.isDir())
-       dir.setFile ("/usr/local/lib");
-      */
-      if (!dir.exists() || !dir.isDir()) return;
+      QString dictDir = ispellDictDir();
+      if (dictDir.isEmpty()) return;
+      QFileInfo dir (dictDir);
 
       kdDebug(750) << "KSpellConfig::getAvailDictsIspell "
                    << dir.filePath() << " " << dir.dirPath() << endl;
@@ -668,19 +705,9 @@ KSpellConfig::fillDicts( QComboBox* box, QStringList* dictionaries )
       box->insertItem (i18n("ASpell Default"));
 
       // dictionary path
-      // FIXME: use "aspell dump config" to find out the dict-dir
-      QFileInfo dir ("/usr/lib" KDELIBSUFF "/aspell");
-      if (!dir.exists() || !dir.isDir())
-        dir.setFile ("/usr/lib" KDELIBSUFF "/aspell-0.60");
-      if (!dir.exists() || !dir.isDir())
-        dir.setFile ("/usr/local/lib" KDELIBSUFF "/aspell");
-      if (!dir.exists() || !dir.isDir())
-        dir.setFile ("/usr/share/aspell");
-      if (!dir.exists() || !dir.isDir())
-        dir.setFile ("/usr/local/share/aspell");
-      if (!dir.exists() || !dir.isDir())
-        dir.setFile ("/usr/pkg/lib/aspell");
-      if (!dir.exists() || !dir.isDir()) return;
+      QString dictDir = aspellDictDir();
+      if (dictDir.isEmpty()) return;
+      QFileInfo dir (dictDir);
 
       kdDebug(750) << "KSpellConfig::getAvailDictsAspell "
                    << dir.filePath() << " " << dir.dirPath() << endl;
