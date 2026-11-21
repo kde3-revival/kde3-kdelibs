@@ -30,6 +30,7 @@
 
 #include "provider.h"
 #include "provider.moc"
+#include "ocs.h"
 
 using namespace KNS;
 
@@ -38,10 +39,14 @@ using namespace KNS;
 class ProviderPrivate
 {
   public:
-  ProviderPrivate(){}
+  ProviderPrivate() : mOcs( false ) {}
   KURL mDownloadUrlLatest;
   KURL mDownloadUrlScore;
   KURL mDownloadUrlDownloads;
+  // Open Collaboration Services provider (see ocs.h)
+  bool mOcs;
+  KURL mOcsUrl;
+  QString mOcsCategories;
 };
 
 static QPtrDict<ProviderPrivate> *d_ptr_prov = 0;
@@ -72,6 +77,29 @@ KURL Provider::downloadUrlVariant( QString variant ) const
 	return d_prov(this)->mDownloadUrlDownloads;
 
   return mDownloadUrl;
+}
+
+bool KNS::ocsIsProvider( const Provider *p )
+{
+  return p && d_prov(p)->mOcs;
+}
+
+KURL KNS::ocsBaseUrl( const Provider *p )
+{
+  return d_prov(p)->mOcsUrl;
+}
+
+QString KNS::ocsCategories( const Provider *p )
+{
+  return d_prov(p)->mOcsCategories;
+}
+
+void KNS::ocsSetProvider( Provider *p, const KURL &base, const QString &categories )
+{
+  ProviderPrivate *d = d_prov(p);
+  d->mOcs = true;
+  d->mOcsUrl = base;
+  d->mOcsCategories = categories;
 }
 
 // BCI part ends here
@@ -222,6 +250,27 @@ void ProviderLoader::load( const QString &type, const QString &providersList )
   cfg->setGroup("KNewStuff");
 
   QString providersUrl = providersList;
+
+  // An Open Collaboration Services provider (the KDE Store) configured by
+  // the application: there is no provider list to download, the provider
+  // is described by the configuration itself.
+  if ( providersUrl.isEmpty() ) {
+    KURL ocsUrl( cfg->readEntry( "OcsUrl" ) );
+    QString protocol = ocsUrl.protocol().lower();
+    if ( ocsUrl.isValid() && ( protocol == "https" || protocol == "http" ) ) {
+      Provider *provider = new Provider;
+      provider->setName( cfg->readEntry( "OcsName", i18n( "KDE Store" ) ) );
+      // Uploading needs an account on the store: point to its web site
+      provider->setNoUpload( true );
+      provider->setNoUploadUrl( KURL( cfg->readEntry( "OcsWebsite", "https://store.kde.org/" ) ) );
+      ocsSetProvider( provider, ocsUrl, cfg->readEntry( "OcsCategories" ) );
+      mProviders.append( provider );
+      kdDebug() << "ProviderLoader::load(): OCS provider " << ocsUrl.url() << endl;
+      emit providersLoaded( &mProviders );
+      return;
+    }
+  }
+
   if( providersUrl.isEmpty() )
   	providersUrl = cfg->readEntry( "ProvidersUrl" );
 

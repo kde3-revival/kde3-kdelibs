@@ -36,6 +36,7 @@
 
 #include "engine.h"
 #include "engine.moc"
+#include "ocs.h"
 
 using namespace KNS;
 
@@ -102,6 +103,12 @@ void Engine::getMetaInformation( Provider::List *providers )
 
   Provider *p;
   for ( p = providers->first(); p; p = providers->next() ) {
+    if ( ocsIsProvider( p ) ) {
+      // the download dialog lists the contents of OCS providers itself
+      mDownloadDialog->addProvider( p );
+      continue;
+    }
+
     if ( p->downloadUrl().isEmpty() ) continue;
 
     KIO::TransferJob *job = KIO::get( p->downloadUrl(), false, false );
@@ -241,6 +248,29 @@ void Engine::selectUploadProvider( Provider::List *providers )
 
   mProviderLoader->disconnect();
 
+  // Uploading to an OCS provider needs an account on its web site
+  Provider *ocs = 0;
+  int uploadable = 0;
+  for ( Provider *p = providers->first(); p; p = providers->next() ) {
+    if ( ocsIsProvider( p ) ) ocs = p;
+    else ++uploadable;
+  }
+  if ( ocs && uploadable == 0 ) {
+    QString text = i18n( "Uploading to %1 needs an account on its web site. "
+                         "Please upload your files there." ).arg( ocs->name() );
+    KURL site = ocs->noUploadUrl();
+    if ( site.isValid() ) {
+      int result = KMessageBox::questionYesNo( mParentWidget, text, i18n( "Upload Files" ),
+                                               i18n( "Open Web Site" ), KStdGuiItem::close() );
+      if ( result == KMessageBox::Yes )
+        kapp->invokeBrowser( site.url() );
+    } else {
+      KMessageBox::information( mParentWidget, text, i18n( "Upload Files" ) );
+    }
+    emit uploadFinished( false );
+    return;
+  }
+
   if ( !mProviderDialog ) {
     mProviderDialog = new ProviderDialog( this, mParentWidget );
   }
@@ -251,6 +281,7 @@ void Engine::selectUploadProvider( Provider::List *providers )
   mProviderDialog->raise();
 
   for( Provider *p = providers->first(); p; p = providers->next() ) {
+    if ( ocsIsProvider( p ) ) continue;
     mProviderDialog->addProvider( p );
   }
 }

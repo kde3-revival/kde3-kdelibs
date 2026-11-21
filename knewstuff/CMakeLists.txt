@@ -12,6 +12,7 @@ kde3_add_library(knewstuff SHARED
     knewstuffbutton.cpp
     knewstuffsecure.cpp
     security.cpp
+    ocs.cpp
   MOC
     downloaddialog.h
     engine.h
@@ -21,6 +22,7 @@ kde3_add_library(knewstuff SHARED
     providerdialog.h
     security.h
     uploaddialog.h
+    ocs.h
   LINK
     kio
 )

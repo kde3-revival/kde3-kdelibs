@@ -20,7 +20,10 @@
 #ifndef KNEWSTUFF_DOWNLOADDIALOG_H
 #define KNEWSTUFF_DOWNLOADDIALOG_H
 
+#include <qvaluelist.h>
+
 #include <kdialogbase.h>
+#include <kio/global.h>
 #include <knewstuff/provider.h>
 
 namespace KIO
@@ -31,6 +34,8 @@ namespace KIO
 class KListView;
 class QTextBrowser;
 class QFrame;
+class QVBoxLayout;
+class QImage;
 class KNewStuffGeneric;
 
 namespace KNS
@@ -38,6 +43,7 @@ namespace KNS
 
 class ProviderLoader;
 class Entry;
+struct OcsContent;
 class Provider;
 class Engine;
 
@@ -221,6 +227,15 @@ class KDE_EXPORT DownloadDialog : public KDialogBase
     void slotPage(QWidget *w);
     void slotFinish();
     void slotEmail(const QString& link);
+    // Open Collaboration Services providers
+    void slotOcsListed(int sortMode, int page, const QValueList<KNS::OcsContent> &items, int total);
+    void slotOcsListingFailed(int sortMode, const QString &message);
+    void slotOcsMore();
+    void slotOcsPreview(int key, const QImage &image);
+    void slotOcsResolved(const QString &id, int number, const KURL &link);
+    void slotOcsResolveFailed(const QString &id, int number, const QString &message);
+    void slotOcsDownloaded(KIO::Job *job);
+    void slotOcsDownloadData(KIO::Job *job, const QByteArray &data);
 
   private:
     void init(Engine *e);
@@ -229,6 +244,15 @@ class KDE_EXPORT DownloadDialog : public KDialogBase
     void install(Entry *e);
     int installStatus(Entry *e);
     QListViewItem *currentEntryItem();
+    void ocsAddPage(QWidget *frame, Provider *p, QTextBrowser *rt,
+                    QWidget **tabs, QVBoxLayout **layouts, KListView **lists);
+    void ocsFetch(QWidget *frame, int tab);
+    void ocsShowDetails(Entry *e);
+    void ocsInstall(Entry *e);
+    void ocsFinish();
+    void ocsUpdateItems(Entry *e);
+    QPixmap ocsItemPixmap(Entry *e, const QColor &background);
+    QString ocsStatusKey(Entry *e);
 
     ProviderLoader *m_loader;
     QString m_entryname;

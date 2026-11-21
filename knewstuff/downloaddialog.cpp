@@ -32,9 +32,15 @@
 #include <kapplication.h>
 #include <kiconloader.h>
 
+#include <kinputdialog.h>
+#include <kstandarddirs.h>
+#include <ktempfile.h>
+
 #include <knewstuff/entry.h>
 #include <knewstuff/knewstuffgeneric.h>
 #include <knewstuff/engine.h>
+
+#include "ocs.h"
 
 #include <qlayout.h>
 #include <qpushbutton.h>
@@ -43,6 +49,12 @@
 #include <qtextbrowser.h>
 #include <qtabwidget.h>
 #include <qtimer.h> // hack
+#include <qfile.h>
+#include <qimage.h>
+#include <qmime.h>
+#include <qpainter.h>
+#include <qregexp.h>
+#include <qstylesheet.h>
 
 using namespace KNS;
 
@@ -55,7 +67,56 @@ struct DownloadDialog::Private
     QMap<KIO::Job*, Provider*> m_variantjobs;
     QMap<KIO::Job*, QStringList> m_variants;
     QMap<Provider*, Provider*> m_newproviders;
+
+    // Open Collaboration Services provider pages
+    struct OcsTab
+    {
+      KListView *list;
+      QLabel *status;
+      QPushButton *more;
+      int nextPage;
+      int loaded;
+      bool busy;
+      bool started;
+    };
+    struct OcsPage
+    {
+      Provider *provider;
+      OcsClient *client;
+      QTextBrowser *browser;
+      QMimeSourceFactory *factory;
+      OcsTab tabs[3];
+      QMap<QString, Entry*> entries;      // by OCS id
+      QMap<Entry*, OcsContent> content;
+      QMap<Entry*, QImage> previews;
+      QMap<int, Entry*> previewKeys;
+    };
+    QMap<QWidget*, OcsPage*> m_ocs;
+    QMap<QListViewItem*, Entry*> m_itemEntries;
+    QMap<Entry*, QWidget*> m_entryPage;
+    int m_nextPreviewKey;
+    bool m_ocsResized;
+
+    // the OCS installation in progress
+    Entry *m_ocsEntry;
+    QWidget *m_ocsPage;
+    OcsDownload m_ocsFile;
+    KTempFile *m_ocsTemp;
+    KTempFile *m_ocsEngineTemp;
+    Q_ULLONG m_ocsWritten;
+    bool m_ocsTooLarge;
+
+    OcsPage *ocsPageFor(QObject *client)
+    {
+      for(QMap<QWidget*, OcsPage*>::Iterator it = m_ocs.begin(); it != m_ocs.end(); ++it)
+        if(it.data()->client == client) return it.data();
+      return 0;
+    }
 };
+
+// Thumbnails in the OCS lists
+static const int ocsThumbWidth = 80;
+static const int ocsThumbHeight = 50;
 
 class NumSortListViewItem : public KListViewItem
 {
@@ -138,6 +199,14 @@ void DownloadDialog::init(Engine *engine)
 {
   resize(700, 400);
   d = new Private();
+  d->m_nextPreviewKey = 0;
+  d->m_ocsResized = false;
+  d->m_ocsEntry = 0;
+  d->m_ocsPage = 0;
+  d->m_ocsTemp = 0;
+  d->m_ocsEngineTemp = 0;
+  d->m_ocsWritten = 0;
+  d->m_ocsTooLarge = false;
 
   m_engine = engine;
   d->m_page = NULL;
@@ -159,6 +228,14 @@ DownloadDialog::~DownloadDialog()
         delete it.data();
     for (QMap<QWidget *, QValueList<KListView *>* >::const_iterator it = m_map.constBegin(); it != m_map.constEnd(); ++it)
         delete it.data();
+    for (QMap<QWidget *, Private::OcsPage *>::const_iterator it = d->m_ocs.constBegin(); it != d->m_ocs.constEnd(); ++it)
+    {
+        it.data()->browser->setMimeSourceFactory(QMimeSourceFactory::defaultFactory());
+        delete it.data()->factory;
+        delete it.data();
+    }
+    delete d->m_ocsTemp;
+    delete d->m_ocsEngineTemp;
     delete d;
 }
 
@@ -189,9 +266,20 @@ void DownloadDialog::clear()
       //delete (*it);
     }
 
+    if(d->m_ocs.contains(it.key()))
+    {
+      Private::OcsPage *page = d->m_ocs[it.key()];
+      page->browser->setMimeSourceFactory(QMimeSourceFactory::defaultFactory());
+      delete page->factory;
+      delete page;
+      d->m_ocs.remove(it.key());
+    }
+
     delete it.key();
   }
   m_map.clear();
+  d->m_itemEntries.clear();
+  d->m_entryPage.clear();
 }
 
 void DownloadDialog::slotProviders(Provider::List *list)
@@ -266,23 +354,48 @@ void DownloadDialog::addProvider(Provider *p)
   QHBoxLayout *box = new QHBoxLayout(frame);
   box->add(ctl);
 
+  bool ocs = ocsIsProvider(p);
+
   d->m_lvtmp_r = new KListView(w_r);
+  d->m_lvtmp_d = new KListView(w_d);
+  d->m_lvtmp_l = new KListView(w_l);
+
+  if(ocs)
+  {
+    // the server sorts; every list shows the same columns
+    KListView *lists[] = { d->m_lvtmp_r, d->m_lvtmp_d, d->m_lvtmp_l };
+    for(int i = 0; i < 3; i++)
+    {
+      KListView *lv = lists[i];
+      lv->addColumn(i18n("Name"));
+      lv->addColumn(i18n("Author"));
+      lv->addColumn(i18n("Rating"));
+      lv->addColumn(i18n("Downloads"));
+      lv->addColumn(i18n("Updated"));
+      lv->setColumnAlignment(2, Qt::AlignRight);
+      lv->setColumnAlignment(3, Qt::AlignRight);
+      lv->setSorting(-1);
+      lv->setAllColumnsShowFocus(true);
+      connect(lv, SIGNAL(selectionChanged()), SLOT(slotSelected()));
+    }
+  }
+  else
+  {
   d->m_lvtmp_r->addColumn(i18n("Name"));
   d->m_lvtmp_r->addColumn(i18n("Version"));
   d->m_lvtmp_r->addColumn(i18n("Rating"));
   d->m_lvtmp_r->setSorting(2, false);
 
-  d->m_lvtmp_d = new KListView(w_d);
   d->m_lvtmp_d->addColumn(i18n("Name"));
   d->m_lvtmp_d->addColumn(i18n("Version"));
   d->m_lvtmp_d->addColumn(i18n("Downloads"));
   d->m_lvtmp_d->setSorting(2, false);
 
-  d->m_lvtmp_l = new KListView(w_l);
   d->m_lvtmp_l->addColumn(i18n("Name"));
   d->m_lvtmp_l->addColumn(i18n("Version"));
   d->m_lvtmp_l->addColumn(i18n("Release Date"));
   d->m_lvtmp_l->setSorting(2, false);
+  }
 
   connect(d->m_lvtmp_r, SIGNAL(clicked(QListViewItem*)), SLOT(slotSelected()));
   connect(d->m_lvtmp_d, SIGNAL(clicked(QListViewItem*)), SLOT(slotSelected()));
@@ -290,6 +403,12 @@ void DownloadDialog::addProvider(Provider *p)
 
   rt = new QTextBrowser(frame);
   rt->setMinimumWidth(150);
+  if(ocs)
+  {
+    // room for the preview picture, the rest for the list
+    rt->setMinimumWidth(300);
+    rt->setMaximumWidth(320);
+  }
 
   QPushButton *in = new QPushButton(i18n("Install"), frame);
   QPushButton *de = new QPushButton(i18n("Details"), frame);
@@ -314,6 +433,14 @@ void DownloadDialog::addProvider(Provider *p)
   box3->add(d->m_lvtmp_d);
   QVBoxLayout *box4 = new QVBoxLayout(w_l);
   box4->add(d->m_lvtmp_l);
+
+  if(ocs)
+  {
+    QWidget *tabs[] = { w_r, w_d, w_l };
+    QVBoxLayout *layouts[] = { box2, box3, box4 };
+    KListView *lists[] = { d->m_lvtmp_r, d->m_lvtmp_d, d->m_lvtmp_l };
+    ocsAddPage(frame, p, rt, tabs, layouts, lists);
+  }
 
   QValueList<KListView*> *v = new QValueList<KListView*>;
   *v << d->m_lvtmp_r << d->m_lvtmp_d << d->m_lvtmp_l;
@@ -394,8 +521,10 @@ int DownloadDialog::installStatus(Entry *entry)
 
   QString lang = KGlobal::locale()->language();
 
+  QString key = ocsStatusKey(entry);
+  if(key.isEmpty()) key = entry->name(lang);
   kapp->config()->setGroup("KNewStuffStatus");
-  datestring = kapp->config()->readEntry(entry->name(lang));
+  datestring = kapp->config()->readEntry(key);
   if(datestring.isNull()) installed = 0;
   else
   {
@@ -494,6 +623,12 @@ void DownloadDialog::slotDetails()
     ).arg(e->summary(lang)
   );
 
+  if(d->m_entryPage.contains(e))
+  {
+    Private::OcsPage *page = d->m_ocs[d->m_entryPage[e]];
+    info.append(i18n("Web page: %1\n").arg(page->content[e].detailPage.url()));
+  }
+  else
   info.append(i18n
   (
     "Preview: %1\n"
@@ -502,6 +637,9 @@ void DownloadDialog::slotDetails()
     ).arg(e->payload().url()
   ));
 
+  // the texts come from the server: never let the message box take them
+  // for rich text
+  info = "<qt>" + QStyleSheet::escape(info).replace("\n", "<br>") + "</qt>";
   KMessageBox::information(this, info, i18n("Details"));
 }
 
@@ -518,6 +656,12 @@ void DownloadDialog::slotInstall()
 {
   Entry *e = getEntry();
   if(!e) return;
+
+  if(d->m_entryPage.contains(e))
+  {
+    ocsInstall(e);
+    return;
+  }
 
   d->m_lvtmp_r->setEnabled( false );
   d->m_lvtmp_l->setEnabled( false );
@@ -546,15 +690,21 @@ void DownloadDialog::slotInstall()
 
 void DownloadDialog::install(Entry *e)
 {
+  QString key = ocsStatusKey(e);
+  if(key.isEmpty()) key = m_entryname;
   kapp->config()->setGroup("KNewStuffStatus");
-  kapp->config()->writeEntry(m_entryname, e->releaseDate().toString(Qt::ISODate));
+  kapp->config()->writeEntry(key, e->releaseDate().toString(Qt::ISODate));
   kapp->config()->sync();
 
   QPixmap pix = KGlobal::iconLoader()->loadIcon("ok", KIcon::Small);
 
   QString lang = KGlobal::locale()->language();
   
-  if(m_entryitem)
+  if(d->m_entryPage.contains(e))
+  {
+    ocsUpdateItems(e);
+  }
+  else if(m_entryitem)
   {
     m_entryitem->setPixmap(0, pix);
 
@@ -612,6 +762,10 @@ void DownloadDialog::slotTab()
   int tab = static_cast<const QTabWidget *>(sender())->currentPageIndex();
   kdDebug() << "switch tab to: " << tab << endl;
 
+  if(d->m_ocs.contains(d->m_page) && tab >= 0 && tab < 3 &&
+     !d->m_ocs[d->m_page]->tabs[tab].started)
+    ocsFetch(d->m_page, tab);
+
   Entry *eold = getEntry();
   m_curtab = tab;
   Entry *e = getEntry();
@@ -642,6 +796,12 @@ void DownloadDialog::slotSelected()
   Entry *e = getEntry();
   QString lang = KGlobal::locale()->language();
   bool ret;
+
+  if(e && d->m_entryPage.contains(e))
+  {
+    ocsShowDetails(e);
+    return;
+  }
 
   if(e)
   {
@@ -726,6 +886,10 @@ Entry *DownloadDialog::getEntry()
   if(!entryItem)
     return 0;
 
+  QMap<QListViewItem*, Entry*>::Iterator it = d->m_itemEntries.find(entryItem);
+  if(it != d->m_itemEntries.end())
+    return it.data();
+
   QString entryName = entryItem->text(0);
 
   QString lang = KGlobal::locale()->language();
@@ -755,6 +919,8 @@ void DownloadDialog::slotPage(QWidget *w)
 
   kdDebug() << "valid change!!!; lv_r = " << lv_r << endl;
 
+  if(d->m_ocs.contains(w)) return;
+
   if(m_engine) return;
 
   if(!m_filter.isEmpty()) return;
@@ -771,6 +937,16 @@ void DownloadDialog::slotPage(QWidget *w)
 void DownloadDialog::loadProvider(Provider *p)
 {
   QMap<KIO::Job*, Provider*>::Iterator it;
+
+  if(ocsIsProvider(p))
+  {
+    // the page lists its contents itself, page by page
+    for(QMap<QWidget*, Provider*>::Iterator pit = m_providers.begin(); pit != m_providers.end(); ++pit)
+      if(pit.data() == p && d->m_ocs.contains(pit.key())) return;
+    addProvider(p);
+    slotPage(m_frame);
+    return;
+  }
 
   for(it = d->m_variantjobs.begin(); it != d->m_variantjobs.end(); it++)
   {
@@ -876,3 +1052,463 @@ QPtrList<Entry> DownloadDialog::installedEntries()
 {
   return d->m_installlist;
 }
+
+// BEGIN Open Collaboration Services
+
+// The pictures of the KDE Store are served by a cache that scales them:
+// ask for a size that suits the list and the details pane.
+static KURL ocsPreviewUrl(const KURL &url)
+{
+  KURL u(url);
+  if(u.host() == "images.pling.com")
+  {
+    QString path = u.path();
+    QRegExp size("^/cache/[0-9]+x[0-9]+(-[0-9]+)?/");
+    if(size.search(path) == 0)
+    {
+      path.replace(0, size.matchedLength(), "/cache/280x171-2/");
+      u.setPath(path);
+    }
+  }
+  return u;
+}
+
+void DownloadDialog::ocsAddPage(QWidget *frame, Provider *p, QTextBrowser *rt,
+                                QWidget **tabs, QVBoxLayout **layouts, KListView **lists)
+{
+  Private::OcsPage *page = new Private::OcsPage;
+  page->provider = p;
+  page->browser = rt;
+  page->factory = new QMimeSourceFactory;
+  rt->setMimeSourceFactory(page->factory);
+
+  page->client = new OcsClient(ocsBaseUrl(p), ocsCategories(p), frame);
+  connect(page->client, SIGNAL(contentsListed(int, int, const QValueList<KNS::OcsContent> &, int)),
+          SLOT(slotOcsListed(int, int, const QValueList<KNS::OcsContent> &, int)));
+  connect(page->client, SIGNAL(listingFailed(int, const QString &)),
+          SLOT(slotOcsListingFailed(int, const QString &)));
+  connect(page->client, SIGNAL(previewLoaded(int, const QImage &)),
+          SLOT(slotOcsPreview(int, const QImage &)));
+  connect(page->client, SIGNAL(downloadResolved(const QString &, int, const KURL &)),
+          SLOT(slotOcsResolved(const QString &, int, const KURL &)));
+  connect(page->client, SIGNAL(downloadFailed(const QString &, int, const QString &)),
+          SLOT(slotOcsResolveFailed(const QString &, int, const QString &)));
+
+  for(int i = 0; i < 3; i++)
+  {
+    Private::OcsTab &t = page->tabs[i];
+    t.list = lists[i];
+    t.nextPage = 0;
+    t.loaded = 0;
+    t.busy = false;
+    t.started = false;
+
+    QHBoxLayout *row = new QHBoxLayout(layouts[i]);
+    row->setSpacing(spacingHint());
+    t.status = new QLabel(tabs[i]);
+    t.status->setTextFormat(Qt::PlainText);
+    t.more = new QPushButton(i18n("&More"), tabs[i]);
+    t.more->setEnabled(false);
+    row->addWidget(t.status, 1);
+    row->addWidget(t.more);
+    connect(t.more, SIGNAL(clicked()), SLOT(slotOcsMore()));
+  }
+
+  d->m_ocs[frame] = page;
+
+  if(!d->m_ocsResized)
+  {
+    d->m_ocsResized = true;
+    resize(QMAX(width(), 960), QMAX(height(), 640));
+  }
+
+  ocsFetch(frame, 0);
+}
+
+void DownloadDialog::ocsFetch(QWidget *frame, int tab)
+{
+  if(!d->m_ocs.contains(frame) || tab < 0 || tab > 2) return;
+  Private::OcsPage *page = d->m_ocs[frame];
+  Private::OcsTab &t = page->tabs[tab];
+
+  t.started = true;
+  t.busy = true;
+  t.more->setEnabled(false);
+  t.status->setText(i18n("Loading..."));
+  page->client->listContents(tab, t.nextPage);
+}
+
+void DownloadDialog::slotOcsListed(int sortMode, int pageNumber, const QValueList<KNS::OcsContent> &items, int total)
+{
+  Private::OcsPage *page = d->ocsPageFor(const_cast<QObject*>(sender()));
+  if(!page || sortMode < 0 || sortMode > 2) return;
+  Private::OcsTab &t = page->tabs[sortMode];
+  QWidget *frame = 0;
+  for(QMap<QWidget*, Private::OcsPage*>::Iterator it = d->m_ocs.begin(); it != d->m_ocs.end(); ++it)
+    if(it.data() == page) frame = it.key();
+
+  t.busy = false;
+  t.nextPage = pageNumber + 1;
+
+  QColor background = t.list->viewport()->colorGroup().base();
+
+  for(QValueList<OcsContent>::ConstIterator it = items.begin(); it != items.end(); ++it)
+  {
+    const OcsContent &c = *it;
+
+    bool isNew = !page->entries.contains(c.id);
+    Entry *e = isNew ? new Entry : page->entries[c.id];
+    e->setName(c.name);
+    e->setName(c.name, QString::null);
+    e->setType(m_filter);
+    e->setAuthor(c.author);
+    e->setLicence(c.license);
+    e->setSummary(c.summary);
+    e->setVersion(c.version);
+    e->setReleaseDate(c.changed.date());
+    e->setRating(c.score);
+    e->setDownloads(c.downloads);
+    e->setPreview(c.preview);
+    page->content[e] = c;
+    if(isNew)
+    {
+      page->entries[c.id] = e;
+      d->m_entryPage[e] = frame;
+      m_entries.append(e);
+
+      if(c.preview.isValid())
+      {
+        int key = d->m_nextPreviewKey++;
+        page->previewKeys[key] = e;
+        page->client->fetchPreview(ocsPreviewUrl(c.preview), key);
+      }
+    }
+
+    KListViewItem *item = new KListViewItem(t.list, t.list->lastItem(),
+      c.name, c.author, QString("%1%").arg(c.score),
+      KGlobal::locale()->formatNumber(c.downloads, 0),
+      KGlobal::locale()->formatDate(c.changed.date(), true));
+    item->setPixmap(0, ocsItemPixmap(e, background));
+    d->m_itemEntries[item] = e;
+    t.loaded++;
+  }
+
+  bool more = (int)items.count() >= OcsClient::pageSize() && total > t.loaded;
+  t.more->setText(i18n("&More"));
+  t.more->setEnabled(more);
+  if(t.loaded == 0)
+    t.status->setText(i18n("No items found."));
+  else if(total >= t.loaded)
+    t.status->setText(i18n("%1 of %2 items").arg(t.loaded).arg(total));
+  else
+    t.status->setText(i18n("%1 items").arg(t.loaded));
+}
+
+void DownloadDialog::slotOcsListingFailed(int sortMode, const QString &message)
+{
+  Private::OcsPage *page = d->ocsPageFor(const_cast<QObject*>(sender()));
+  if(!page || sortMode < 0 || sortMode > 2) return;
+  Private::OcsTab &t = page->tabs[sortMode];
+
+  t.busy = false;
+  t.status->setText(i18n("Could not load the list: %1").arg(message));
+  t.more->setText(i18n("&Retry"));
+  t.more->setEnabled(true);
+}
+
+void DownloadDialog::slotOcsMore()
+{
+  const QObject *button = sender();
+  for(QMap<QWidget*, Private::OcsPage*>::Iterator it = d->m_ocs.begin(); it != d->m_ocs.end(); ++it)
+    for(int i = 0; i < 3; i++)
+      if(it.data()->tabs[i].more == button)
+      {
+        if(!it.data()->tabs[i].busy) ocsFetch(it.key(), i);
+        return;
+      }
+}
+
+void DownloadDialog::slotOcsPreview(int key, const QImage &image)
+{
+  Private::OcsPage *page = d->ocsPageFor(const_cast<QObject*>(sender()));
+  if(!page || !page->previewKeys.contains(key)) return;
+  Entry *e = page->previewKeys[key];
+  page->previewKeys.remove(key);
+
+  QImage preview = image;
+  if(preview.width() > 280 || preview.height() > 200)
+    preview = preview.smoothScale(280, 200, QImage::ScaleMin);
+  page->previews[e] = preview;
+
+  ocsUpdateItems(e);
+  if(getEntry() == e) ocsShowDetails(e);
+}
+
+QPixmap DownloadDialog::ocsItemPixmap(Entry *e, const QColor &background)
+{
+  QPixmap pm(ocsThumbWidth, ocsThumbHeight);
+  pm.fill(background);
+  QPainter painter(&pm);
+
+  Private::OcsPage *page = d->m_entryPage.contains(e) ? d->m_ocs[d->m_entryPage[e]] : 0;
+  if(page && page->previews.contains(e))
+  {
+    QImage thumb = page->previews[e].smoothScale(ocsThumbWidth, ocsThumbHeight, QImage::ScaleMin);
+    painter.drawImage((ocsThumbWidth - thumb.width()) / 2, (ocsThumbHeight - thumb.height()) / 2, thumb);
+  }
+
+  int installed = installStatus(e);
+  if(installed != 0)
+  {
+    QPixmap icon = KGlobal::iconLoader()->loadIcon(installed > 0 ? "ok" : "history", KIcon::Small);
+    painter.drawPixmap(ocsThumbWidth - icon.width(), ocsThumbHeight - icon.height(), icon);
+  }
+  painter.end();
+  return pm;
+}
+
+void DownloadDialog::ocsUpdateItems(Entry *e)
+{
+  QPixmap pm;
+  bool done = false;
+  for(QMap<QListViewItem*, Entry*>::Iterator it = d->m_itemEntries.begin(); it != d->m_itemEntries.end(); ++it)
+  {
+    if(it.data() != e) continue;
+    if(!done)
+    {
+      pm = ocsItemPixmap(e, it.key()->listView()->viewport()->colorGroup().base());
+      done = true;
+    }
+    it.key()->setPixmap(0, pm);
+  }
+}
+
+QString DownloadDialog::ocsStatusKey(Entry *e)
+{
+  if(!e || !d->m_entryPage.contains(e)) return QString::null;
+  Private::OcsPage *page = d->m_ocs[d->m_entryPage[e]];
+  return QString("ocs:%1:%2").arg(ocsBaseUrl(page->provider).host()).arg(page->content[e].id);
+}
+
+void DownloadDialog::ocsShowDetails(Entry *e)
+{
+  Private::OcsPage *page = d->m_ocs[d->m_entryPage[e]];
+  const OcsContent &c = page->content[e];
+
+  QString desc = "<qt><b>" + QStyleSheet::escape(c.name) + "</b>";
+  if(!c.version.isEmpty())
+    desc += " " + QStyleSheet::escape(c.version);
+  if(!c.author.isEmpty())
+    desc += "<br>" + i18n("by %1").arg(QStyleSheet::escape(c.author));
+  desc += "<br><br>";
+  if(page->previews.contains(e))
+  {
+    QString name = QString("ocs-preview-%1").arg(c.id);
+    page->factory->setImage(name, page->previews[e]);
+    desc += "<img src=\"" + name + "\">";
+  }
+  else if(c.preview.isValid())
+    desc += i18n("Loading preview...");
+  else
+    desc += i18n("Preview not available.");
+  if(!c.summary.isEmpty())
+    desc += "<br><br><i>" + QStyleSheet::escape(c.summary) + "</i>";
+  desc += "<br><br>" + i18n("Rating: %1%").arg(c.score);
+  desc += "<br>" + i18n("Downloads: %1").arg(KGlobal::locale()->formatNumber(c.downloads, 0));
+  if(c.changed.isValid())
+    desc += "<br>" + i18n("Updated: %1").arg(KGlobal::locale()->formatDate(c.changed.date()));
+  if(!c.license.isEmpty())
+    desc += "<br>" + i18n("License: %1").arg(QStyleSheet::escape(c.license));
+  desc += "</qt>";
+
+  m_rt->setText(desc);
+
+  bool busy = d->m_ocsEntry != 0;
+  QPushButton *in = *(m_buttons[d->m_page]->at(0));
+  QPushButton *de = *(m_buttons[d->m_page]->at(1));
+  if(in) in->setEnabled(!busy && installStatus(e) != 1 && !c.files.isEmpty());
+  if(de) de->setEnabled(true);
+}
+
+void DownloadDialog::ocsInstall(Entry *e)
+{
+  if(d->m_ocsEntry) return;
+
+  QWidget *frame = d->m_entryPage[e];
+  Private::OcsPage *page = d->m_ocs[frame];
+  const OcsContent &c = page->content[e];
+
+  if(c.files.isEmpty())
+  {
+    KMessageBox::sorry(this, i18n("This item has no files that can be downloaded."));
+    return;
+  }
+
+  int index = 0;
+  if(c.files.count() > 1)
+  {
+    QStringList choices;
+    int n = 1;
+    for(QValueList<OcsDownload>::ConstIterator it = c.files.begin(); it != c.files.end(); ++it)
+    {
+      QString s = QString("%1. %2").arg(n++).arg((*it).name);
+      if((*it).sizeKiB > 0)
+        s += " (" + KIO::convertSizeFromKB((*it).sizeKiB) + ")";
+      choices << s;
+    }
+    bool ok = false;
+    QString choice = KInputDialog::getItem(i18n("Choose File"),
+      "<qt>" + i18n("\"%1\" offers several files. Which one do you want to install?").arg(QStyleSheet::escape(c.name)) + "</qt>",
+      choices, 0, false, &ok, this);
+    if(!ok) return;
+    index = choices.findIndex(choice);
+    if(index < 0) return;
+  }
+
+  if(!m_engine)
+  {
+    bool wallpaper;
+    if(OcsInstaller::targetDirectory(&wallpaper).isEmpty())
+    {
+      KMessageBox::error(this, i18n("The application does not say where to install this item."));
+      return;
+    }
+  }
+
+  d->m_ocsEntry = e;
+  d->m_ocsPage = frame;
+  d->m_ocsFile = c.files[index];
+  d->m_ocsTooLarge = false;
+
+  m_entryitem = currentEntryItem();
+  m_entryname = m_entryitem ? m_entryitem->text(0) : c.name;
+
+  d->m_lvtmp_r->setEnabled(false);
+  d->m_lvtmp_l->setEnabled(false);
+  d->m_lvtmp_d->setEnabled(false);
+  QPushButton *in = *(m_buttons[d->m_page]->at(0));
+  if(in) in->setEnabled(false);
+
+  page->client->resolveDownload(c.id, d->m_ocsFile.number);
+}
+
+void DownloadDialog::slotOcsResolveFailed(const QString &, int, const QString &message)
+{
+  if(!d->m_ocsEntry) return;
+  KMessageBox::error(this, "<qt>" + i18n("Could not get the download link: %1").arg(QStyleSheet::escape(message)) + "</qt>");
+  ocsFinish();
+}
+
+void DownloadDialog::slotOcsResolved(const QString &id, int number, const KURL &link)
+{
+  Entry *e = d->m_ocsEntry;
+  if(!e || !d->m_ocs.contains(d->m_ocsPage)) return;
+  Private::OcsPage *page = d->m_ocs[d->m_ocsPage];
+  if(page->content[e].id != id || d->m_ocsFile.number != number) return;
+
+  kdDebug() << "OCS: downloading " << link.url() << endl;
+
+  delete d->m_ocsTemp;
+  d->m_ocsTemp = new KTempFile(locateLocal("tmp", "knewstuff-ocs-"), ".download");
+  d->m_ocsTemp->setAutoDelete(true);
+  d->m_ocsWritten = 0;
+  if(d->m_ocsTemp->status() != 0 || !d->m_ocsTemp->file())
+  {
+    KMessageBox::error(this, i18n("Could not create a temporary file."));
+    ocsFinish();
+    return;
+  }
+
+  // a plain GET, so that the transfer can be anonymous (no cookies) and
+  // limited in size; the server redirects to its file storage
+  KIO::TransferJob *job = KIO::get(link, true, true);
+  job->addMetaData("errorPage", "false");
+  job->addMetaData("cookies", "none");
+  connect(job, SIGNAL(data(KIO::Job*, const QByteArray&)),
+          SLOT(slotOcsDownloadData(KIO::Job*, const QByteArray&)));
+  connect(job, SIGNAL(result(KIO::Job*)), SLOT(slotOcsDownloaded(KIO::Job*)));
+}
+
+void DownloadDialog::slotOcsDownloadData(KIO::Job *job, const QByteArray &data)
+{
+  if(!d->m_ocsTemp || d->m_ocsTooLarge || data.isEmpty()) return;
+
+  d->m_ocsWritten += data.size();
+  QFile *f = d->m_ocsTemp->file();
+  if(d->m_ocsWritten > OcsInstaller::maxDownloadSize ||
+     !f || f->writeBlock(data.data(), data.size()) != (Q_LONG)data.size())
+  {
+    // reported by slotOcsDownloaded()
+    d->m_ocsTooLarge = true;
+    job->kill(false);
+  }
+}
+
+void DownloadDialog::slotOcsDownloaded(KIO::Job *job)
+{
+  Entry *e = d->m_ocsEntry;
+  if(!e || !d->m_ocs.contains(d->m_ocsPage)) return;
+
+  if(job->error() || d->m_ocsTooLarge || !d->m_ocsTemp->close())
+  {
+    if(d->m_ocsTooLarge)
+      KMessageBox::error(this, i18n("The download is too large, or it could not be saved."));
+    else if(!job->error())
+      KMessageBox::error(this, i18n("The download could not be saved."));
+    else if(job->error() != KIO::ERR_USER_CANCELED)
+      job->showErrorDialog(this);
+    ocsFinish();
+    return;
+  }
+
+  if(m_engine)
+  {
+    // The application installs the file: the engine copies it to the
+    // application's destination. The copy runs after this returns, so the
+    // file is kept until the next download or until the dialog closes.
+    delete d->m_ocsEngineTemp;
+    d->m_ocsEngineTemp = d->m_ocsTemp;
+    d->m_ocsTemp = 0;
+    e->setPayload(KURL::fromPathOrURL(d->m_ocsEngineTemp->name()));
+    m_engine->download(e);
+    install(e);
+    ocsFinish();
+    return;
+  }
+
+  Private::OcsPage *page = d->m_ocs[d->m_ocsPage];
+  bool wallpaper;
+  QString dir = OcsInstaller::targetDirectory(&wallpaper);
+  QStringList installed;
+  QString error = dir.isEmpty() ?
+    i18n("The application does not say where to install this item.") :
+    OcsInstaller::install(d->m_ocsTemp->name(), dir, wallpaper, page->content[e],
+                          d->m_ocsFile, this, &installed);
+
+  if(!error.isEmpty())
+    KMessageBox::error(this, "<qt>" + QStyleSheet::escape(error) + "</qt>", i18n("Installation"));
+  else if(!installed.isEmpty())
+  {
+    install(e);
+    KMessageBox::information(this, i18n("Installation successful."), i18n("Installation"));
+  }
+
+  ocsFinish();
+}
+
+void DownloadDialog::ocsFinish()
+{
+  Entry *e = d->m_ocsEntry;
+  d->m_ocsEntry = 0;
+  d->m_ocsPage = 0;
+  delete d->m_ocsTemp;
+  d->m_ocsTemp = 0;
+
+  d->m_lvtmp_r->setEnabled(true);
+  d->m_lvtmp_l->setEnabled(true);
+  d->m_lvtmp_d->setEnabled(true);
+
+  if(e && getEntry() == e) ocsShowDetails(e);
+}
+
+// END Open Collaboration Services
