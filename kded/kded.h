@@ -25,6 +25,7 @@
 #include <qtimer.h>
 #include <qasciidict.h>
 #include <qintdict.h>
+#include <qvaluelist.h>
 
 #include <dcopclient.h>
 #include <dcopobject.h>
@@ -110,6 +111,11 @@ public slots:
     */
    void slotKDEDModuleRemoved(KDEDModule *);
 
+   /**
+    * @internal Unloads the libraries of the modules destroyed since
+    */
+   void unloadPendingLibs();
+
 protected slots:
 
    /**
@@ -160,6 +166,7 @@ protected:
    
    QAsciiDict<KDEDModule> m_modules;
    QAsciiDict<KLibrary> m_libs;
+   QValueList<KLibrary *> m_unloadLibs;
    QAsciiDict<QObject> m_dontLoad;
    QAsciiDict<QValueList<long> > m_windowIdList;
    QIntDict<long> m_globalWindowIdList;

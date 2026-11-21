@@ -133,6 +133,8 @@ Kded::~Kded()
   QAsciiDictIterator<KDEDModule> it(m_modules);
   while (!it.isEmpty()) 
 	delete it.toFirst();
+  // the modules' destructors have all returned now
+  unloadPendingLibs();
 }
 
 bool Kded::process(const QCString &obj, const QCString &fun,
@@ -348,8 +350,23 @@ void Kded::slotKDEDModuleRemoved(KDEDModule *module)
 {
   m_modules.remove(module->objId());
   KLibrary *lib = m_libs.take(module->objId());
-  if (lib)
+  // This is called from the destructor of the module, whose code is in
+  // lib: unloading lib now would return into unmapped code (a crash
+  // when kded quits, as soon as the module's library is the last one
+  // KLibLoader loaded).  So it is unloaded afterwards.
+  if (lib) {
+     m_unloadLibs.append(lib);
+     QTimer::singleShot(0, this, SLOT(unloadPendingLibs()));
+  }
+}
+
+void Kded::unloadPendingLibs()
+{
+  while (!m_unloadLibs.isEmpty()) {
+     KLibrary *lib = m_unloadLibs.first();
+     m_unloadLibs.remove(m_unloadLibs.begin());
      lib->unload();
+  }
 }
 
 void Kded::slotApplicationRemoved(const QCString &appId)
