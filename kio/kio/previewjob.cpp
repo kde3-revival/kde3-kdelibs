@@ -156,6 +156,20 @@ PreviewJob::~PreviewJob()
     delete d;
 }
 
+// A shared-mime-info format that is text only by inheritance and has an icon
+// named after it (application-x-kicad-pcb): that icon says more than a
+// thumbnail of the first lines.
+static bool iconSaysMoreThanText( const QString &mimetype )
+{
+    if ( mimetype.startsWith( "text/" ) )
+        return false;
+    KMimeType::Ptr type = KMimeType::mimeType( mimetype );
+    QString ownIcon = mimetype;
+    ownIcon.replace( '/', '-' );
+    return type->property( "X-KDE-SharedMimeInfo" ).toBool() &&
+           type->icon( QString::null, false ) == ownIcon;
+}
+
 void PreviewJob::startPreview()
 {
     // Load the list of plugins to determine which mimetypes are supported
@@ -217,6 +231,13 @@ void PreviewJob::startPreview()
                 }
             }
         }
+
+        // not for the preview pane (KImageFilePreview, the only caller that
+        // doesn't save the thumbnails): there the text is the point
+        if (plugin != mimeMap.end() && d->bSave &&
+            (*plugin)->desktopEntryName() == "textthumbnail" &&
+            iconSaysMoreThanText(it.current()->mimetype()))
+            plugin = mimeMap.end();
 
         if (plugin != mimeMap.end())
         {
