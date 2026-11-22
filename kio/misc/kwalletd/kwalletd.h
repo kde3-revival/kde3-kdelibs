@@ -163,6 +163,7 @@ class KWalletD : public KDEDModule {
 	private:
 		int internalOpenSecretService(const QCString& appid, const QString& wallet, WId w, bool modal);
 		int importClassic(KWalletStore *target, const QString& wallet, WId w, bool ask);
+		int doImportClassic(KWalletStore *target, const QString& wallet, const QString& path, WId w, bool ask);
 		bool openPrompt(const KWalletStore *w) const;
 		int internalOpen(const QCString& appid, const QString& wallet, bool isPath = false, WId w = 0, bool modal = false);
 		bool isAuthorizedApp(const QCString& appid, const QString& wallet, WId w);
@@ -197,6 +198,7 @@ class KWalletD : public KDEDModule {
 		bool _leaveOpen, _closeIdle, _launchManager, _enabled;
 	       	bool _openPrompt, _firstUse, _showingFailureNotify;
 		bool _secretService, _ssOpenPrompt;
+		QStringList _importing;  // wallets being imported (dialogs open)
 		int _idleTime;
 		QMap<QString,QStringList> _implicitAllowMap, _implicitDenyMap;
 		KTimeout *_timeouts;

@@ -68,6 +68,9 @@ class KWalletSecretServiceStore : public KWalletStore {
 		// needed (the service prompts) and loads the wallet.  0 on
 		// success, < 0 on error.
 		int open();
+		// Drops what is loaded and loads the wallet again (after an
+		// import made by another store).
+		int reload();
 
 		// Is org.freedesktop.secrets on the session bus (running or
 		// activatable)?
@@ -90,7 +93,7 @@ class KWalletSecretServiceStore : public KWalletStore {
 		virtual bool hasFolder(const QString& f) const;
 		virtual bool createFolder(const QString& f);
 		virtual bool removeFolder(const QString& f);
-		virtual void setFolder(const QString& f) { _folder = f; }
+		virtual void setFolder(const QString& f) { _folder = nn(f); }
 		virtual QStringList entryList() const;
 		virtual KWallet::Entry *readEntry(const QString& key);
 		virtual QPtrList<KWallet::Entry> readEntryList(const QString& key);
@@ -102,9 +105,13 @@ class KWalletSecretServiceStore : public KWalletStore {
 		virtual bool entryDoesNotExist(const QString& folder, const QString& entry) const;
 
 	private:
+		// null is "": the item attributes cannot tell them apart, and
+		// QMap does
+		static QString nn(const QString& s) { return s.isNull() ? QString::fromLatin1("") : s; }
 		void clear();
 		bool store(const QString& folder, const KWallet::Entry *e);
 		bool erase(const QString& folder, const QString& key);
+		bool eraseFolder(const QString& folder);
 
 		typedef QMap<QString, KWallet::Entry*> EntryMap;
 		typedef QMap<QString, EntryMap> FolderMap;

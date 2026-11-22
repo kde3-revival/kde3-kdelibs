@@ -34,8 +34,10 @@ wallet opens without a password, as in GNOME.  kwalletrc:
   Backend=SecretService   always (opening fails if the service is gone)
   Backend=File            the classic encrypted files
   (unset)                 the Secret Service if org.freedesktop.secrets
-                          is on the session bus when kwalletd starts,
-                          else the files
+                          is on the session bus (or activatable) when
+                          kwalletd starts, and then Backend=SecretService
+                          is written: a service that is briefly away
+                          never moves the wallets to the files
   Secret Service Prompt on Open=false
                           the "allow this application" dialog for the
                           Secret Service (off by default, like GNOME)
@@ -48,7 +50,9 @@ KWallet's QDataStream encoding (application/x-kde-kwallet-map); streams
 are the bytes (application/octet-stream); a folder (also an empty one)
 has a marker item with type "folder" and key "".  kwalletd only ever
 touches items of this schema.  A locked collection is unlocked through
-the service's own prompt; there is no KDE password dialog.  There is no
+the service's own prompt; there is no KDE password dialog.  While that
+prompt is up kded is blocked (libsecret's synchronous calls), as it only
+appears when the keyring was not unlocked at login.  There is no
 wallet password to change (changePassword() says so); Seahorse shows and
 edits the items too.
 
@@ -57,7 +61,7 @@ file of the same name exists (share/apps/kwallet/<wallet>.kwl), kwalletd
 offers once to import it (this needs the old password once).  Entries
 that already exist in the Secret Service are kept; when everything was
 copied the file is renamed to <wallet>.kwl.migrated (never deleted).
-"Do Not Import" is remembered in kwalletrc [Secret Service Import]; the
+"Do Not Import" (or cancelling the password dialog) is remembered in kwalletrc [Secret Service Import]; the
 import can be started later with
   dcop kded kwalletd importClassicWallet <wallet> 0
 or with KWalletManager's Import Wallet.

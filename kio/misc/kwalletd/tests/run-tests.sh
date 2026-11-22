@@ -73,6 +73,7 @@ run "$SST" check
 expect "a password is text/plain UTF-8 in the keyring" \
     '[ "$(secret-tool lookup xdg:schema org.kde.kwallet3 wallet kdewallet folder Passwords key plain type password)" = "sécret ü 🔑" ]'
 expect "the foreign item is untouched" '[ "$(secret-tool lookup wallet kdewallet folder Passwords key foreign)" = foreign-secret ]'
+expect "one item for an entry whose bytes changed type" '[ "$(secret-tool search --all xdg:schema org.kde.kwallet3 key flip 2>&1 | grep -c "^\[")" = 1 ]'
 expect "the removed folder left no item" '[ -z "$(secret-tool search --all xdg:schema org.kde.kwallet3 folder Doomed 2>&1)" ]'
 expect "no plaintext secret on disk" '! grep -rqa "sécret ü" "$T/data" "$T/home" "$T/kde" "$T/config"'
 

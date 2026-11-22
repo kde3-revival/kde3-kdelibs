@@ -28,6 +28,8 @@
 #include <qdatastream.h>
 #include <qregexp.h>
 
+#include <string.h>
+
 // The secret values that kwalletd writes, by entry type
 #define CT_TEXT    "text/plain"
 #define CT_MAP     "application/x-kde-kwallet-map"
@@ -50,16 +52,20 @@ const SecretSchema *schema() {
 }
 
 
-// The attributes of a search or an item; null strings are left out.
-GHashTable *attributes(const QString& wallet, const QString& folder = QString::null,
+enum Scope { WholeWallet, WholeFolder, OneEntry };
+
+// The attributes of a search or an item: the whole wallet, a folder or
+// one entry.  A null folder or key is "" (as QMap treats it), never a
+// wildcard.
+GHashTable *attributes(Scope scope, const QString& wallet, const QString& folder = QString::null,
 		const QString& key = QString::null, const char *type = 0L) {
 	GHashTable *a = g_hash_table_new_full(g_str_hash, g_str_equal, 0L, g_free);
 	g_hash_table_insert(a, const_cast<char*>("wallet"), g_strdup(wallet.utf8().data()));
-	if (!folder.isNull()) {
-		g_hash_table_insert(a, const_cast<char*>("folder"), g_strdup(folder.utf8().data()));
+	if (scope != WholeWallet) {
+		g_hash_table_insert(a, const_cast<char*>("folder"), g_strdup(folder.isNull() ? "" : folder.utf8().data()));
 	}
-	if (!key.isNull()) {
-		g_hash_table_insert(a, const_cast<char*>("key"), g_strdup(key.utf8().data()));
+	if (scope == OneEntry) {
+		g_hash_table_insert(a, const_cast<char*>("key"), g_strdup(key.isNull() ? "" : key.utf8().data()));
 	}
 	if (type) {
 		g_hash_table_insert(a, const_cast<char*>("type"), g_strdup(type));
@@ -83,6 +89,23 @@ void warn(const char *what, GError *err) {
 // on a service that offers nothing else).  Null if it is not there.
 bool connected = false;
 
+// The service's proxy is made in this context, so that its signals
+// (every change to the keyring, by any program) are queued here and
+// dropped by drain(), instead of piling up in a default context that a
+// Qt event loop may never run.
+GMainContext *proxyContext() {
+	static GMainContext *c = 0L;
+	if (!c) {
+		c = g_main_context_new();
+	}
+	return c;
+}
+
+void drain() {
+	while (g_main_context_iteration(proxyContext(), FALSE)) {
+	}
+}
+
 SecretService *service() {
 	// libsecret does not cope well with a service that is not there
 	// (GLib criticals): look first, until connected
@@ -91,7 +114,10 @@ SecretService *service() {
 		return 0L;
 	}
 	GError *err = 0L;
+	g_main_context_push_thread_default(proxyContext());
 	SecretService *s = secret_service_get_sync(SECRET_SERVICE_OPEN_SESSION, 0L, &err);
+	g_main_context_pop_thread_default(proxyContext());
+	drain();
 	if (!s) {
 		warn("cannot connect", err);
 		return 0L;
@@ -112,6 +138,13 @@ void reset(SecretService *s) {
 	}
 	secret_service_disconnect();
 	connected = false;
+	drain();
+}
+
+
+void done(SecretService *s) {
+	g_object_unref(s);
+	drain();
 }
 
 
@@ -145,6 +178,14 @@ bool isPlainPassword(const KWallet::Entry *e) {
 	b.fill(0);
 	p.fill(QChar(0));
 	return rc;
+}
+
+// The type attribute an entry is stored with.
+const char *storedType(const KWallet::Entry *e) {
+	if (e->type() == KWallet::Wallet::Password) {
+		return isPlainPassword(e) ? "password" : "binary";
+	}
+	return typeName(e->type());
 }
 
 }
@@ -257,13 +298,13 @@ int KWalletSecretServiceStore::open() {
 		if (secret_collection_get_locked(c)) {
 			// the user cancelled the service's prompt
 			g_object_unref(c);
-			g_object_unref(s);
+			done(s);
 			return -1;
 		}
 	}
 	g_object_unref(c);
 
-	GHashTable *a = attributes(_name);
+	GHashTable *a = attributes(WholeWallet, _name);
 	GList *items = secret_service_search_sync(s, schema(), a,
 			SecretSearchFlags(SECRET_SEARCH_ALL | SECRET_SEARCH_UNLOCK | SECRET_SEARCH_LOAD_SECRETS),
 			0L, &err);
@@ -279,12 +320,13 @@ int KWalletSecretServiceStore::open() {
 	for (GList *i = items; i; i = i->next) {
 		SecretItem *item = SECRET_ITEM(i->data);
 		GHashTable *ia = secret_item_get_attributes(item);
-		QString folder = attribute(ia, "folder");
-		QString key = attribute(ia, "key");
+		bool complete = g_hash_table_lookup(ia, "folder") && g_hash_table_lookup(ia, "key");
+		QString folder = nn(attribute(ia, "folder"));
+		QString key = nn(attribute(ia, "key"));
 		QString type = attribute(ia, "type");
 		g_hash_table_unref(ia);
 
-		if (folder.isNull() || key.isNull()) {
+		if (!complete) {
 			continue;
 		}
 		if (!_entries.contains(folder)) {
@@ -334,7 +376,7 @@ int KWalletSecretServiceStore::open() {
 		m[key] = e;
 	}
 	g_list_free_full(items, g_object_unref);
-	g_object_unref(s);
+	done(s);
 
 	_open = true;
 	return 0;
@@ -353,17 +395,63 @@ int KWalletSecretServiceStore::close(const QByteArray&) {
 }
 
 
-bool KWalletSecretServiceStore::store(const QString& folder, const KWallet::Entry *e) {
-	SecretService *s = service();
-	if (!s) {
-		return false;
-	}
+namespace {
 
-	const char *type;
+// Stores (replaces) one item; after an error (the service restarted and
+// its session is gone) once more with a new connection.
+bool storeItem(GHashTable *a, const QString& label, SecretValue *v) {
+	bool ok = false;
+	for (int attempt = 0; !ok && attempt < 2; ++attempt) {
+		SecretService *s = service();
+		if (!s) {
+			break;
+		}
+		GError *err = 0L;
+		ok = secret_service_store_sync(s, schema(), a, SECRET_COLLECTION_DEFAULT,
+				label.utf8().data(), v, 0L, &err);
+		if (ok) {
+			done(s);
+		} else {
+			warn("cannot store an item", err);
+			reset(s);
+		}
+	}
+	g_hash_table_unref(a);
+	secret_value_unref(v);
+	return ok;
+}
+
+
+// Removes the matching items, with one retry like storeItem().
+bool clearItems(GHashTable *a) {
+	bool ok = false;
+	for (int attempt = 0; !ok && attempt < 2; ++attempt) {
+		SecretService *s = service();
+		if (!s) {
+			break;
+		}
+		GError *err = 0L;
+		secret_service_clear_sync(s, schema(), a, 0L, &err);
+		if (err) {
+			warn("cannot remove items", err);
+			reset(s);
+		} else {
+			done(s);
+			ok = true;
+		}
+	}
+	g_hash_table_unref(a);
+	return ok;
+}
+
+}
+
+
+bool KWalletSecretServiceStore::store(const QString& folder, const KWallet::Entry *e) {
+	const char *type = storedType(e);
 	const char *ct;
 	QByteArray secret;
-	if (e->type() == KWallet::Wallet::Password && isPlainPassword(e)) {
-		type = "password";
+	if (!strcmp(type, "password")) {
 		ct = CT_TEXT;
 		QString p = e->password();
 		QCString u = p.utf8();
@@ -371,16 +459,7 @@ bool KWalletSecretServiceStore::store(const QString& folder, const KWallet::Entr
 		u.fill(0);
 		p.fill(QChar(0));
 	} else {
-		if (e->type() == KWallet::Wallet::Password) {
-			type = "binary";
-			ct = CT_ENTRY;
-		} else if (e->type() == KWallet::Wallet::Map) {
-			type = "map";
-			ct = CT_MAP;
-		} else {
-			type = typeName(e->type());
-			ct = CT_STREAM;
-		}
+		ct = !strcmp(type, "binary") ? CT_ENTRY : !strcmp(type, "map") ? CT_MAP : CT_STREAM;
 		secret.duplicate(e->value());
 	}
 
@@ -390,38 +469,23 @@ bool KWalletSecretServiceStore::store(const QString& folder, const KWallet::Entr
 
 	SecretValue *v = secret_value_new(secret.size() ? secret.data() : "", secret.size(), ct);
 	secret.fill(0);
-	GHashTable *a = attributes(_name, folder, e->key(), type);
-	GError *err = 0L;
-	gboolean ok = secret_service_store_sync(s, schema(), a, SECRET_COLLECTION_DEFAULT,
-			label.utf8().data(), v, 0L, &err);
-	g_hash_table_unref(a);
-	secret_value_unref(v);
-	if (!ok) {
-		warn("cannot store an entry", err);
-		reset(s);
-		return false;
-	}
-	g_object_unref(s);
-	return true;
+	return storeItem(attributes(OneEntry, _name, folder, e->key(), type), label, v);
 }
 
 
 bool KWalletSecretServiceStore::erase(const QString& folder, const QString& key) {
-	SecretService *s = service();
-	if (!s) {
-		return false;
-	}
-	GHashTable *a = attributes(_name, folder, key);
-	GError *err = 0L;
-	secret_service_clear_sync(s, schema(), a, 0L, &err);
-	g_hash_table_unref(a);
-	if (err) {
-		warn("cannot remove items", err);
-		reset(s);
-		return false;
-	}
-	g_object_unref(s);
-	return true;
+	return clearItems(attributes(OneEntry, _name, folder, key));
+}
+
+
+bool KWalletSecretServiceStore::eraseFolder(const QString& folder) {
+	return clearItems(attributes(WholeFolder, _name, folder));
+}
+
+
+int KWalletSecretServiceStore::reload() {
+	clear();
+	return open();
 }
 
 
@@ -431,41 +495,29 @@ QStringList KWalletSecretServiceStore::folderList() const {
 
 
 bool KWalletSecretServiceStore::hasFolder(const QString& f) const {
-	return _entries.contains(f);
+	return _entries.contains(nn(f));
 }
 
 
-bool KWalletSecretServiceStore::createFolder(const QString& f) {
+bool KWalletSecretServiceStore::createFolder(const QString& folder) {
+	const QString f = nn(folder);
 	if (!_open || _entries.contains(f)) {
 		return false;
 	}
 	// a folder marker: type "folder", key "", no secret
-	SecretService *s = service();
-	if (!s) {
-		return false;
-	}
-	SecretValue *v = secret_value_new("", 0, CT_STREAM);
-	GHashTable *a = attributes(_name, f, "", "folder");
 	QString label = _name == "kdewallet"
 		? QString("KWallet: %1").arg(f)
 		: QString("KWallet (%1): %2").arg(_name).arg(f);
-	GError *err = 0L;
-	gboolean ok = secret_service_store_sync(s, schema(), a, SECRET_COLLECTION_DEFAULT,
-			label.utf8().data(), v, 0L, &err);
-	g_hash_table_unref(a);
-	secret_value_unref(v);
-	if (!ok) {
-		warn("cannot create a folder", err);
-		reset(s);
+	if (!storeItem(attributes(OneEntry, _name, f, "", "folder"), label, secret_value_new("", 0, CT_STREAM))) {
 		return false;
 	}
-	g_object_unref(s);
 	_entries.insert(f, EntryMap());
 	return true;
 }
 
 
-bool KWalletSecretServiceStore::removeFolder(const QString& f) {
+bool KWalletSecretServiceStore::removeFolder(const QString& folder) {
+	const QString f = nn(folder);
 	if (!_open) {
 		return false;
 	}
@@ -473,7 +525,7 @@ bool KWalletSecretServiceStore::removeFolder(const QString& f) {
 	if (fi == _entries.end()) {
 		return false;
 	}
-	if (!erase(f, QString::null)) {
+	if (!eraseFolder(f)) {
 		return false;
 	}
 	if (_folder == f) {
@@ -495,7 +547,8 @@ QStringList KWalletSecretServiceStore::entryList() const {
 }
 
 
-KWallet::Entry *KWalletSecretServiceStore::readEntry(const QString& key) {
+KWallet::Entry *KWalletSecretServiceStore::readEntry(const QString& k) {
+	const QString key = nn(k);
 	if (_open && hasEntry(key)) {
 		return _entries[_folder][key];
 	}
@@ -519,15 +572,22 @@ QPtrList<KWallet::Entry> KWalletSecretServiceStore::readEntryList(const QString&
 }
 
 
-bool KWalletSecretServiceStore::writeEntry(KWallet::Entry *e) {
+bool KWalletSecretServiceStore::writeEntry(KWallet::Entry *entry) {
 	if (!_open) {
 		return false;
+	}
+	KWallet::Entry copy;
+	KWallet::Entry *e = entry;
+	if (entry->key().isNull()) {
+		copy.copy(entry);
+		copy.setKey(nn(entry->key()));
+		e = &copy;
 	}
 	if (!_entries.contains(_folder) && !createFolder(_folder)) {
 		return false;
 	}
 	EntryMap& m = _entries[_folder];
-	if (m.contains(e->key()) && m[e->key()]->type() != e->type()) {
+	if (m.contains(e->key()) && strcmp(storedType(m[e->key()]), storedType(e)) != 0) {
 		// another type is another item: remove the old one first
 		if (!erase(_folder, e->key())) {
 			return false;
@@ -546,12 +606,14 @@ bool KWalletSecretServiceStore::writeEntry(KWallet::Entry *e) {
 }
 
 
-bool KWalletSecretServiceStore::hasEntry(const QString& key) const {
+bool KWalletSecretServiceStore::hasEntry(const QString& k) const {
+	const QString key = nn(k);
 	return _entries.contains(_folder) && _entries[_folder].contains(key);
 }
 
 
-bool KWalletSecretServiceStore::removeEntry(const QString& key) {
+bool KWalletSecretServiceStore::removeEntry(const QString& k) {
+	const QString key = nn(k);
 	if (!_open || !hasEntry(key)) {
 		return false;
 	}
@@ -565,7 +627,8 @@ bool KWalletSecretServiceStore::removeEntry(const QString& key) {
 }
 
 
-int KWalletSecretServiceStore::renameEntry(const QString& oldName, const QString& newName) {
+int KWalletSecretServiceStore::renameEntry(const QString& o, const QString& n) {
+	const QString oldName = nn(o), newName = nn(n);
 	if (!_open || !_entries.contains(_folder)) {
 		return -1;
 	}
@@ -589,12 +652,12 @@ int KWalletSecretServiceStore::renameEntry(const QString& oldName, const QString
 
 
 bool KWalletSecretServiceStore::folderDoesNotExist(const QString& folder) const {
-	return !_entries.contains(folder);
+	return !_entries.contains(nn(folder));
 }
 
 
 bool KWalletSecretServiceStore::entryDoesNotExist(const QString& folder, const QString& entry) const {
-	return !_entries.contains(folder) || !_entries[folder].contains(entry);
+	return !_entries.contains(nn(folder)) || !_entries[nn(folder)].contains(nn(entry));
 }
 
 
@@ -630,7 +693,7 @@ bool searchAttributes(GHashTable *query, QValueList<QMap<QString,QString> >& rc)
 		rc.append(m);
 	}
 	g_list_free_full(items, g_object_unref);
-	g_object_unref(s);
+	done(s);
 	return true;
 }
 
@@ -658,7 +721,7 @@ bool KWalletSecretServiceStore::deleteWallet(const QString& wallet) {
 	if (!s) {
 		return false;
 	}
-	GHashTable *a = attributes(wallet);
+	GHashTable *a = attributes(WholeWallet, wallet);
 	GError *err = 0L;
 	gboolean rc = secret_service_clear_sync(s, schema(), a, 0L, &err);
 	g_hash_table_unref(a);
@@ -667,18 +730,18 @@ bool KWalletSecretServiceStore::deleteWallet(const QString& wallet) {
 		reset(s);
 		return false;
 	}
-	g_object_unref(s);
+	done(s);
 	return rc;
 }
 
 
 bool KWalletSecretServiceStore::folderExists(const QString& wallet, const QString& folder) {
 	QValueList<QMap<QString,QString> > l;
-	return searchAttributes(attributes(wallet, folder), l) && !l.isEmpty();
+	return searchAttributes(attributes(WholeFolder, wallet, folder), l) && !l.isEmpty();
 }
 
 
 bool KWalletSecretServiceStore::entryExists(const QString& wallet, const QString& folder, const QString& key) {
 	QValueList<QMap<QString,QString> > l;
-	return searchAttributes(attributes(wallet, folder, key), l) && !l.isEmpty();
+	return searchAttributes(attributes(OneEntry, wallet, folder, key), l) && !l.isEmpty();
 }

@@ -97,6 +97,21 @@ static int store() {
 	CHECK(s.removeFolder("Doomed"));
 	CHECK(!s.hasFolder("Doomed"));
 
+	// a null folder or key is "", never a wildcard
+	CHECK(writePassword(s, QString::null, "k", "in the null folder"));
+	CHECK(writePassword(s, "Keep", "k", "kept"));
+	CHECK(writePassword(s, "Keep", "", "empty key"));
+	CHECK(writePassword(s, "Keep", "k2", "kept too"));
+	s.setFolder("Keep");
+	CHECK(s.removeEntry(""));
+	CHECK(s.hasEntry("k") && s.hasEntry("k2"));
+	CHECK(s.removeFolder(""));
+	CHECK(s.hasFolder("Keep"));
+
+	// password <-> raw bytes: still one item
+	CHECK(writePassword(s, "Passwords", "flip", "text"));
+	CHECK(write(s, "Passwords", "flip", Wallet::Password, streamBytes()));
+
 	// wildcards
 	s.setFolder("Passwords");
 	CHECK(s.readEntryList("plain*").count() == 2);
@@ -114,7 +129,10 @@ static int check() {
 	KWalletSecretServiceStore s("kdewallet");
 	CHECK(s.open() == 0);
 	QStringList f = s.folderList();
-	CHECK(f.count() == 3 && f.contains("Passwords") && f.contains("Form Data") && f.contains("Empty"));
+	CHECK(f.count() == 4 && f.contains("Passwords") && f.contains("Form Data") && f.contains("Empty") && f.contains("Keep"));
+	CHECK(password(s, "Keep", "k") == "kept" && password(s, "Keep", "k2") == "kept too");
+	s.setFolder("Passwords");
+	CHECK(s.readEntry("flip") && s.readEntry("flip")->value() == streamBytes());
 	CHECK(password(s, "Passwords", "plain") == QString::fromUtf8("sécret ü 🔑"));
 	CHECK(password(s, "Passwords", "empty") == "");
 	CHECK(password(s, "Passwords", "plain2") == "second");

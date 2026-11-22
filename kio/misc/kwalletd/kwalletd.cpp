@@ -619,7 +619,8 @@ void KWalletD::changePassword(const QString& wallet, uint wId) {
 
 
 void KWalletD::doTransactionChangePassword(const QCString& appid, const QString& wallet, uint wId) {
-	if (_secretService) {
+	// a wallet name (not a path, openPath()) is in the Secret Service
+	if (_secretService && !wallet.contains('/')) {
 		KMessageBox::informationWId(wId, i18n("<qt>The wallet '<b>%1</b>' is kept in the Secret Service (the login keyring) and has no password of its own. It is unlocked with your login password; to change it, change your login password or the password of the keyring (for example with Seahorse).").arg(QStyleSheet::escape(wallet)), i18n("KDE Wallet Service"));
 		return;
 	}
@@ -1339,7 +1340,13 @@ void KWalletD::reconfigure() {
 	if (backend == "secretservice") {
 		secretService = true;
 	} else if (backend != "file") {
-		secretService = KWalletSecretServiceStore::serviceAvailable();
+		// decided once: a service that is briefly away (restarting)
+		// must not move the wallets to the files
+		secretService = _secretService || KWalletSecretServiceStore::serviceAvailable();
+		if (secretService) {
+			cfg.writeEntry("Backend", QString::fromLatin1("SecretService"));
+			cfg.sync();
+		}
 	}
 #endif
 	// the application authorization dialog (Prompt on Open): off for the
@@ -1415,7 +1422,8 @@ bool KWalletD::folderDoesNotExist(const QString& wallet, const QString& folder) 
 				return it.current()->folderDoesNotExist(folder);
 			}
 		}
-		return !KWalletSecretServiceStore::folderExists(wallet, folder);
+		// a classic file not imported yet may have it: open, to offer the import
+		return !KWalletSecretServiceStore::folderExists(wallet, folder) && !KWallet::Backend::exists(wallet);
 	}
 #endif
 	if (!wallets().contains(wallet)) {
@@ -1444,7 +1452,7 @@ bool KWalletD::keyDoesNotExist(const QString& wallet, const QString& folder, con
 				return it.current()->entryDoesNotExist(folder, key);
 			}
 		}
-		return !KWalletSecretServiceStore::entryExists(wallet, folder, key);
+		return !KWalletSecretServiceStore::entryExists(wallet, folder, key) && !KWallet::Backend::exists(wallet);
 	}
 #endif
 	if (!wallets().contains(wallet)) {
@@ -1535,7 +1543,6 @@ bool KWalletD::usesSecretService() const {
 
 int KWalletD::internalOpenSecretService(const QCString& appid, const QString& wallet, WId w, bool modal) {
 #ifdef HAVE_LIBSECRET
-	Q_UNUSED(modal);
 	bool brandNew = !KWalletSecretServiceStore::walletNames().contains(wallet);
 
 	// no KDE password dialog: the service is unlocked at login, or
@@ -1547,7 +1554,44 @@ int KWalletD::internalOpenSecretService(const QCString& appid, const QString& wa
 		return -1;
 	}
 
+	if (brandNew) {
+		b->createFolder(KWallet::Wallet::PasswordFolder());
+		b->createFolder(KWallet::Wallet::FormDataFolder());
+	}
+
+	// a classic wallet of this name not imported yet: offer it once.
+	// b is not registered yet: nothing can close it during the dialogs.
+	if (KWallet::Backend::exists(wallet) && !_importing.contains(wallet)) {
+		KConfig cfg("kwalletrc");
+		cfg.setGroup("Secret Service Import");
+		QString state = cfg.readEntry(wallet);
+		if (state != "declined" && state != "done") {
+			if (!w) {
+				kapp->updateUserTimestamp();
+			}
+			importClassic(b, wallet, w, true);
+		}
+	}
+
+	// the dialogs (this one's or the import's) ran event loops: the
+	// wallet may have been opened by another request meanwhile
+	for (QIntDictIterator<KWalletStore> it(_wallets); it.current(); ++it) {
+		if (it.current()->walletName() == wallet) {
+			delete b;
+			if (it.current()->isSecretService()) {
+				static_cast<KWalletSecretServiceStore*>(it.current())->reload();
+			}
+			// joins it (with the authorization check)
+			return internalOpen(appid, wallet, false, w, modal);
+		}
+	}
+
 	if (_ssOpenPrompt && !isAuthorizedApp(appid, wallet, w)) {
+		delete b;
+		return -1;
+	}
+	if (!_secretService || !_enabled) {
+		// reconfigured during the dialogs
 		delete b;
 		return -1;
 	}
@@ -1557,26 +1601,9 @@ int KWalletD::internalOpenSecretService(const QCString& appid, const QString& wa
 	_passwords[wallet] = "";
 	_handles[appid].append(rc);
 
-	if (brandNew) {
-		b->createFolder(KWallet::Wallet::PasswordFolder());
-		b->createFolder(KWallet::Wallet::FormDataFolder());
-	}
-
 	b->ref();
 	if (_closeIdle && _timeouts) {
 		_timeouts->addTimer(rc, _idleTime);
-	}
-
-	// a classic wallet of this name not imported yet: offer it once
-	if (KWallet::Backend::exists(wallet)) {
-		KConfig cfg("kwalletrc");
-		cfg.setGroup("Secret Service Import");
-		if (cfg.readEntry(wallet) != "declined") {
-			if (!w) {
-				kapp->updateUserTimestamp();
-			}
-			importClassic(b, wallet, w, true);
-		}
 	}
 
 	QByteArray data;
@@ -1611,6 +1638,17 @@ int KWalletD::importClassic(KWalletStore *target, const QString& wallet, WId w, 
 		return -1;
 	}
 
+	if (_importing.contains(wallet)) {
+		return -1;
+	}
+	_importing.append(wallet);
+	int rc = doImportClassic(target, wallet, path, w, ask);
+	_importing.remove(wallet);
+	return rc;
+}
+
+
+int KWalletD::doImportClassic(KWalletStore *target, const QString& wallet, const QString& path, WId w, bool ask) {
 	if (ask) {
 		int r = KMessageBox::questionYesNoWId(w,
 			i18n("<qt>Your wallets are now kept in the Secret Service, the login keyring "
@@ -1632,6 +1670,11 @@ int KWalletD::importClassic(KWalletStore *target, const QString& wallet, WId w, 
 		}
 	}
 
+	// Backend::open() creates a missing file: look right before each
+	// open (the dialogs run event loops)
+	if (!KWallet::Backend::exists(wallet)) {
+		return -1;
+	}
 	KWallet::Backend *old = new KWallet::Backend(wallet);
 	int orc = old->open(QByteArray());
 	if (orc != 0 || !old->isOpen()) {
@@ -1647,6 +1690,9 @@ int KWalletD::importClassic(KWalletStore *target, const QString& wallet, WId w, 
 			if (kpd->exec() != KDialog::Accepted) {
 				break;
 			}
+			if (!KWallet::Backend::exists(wallet)) {
+				break;
+			}
 			const char *p = kpd->password();
 			QByteArray pa;
 			pa.duplicate(p, strlen(p));
@@ -1660,6 +1706,13 @@ int KWalletD::importClassic(KWalletStore *target, const QString& wallet, WId w, 
 		delete kpd;
 		if (!old->isOpen()) {
 			delete old;
+			if (ask) {
+				// cancelled: do not ask on every open
+				KConfig cfg("kwalletrc");
+				cfg.setGroup("Secret Service Import");
+				cfg.writeEntry(wallet, QString::fromLatin1("declined"));
+				cfg.sync();
+			}
 			return -1;
 		}
 	}
@@ -1730,16 +1783,20 @@ int KWalletD::importClassicWallet(const QString& wallet, uint wId) {
 		!QRegExp("^[A-Za-z0-9]+[A-Za-z0-9\\s\\-_]*$").exactMatch(wallet)) {
 		return -1;
 	}
-	for (QIntDictIterator<KWalletStore> it(_wallets); it.current(); ++it) {
-		if (it.current()->walletName() == wallet && it.current()->isSecretService()) {
-			return importClassic(it.current(), wallet, wId, false);
-		}
-	}
+	// a private store: the open one could be closed during the dialogs
 	KWalletSecretServiceStore b(wallet);
 	if (b.open() != 0) {
 		return -1;
 	}
-	return importClassic(&b, wallet, wId, false);
+	int rc = importClassic(&b, wallet, wId, false);
+	if (rc == 0) {
+		for (QIntDictIterator<KWalletStore> it(_wallets); it.current(); ++it) {
+			if (it.current()->walletName() == wallet && it.current()->isSecretService()) {
+				static_cast<KWalletSecretServiceStore*>(it.current())->reload();
+			}
+		}
+	}
+	return rc;
 #else
 	Q_UNUSED(wallet);
 	Q_UNUSED(wId);
