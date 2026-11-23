@@ -104,6 +104,8 @@ HTTPFilterGZip::HTTPFilterGZip()
   bHasFinished = false;
   bPlainText = false;
   bEatTrailer = false;
+  bSniffZlib = false;
+  bZlib = false;
   bEof = false;
   zstr.next_in = (Bytef *) Z_NULL;
   zstr.avail_in = 0;
@@ -263,7 +265,9 @@ HTTPFilterGZip::slotInput(const QByteArray &d)
   {
      if (bEatTrailer)
         bHasFinished = true;
-     if (!bHasFinished)
+     // A zlib stream ends with its own checksum: made-up bytes could
+     // complete a body that was cut off, so they are only for raw data.
+     if (!bHasFinished && !bZlib)
      {
         // Make sure we get the last bytes still in the pipe.
         // Needed with "deflate".
@@ -323,6 +327,28 @@ HTTPFilterGZip::slotInput(const QByteArray &d)
 
      bHasHeader = true;
   }
+  else if (bSniffZlib)
+  {
+     int orig_size = headerData.size();
+     headerData.resize(orig_size+d.size());
+     memcpy(headerData.data()+orig_size, d.data(), d.size());
+     if (headerData.size() < 2)
+        return;
+     const unsigned int cmf = (unsigned char) headerData[0];
+     const unsigned int flg = (unsigned char) headerData[1];
+     // A zlib header: method 8 (deflate), a window of at most 32 KB,
+     // and a check value making CMF*256+FLG a multiple of 31.  A raw
+     // stream can start with such bytes too (a stored first block), but
+     // very rarely; browsers tell the two the same way.
+     if ((cmf & 0x0f) == 8 && (cmf >> 4) <= 7 && ((cmf << 8) | flg) % 31 == 0)
+     {
+        inflateReset2(&zstr, MAX_WBITS);
+        bZlib = true;
+     }
+     bSniffZlib = false;
+     zstr.avail_in = headerData.size();
+     zstr.next_in = (Bytef *) headerData.data();
+  }
   else
   {
      zstr.avail_in = d.size();
@@ -370,6 +396,9 @@ HTTPFilterDeflate::HTTPFilterDeflate()
 {
 #ifdef DO_GZIP
   bHasHeader = true;
+  // "deflate" is a zlib stream (RFC 9110, RFC 1950), but some servers
+  // send raw deflate data (RFC 1951): the first two bytes tell.
+  bSniffZlib = true;
   iTrailer = 0;
 #endif
 }

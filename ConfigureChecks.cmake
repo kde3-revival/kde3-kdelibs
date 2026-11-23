@@ -414,7 +414,8 @@ if(KDE3_ENABLE_INOTIFY)
 endif()
 
 # Image and compression libraries (AC_FIND_ZLIB/JPEG/PNG/TIFF/BZIP2)
-find_package(ZLIB REQUIRED)
+# 1.2.4: inflateReset2 (kio/httpfilter)
+find_package(ZLIB 1.2.4 REQUIRED)
 set(HAVE_LIBZ 1)
 # libkhtml always links libjpeg (khtml/misc), kde3-qt libpng
 find_package(JPEG REQUIRED)

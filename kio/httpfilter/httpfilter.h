@@ -107,6 +107,8 @@ protected:
     bool bHasFinished : 1;
     bool bPlainText : 1;
     bool bEatTrailer : 1;
+    bool bSniffZlib : 1;
+    bool bZlib : 1;
     QByteArray headerData;
     int iTrailer;
 #endif
