@@ -697,7 +697,7 @@ void KListView::emitExecute( QListViewItem *item, const QPoint &pos, int c )
 
             //Don´t emit executed if in SC mode and Shift or Ctrl are pressed
             if( !( ((keybstate & Qt::ShiftButton) || (keybstate & Qt::ControlButton)) ) ) {
-                viewport()->unsetCursor();
+                // the hand stays: the pointer is still over the item
                 emit executed( item );
                 emit executed( item, pos, c );
             }
