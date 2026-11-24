@@ -30,10 +30,13 @@ class Reporter : public QObject
 public:
     Reporter( QObject* parent = 0 );
     void watch( KBalloon* balloon, int number );
+    virtual bool eventFilter( QObject* o, QEvent* e );
 
 public slots:
     void report();
     void step(); // the next step of the scenario "queue"
+    void moveStep(); // the scenario "move"
+    void reentrantStep(); // the scenario "reentrant"
 
 private slots:
     void clicked();

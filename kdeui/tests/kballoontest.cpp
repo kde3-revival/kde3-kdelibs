@@ -31,6 +31,12 @@
  corner    a balloon without an anchor (the corner of the work area)
  big       a balloon larger than the monitor (a long text, many actions):
            made to fit
+ move      a balloon as high as the larger monitor allows, anchored to it,
+           then (after 1.5 s) to the smaller one: fitted to that one; and
+           one with 30 actions (in rows)
+ reentrant at one anchor on the second monitor balloons that don't all fit;
+           when the one waiting first is shown, its show event deletes the
+           next one waiting, hides the one after and shows a new one
  queue     ten balloons without timeout at one anchor on the second
            monitor, then a step every 1.5 s: close() the first one waiting
            (it never comes), make the first one taller (the last ones shown
@@ -48,6 +54,7 @@
 #include <qlayout.h>
 #include <qmap.h>
 #include <qpainter.h>
+#include <qguardedptr.h>
 #include <qpixmap.h>
 #include <qptrlist.h>
 #include <qtimer.h>
@@ -59,6 +66,7 @@
 #include <kguiitem.h>
 
 static QMap< const QObject*, int > numbers;
+static QPtrList< KBalloon > sequence; // the balloons of the scenarios queue and reentrant
 
 Reporter::Reporter( QObject* parent )
     : QObject( parent )
@@ -108,6 +116,7 @@ void Reporter::gone( QObject* balloon )
 {
     print( balloon, "deleted" );
     numbers.remove( balloon );
+    sequence.removeRef( static_cast< KBalloon* >( balloon ) );
 }
 
 // where each balloon is
@@ -133,7 +142,6 @@ void Reporter::report()
 static Reporter* reporter = 0;
 static int counter = 0;
 static int timeoutMsec = 0;
-static QPtrList< KBalloon > sequence; // the balloons of the scenario "queue"
 static int stepNumber = 0;
 
 // an avatar: a coloured disc with initials
@@ -160,14 +168,64 @@ void Reporter::step()
         first->hide();
         break;
     case 4:
-        printf( "step 4: setTimeout( 800 ) on \"%s\"\n", sequence.at( 1 )->title().latin1() );
-        sequence.at( 1 )->setTimeout( 800 );
+        for ( QPtrListIterator< KBalloon > it( sequence ); it.current() != 0; ++it )
+            if ( it.current()->title() == "Queued 2" ) {
+                printf( "step 4: setTimeout( 800 ) on \"Queued 2\"\n" );
+                it.current()->setTimeout( 800 );
+            }
         break;
     default:
         return;
     }
     fflush( stdout );
     QTimer::singleShot( 1500, this, SLOT( step() ) );
+}
+
+static QGuardedPtr< KBalloon > target; // (scenarios move and reentrant)
+static QGuardedPtr< KBalloon > victimDeleted, victimHidden;
+
+void Reporter::moveStep()
+{
+    const QRect g = QApplication::desktop()->screenGeometry( 1 );
+    if ( !target.isNull() ) {
+        printf( "move: \"%s\" to monitor 2\n", target->title().latin1() );
+        fflush( stdout );
+        target->setAnchor( QPoint( g.right() - 30, g.bottom() - 10 ) );
+    }
+    QTimer::singleShot( 1000, this, SLOT( report() ) );
+}
+
+bool Reporter::eventFilter( QObject* o, QEvent* e )
+{
+    if ( e->type() == QEvent::Show && o == (KBalloon*) target ) {
+        printf( "show event of \"%s\": delete the next one waiting, hide the one after, show a new one\n",
+                target->title().latin1() );
+        fflush( stdout );
+        delete (KBalloon*) victimDeleted;
+        if ( !victimHidden.isNull() )
+            victimHidden->hide();
+        const QRect g = QApplication::desktop()->screenGeometry( 1 );
+        KBalloon* b = new KBalloon;
+        b->setTitle( "Shown from a show event" );
+        b->setText( "Nested." );
+        watch( b, ++counter );
+        b->setAnchor( QPoint( g.right() - 30, g.bottom() - 10 ) );
+        b->show();
+    }
+    return false;
+}
+
+void Reporter::reentrantStep()
+{
+    // the ones shown go: the queue moves on
+    report();
+    for ( QPtrListIterator< KBalloon > it( sequence ); it.current() != 0; ++it )
+        if ( it.current()->isVisible() ) {
+            printf( "hide() \"%s\"\n", it.current()->title().latin1() );
+            it.current()->hide();
+        }
+    fflush( stdout );
+    QTimer::singleShot( 1000, this, SLOT( report() ) );
 }
 
 static QPixmap avatar( const QColor& color, const QString& initials, int size = 40 )
@@ -323,6 +381,50 @@ static void queue()
     QTimer::singleShot( 1500, reporter, SLOT( step() ) );
 }
 
+static void move()
+{
+    QString text;
+    for ( int i = 0; i < 38; ++i )
+        text += QString( "Line %1.\n" ).arg( i + 1 );
+    KBalloon* b = balloon( "Tall", text, QPixmap(), 1 );
+    const QRect g = QApplication::desktop()->screenGeometry( 0 );
+    b->setAnchor( QPoint( g.right() - 30, g.bottom() - 10 ) );
+    b->show();
+    target = b;
+    b = balloon( "30 actions", "All in rows, all reachable.", QPixmap(), 0 );
+    for ( int i = 0; i < 30; ++i )
+        b->insertAction( QString( "Action %1" ).arg( i + 1 ) );
+    b->setAnchor( QPoint( g.left() + 20, g.top() + 10 ) );
+    b->show();
+    QTimer::singleShot( 1500, reporter, SLOT( moveStep() ) );
+}
+
+static void reentrant()
+{
+    const QRect g = QApplication::desktop()->screenGeometry( 1 );
+    for ( int i = 0; i < 12; ++i ) {
+        KBalloon* b = balloon( QString( "Balloon %1" ).arg( i + 1 ), "Waiting, perhaps.", QPixmap(), 1 );
+        b->setAnchor( QPoint( g.right() - 30, g.bottom() - 10 ) );
+        b->show();
+        sequence.append( b );
+    }
+    // the first three waiting
+    QPtrList< KBalloon > waiting;
+    for ( QPtrListIterator< KBalloon > it( sequence ); it.current() != 0; ++it )
+        if ( it.current()->isQueued() )
+            waiting.append( it.current() );
+    if ( waiting.count() >= 3 ) {
+        target = waiting.at( 0 );
+        victimDeleted = waiting.at( 1 );
+        victimHidden = waiting.at( 2 );
+        target->installEventFilter( reporter );
+        printf( "waiting first: \"%s\", then \"%s\", \"%s\"\n", target->title().latin1(),
+                victimDeleted->title().latin1(), victimHidden->title().latin1() );
+        fflush( stdout );
+    }
+    QTimer::singleShot( 1500, reporter, SLOT( reentrantStep() ) );
+}
+
 static void corner()
 {
     KBalloon* b = balloon( "No anchor", "In the corner of the work area, without a tail.",
@@ -332,7 +434,7 @@ static void corner()
 
 static KCmdLineOptions options[] =
 {
-    { "scenario <name>", "monitors, stack, widget, text, corner, big or queue", "monitors" },
+    { "scenario <name>", "monitors, stack, widget, text, corner, big, queue, move or reentrant", "monitors" },
     { "timeout <ms>", "Timeout of the balloons (0: none)", "0" },
     { "quit-after <ms>", "Quit after this long (0: never)", "0" },
     { "report-after <ms>", "Print where the balloons are after this long", "1000" },
@@ -366,6 +468,10 @@ int main( int argc, char** argv )
         big();
     else if ( scenario == "queue" )
         queue();
+    else if ( scenario == "move" )
+        move();
+    else if ( scenario == "reentrant" )
+        reentrant();
     else
         monitors();
     if ( reportAfter > 0 )
