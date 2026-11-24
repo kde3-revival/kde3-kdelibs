@@ -430,7 +430,7 @@ public:
     Private()
         : rich( false ), nextId( 1 ), timeoutMsec( 6000 ), autoDelete( true ), hasPoint( false ),
           created( false ), argb( false ), queued( false ), tail( NoTail ), content( 0 ), picture( 0 ),
-          label( 0 ), buttonRows( 0 ), buttonsDirty( true ), remaining( 0 ), paused( false ),
+          label( 0 ), buttonRows( 0 ), more( 0 ), moreMenu( 0 ), menuAction( -1 ), buttonsDirty( true ), remaining( 0 ), paused( false ),
           cache( None ), cacheTail( -1 ), cacheFill( 0 ), cacheBorder( 0 ), requeueing( false )
     {
     }
@@ -461,6 +461,7 @@ public:
     QVBoxLayout* buttonRows; // rows of buttons, as many as the monitor's width needs
     KPushButton* more; // the actions beyond the rows the monitor's height allows
     QPopupMenu* moreMenu;
+    int menuAction; // chosen in the menu, told later (-1: none)
     QPtrList< QLayout > rows;
     QString html; // the label's text
     QRect fitArea; // the area the contents were fitted to (fitContents())
@@ -1142,7 +1143,7 @@ void KBalloon::relayoutPass()
         shown.append( it.current() );
     // (queued before it is hidden: its events may delete or cancel it,
     // which takes it out of the queue)
-    unsigned int at = 0;
+    QValueList< QGuardedPtr< KBalloon > > requeued;
     for ( QValueList< QGuardedPtr< KBalloon > >::ConstIterator it = shown.begin(); it != shown.end(); ++it ) {
         KBalloon* b = *it;
         if ( b == 0 || shownBalloons().findRef( b ) < 0 || b->place() )
@@ -1151,8 +1152,14 @@ void KBalloon::relayoutPass()
         b->d->timer.stop();
         b->d->paused = false;
         b->d->queued = true;
-        queuedBalloons().insert( QMIN( at, queuedBalloons().count() ), b );
-        ++at;
+        // (right after those queued again before it that are still there:
+        // their events may have taken some out)
+        int at = 0;
+        for ( QValueList< QGuardedPtr< KBalloon > >::ConstIterator r = requeued.begin(); r != requeued.end(); ++r )
+            if ( !( *r ).isNull() )
+                at = QMAX( at, queuedBalloons().findRef( *r ) + 1 );
+        queuedBalloons().insert( at, b );
+        requeued.append( b );
         QGuardedPtr< KBalloon > guard( b );
         b->d->requeueing = true;
         b->QWidget::hide();
@@ -1404,8 +1411,20 @@ void KBalloon::slotAction()
         hide();
 }
 
+// (the menu is still busy with its signal: the receiver may delete the
+// balloon with it, so the action is told from the event loop)
 void KBalloon::slotMenuAction( int id )
 {
+    d->menuAction = id;
+    QTimer::singleShot( 0, this, SLOT( slotMenuActionLater() ) );
+}
+
+void KBalloon::slotMenuActionLater()
+{
+    if ( d->menuAction < 0 )
+        return;
+    const int id = d->menuAction;
+    d->menuAction = -1;
     QGuardedPtr< KBalloon > self( this );
     emit actionActivated( id );
     if ( !self.isNull() )

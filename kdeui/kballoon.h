@@ -284,6 +284,7 @@ private slots:
     void slotAction();
     void slotTimeout();
     void slotMenuAction( int id );
+    void slotMenuActionLater();
     void slotRelayout();
 
 private:
