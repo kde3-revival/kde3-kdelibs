@@ -84,6 +84,9 @@ static const int Spacing = 6; // between stacked balloons
 static const int CornerMargin = 8; // without an anchor: from the work area's corner
 static const int MaxPicture = 64; // larger pictures are scaled down
 static const int ScaledPicture = 48;
+// while the pointer is over the balloon, whether it still is is looked at
+// this often (ms; see enterEvent())
+static const int HoverPoll = 250;
 
 namespace
 {
@@ -246,6 +249,67 @@ Atom atom( Display* dpy, const char* name )
     return XInternAtom( dpy, name, False );
 }
 
+// the work area of the current desktop (_NET_WORKAREA) on the monitor
+// screen (Qt 3's availableGeometry() is the monitor's whole area with
+// several monitors)
+QRect workArea( int screen )
+{
+    const QRect monitor = QApplication::desktop()->screenGeometry( screen );
+    Display* dpy = qt_xdisplay();
+    QRect area = monitor;
+    Atom type;
+    int format;
+    unsigned long n, left;
+    unsigned char* data = 0;
+    long desktop = 0;
+    if ( XGetWindowProperty( dpy, qt_xrootwin(), atom( dpy, "_NET_CURRENT_DESKTOP" ), 0, 1, False, XA_CARDINAL,
+                             &type, &format, &n, &left, &data ) == Success && data != 0 && format == 32 && n == 1 )
+        desktop = *(long*) data;
+    if ( data != 0 )
+        XFree( data );
+    data = 0;
+    if ( desktop >= 0 && desktop < 1024
+         && XGetWindowProperty( dpy, qt_xrootwin(), atom( dpy, "_NET_WORKAREA" ), desktop * 4, 4, False,
+                                XA_CARDINAL, &type, &format, &n, &left, &data ) == Success
+         && data != 0 && format == 32 && n == 4 ) {
+        const long* v = (const long*) data;
+        const QRect work( (int) v[ 0 ], (int) v[ 1 ], (int) v[ 2 ], (int) v[ 3 ] );
+        if ( work.intersects( monitor ) )
+            area = work & monitor;
+    }
+    if ( data != 0 )
+        XFree( data );
+    return area;
+}
+
+// plain text as rich text that shows it as it is: escaped, line breaks
+// kept, runs of spaces and tabs kept (still wrapped at single spaces)
+QString plainToRich( const QString& text )
+{
+    const QString escaped = QStyleSheet::escape( text );
+    QString result;
+    bool space = true; // (at the start of a line: kept)
+    for ( unsigned int i = 0; i < escaped.length(); ++i ) {
+        const QChar c = escaped[ i ];
+        if ( c == '\r' && i + 1 < escaped.length() && escaped[ i + 1 ] == '\n' )
+            continue;
+        if ( c == '\n' || c == '\r' ) {
+            result += "<br>";
+            space = true;
+        } else if ( c == '\t' ) {
+            result += "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;";
+            space = true;
+        } else if ( c == ' ' ) {
+            result += space ? "&nbsp;" : " ";
+            space = true;
+        } else {
+            result += c;
+            space = false;
+        }
+    }
+    return result;
+}
+
 #ifdef HAVE_XRENDER
 // a compositing manager for the screen
 bool compositing( Display* dpy, int screen )
@@ -280,15 +344,29 @@ Visual* argbVisual( Display* dpy, int screen )
 }
 
 // one colormap for the ARGB windows (per process, kept)
+// the colormaps for the ARGB windows (one per display, screen and visual,
+// kept for the process)
+struct ArgbColormap
+{
+    Display* dpy;
+    int screen;
+    Visual* visual;
+    Colormap colormap;
+};
+
 Colormap argbColormap( Display* dpy, int screen, Visual* visual )
 {
-    static Colormap colormap = None;
-    static int colormapScreen = -1;
-    if ( colormap == None || colormapScreen != screen ) {
-        colormap = XCreateColormap( dpy, RootWindow( dpy, screen ), visual, AllocNone );
-        colormapScreen = screen;
-    }
-    return colormap;
+    static QValueList< ArgbColormap > colormaps;
+    for ( QValueList< ArgbColormap >::ConstIterator it = colormaps.begin(); it != colormaps.end(); ++it )
+        if ( (*it).dpy == dpy && (*it).screen == screen && (*it).visual == visual )
+            return (*it).colormap;
+    ArgbColormap c;
+    c.dpy = dpy;
+    c.screen = screen;
+    c.visual = visual;
+    c.colormap = XCreateColormap( dpy, RootWindow( dpy, screen ), visual, AllocNone );
+    colormaps.append( c );
+    return c.colormap;
 }
 
 XRenderColor renderColor( const QColor& c )
@@ -331,6 +409,17 @@ public:
     }
 };
 
+// the size a layout wants (its height for its width)
+QSize contentsSize( QLayout* layout )
+{
+    layout->invalidate();
+    layout->activate();
+    QSize size = layout->totalSizeHint();
+    if ( layout->hasHeightForWidth() )
+        size.setHeight( layout->totalHeightForWidth( size.width() ) );
+    return size.expandedTo( layout->totalMinimumSize() );
+}
+
 } // namespace
 
 class KBalloon::Private
@@ -340,7 +429,7 @@ public:
         : rich( false ), nextId( 1 ), timeoutMsec( 6000 ), autoDelete( true ), hasPoint( false ),
           created( false ), argb( false ), queued( false ), tail( NoTail ), content( 0 ), picture( 0 ),
           label( 0 ), buttonRow( 0 ), buttonsDirty( true ), remaining( 0 ), paused( false ),
-          cache( None ), cacheTail( -1 ), cacheFill( 0 ), cacheBorder( 0 )
+          cache( None ), cacheTail( -1 ), cacheFill( 0 ), cacheBorder( 0 ), requeueing( false )
     {
     }
 
@@ -388,7 +477,18 @@ public:
     bool anchorFor( bool above, bool left, QPoint* tip, int* screen ) const;
     // the monitor it goes onto
     int screen() const;
+    // where it may be on the monitor screen: all of it at an anchor, the
+    // work area without one
+    QRect area( int screen ) const;
+    bool requeueing; // hidden to wait again: not gone
 };
+
+QRect KBalloon::Private::area( int screen ) const
+{
+    if ( hasPoint || ( (QWidget*) widget != 0 && widget->isVisible() ) )
+        return QApplication::desktop()->screenGeometry( screen );
+    return workArea( screen );
+}
 
 int KBalloon::Private::screen() const
 {
@@ -433,13 +533,13 @@ KBalloon::KBalloon( QWidget* parent, const char* name )
 
 KBalloon::~KBalloon()
 {
-    queuedBalloons().removeRef( this );
+    const bool queued = queuedBalloons().removeRef( this );
     const bool shown = shownBalloons().removeRef( this );
     if ( d->cache != None )
         XFreePixmap( x11Display(), d->cache );
     delete d;
     d = 0;
-    if ( shown )
+    if ( shown || queued )
         relayoutAll();
 }
 
@@ -538,12 +638,18 @@ void KBalloon::setTimeout( int msec )
 {
     d->timeoutMsec = QMAX( 0, msec );
     if ( isVisible() ) {
+        // (counted anew; paused while the pointer is over it)
         d->timer.stop();
         d->paused = false;
         d->remaining = d->timeoutMsec;
         if ( d->remaining > 0 ) {
-            d->started.start();
-            d->timer.start( d->remaining, true );
+            if ( geometry().contains( QCursor::pos() ) ) {
+                d->paused = true;
+                d->timer.start( HoverPoll, true );
+            } else {
+                d->started.start();
+                d->timer.start( d->remaining, true );
+            }
         }
     }
 }
@@ -693,11 +799,13 @@ void KBalloon::buildContents()
     QHBoxLayout* row = new QHBoxLayout( top, KDialog::spacingHint() );
     d->picture = new QLabel( d->content, "picture" );
     d->picture->setAlignment( AlignTop | AlignHCenter );
-    row->addWidget( d->picture );
+    d->picture->setSizePolicy( QSizePolicy( QSizePolicy::Fixed, QSizePolicy::Fixed ) );
+    row->addWidget( d->picture, 0, AlignTop );
     d->label = new QLabel( d->content, "text" );
     d->label->setTextFormat( RichText );
     d->label->setAlignment( AlignTop | AlignLeft | WordBreak );
-    row->addWidget( d->label, 1 );
+    row->addWidget( d->label );
+    row->addStretch( 1 ); // (room the buttons make)
     d->buttonRow = new QHBoxLayout( top, KDialog::spacingHint() );
     d->buttonRow->addStretch( 1 );
     d->buttonsDirty = true;
@@ -729,26 +837,20 @@ void KBalloon::updateContents()
             html += "<br>";
         if ( d->rich )
             html += d->text;
-        else {
-            QString plain = QStyleSheet::escape( d->text );
-            plain.replace( "\r\n", "<br>" );
-            plain.replace( '\n', "<br>" );
-            html += plain;
-        }
+        else
+            html += plainToRich( d->text );
     }
     d->label->setText( html );
     // as wide as the text needs, at most about 50 characters (a third of
     // the monitor): wrapped beyond
-    QPoint tip;
-    int screen;
-    if ( !d->anchorFor( false, false, &tip, &screen ) )
-        screen = screenOf( QCursor::pos() );
-    const QRect s = QApplication::desktop()->screenGeometry( screen );
+    const QRect s = d->area( d->screen() );
     const int widest = QMAX( 120, QMIN( d->label->fontMetrics().width( 'x' ) * 50, s.width() / 3 ) );
     QSimpleRichText measure( html, d->label->font() );
     measure.setWidth( 32767 );
     const int natural = measure.widthUsed() + 2;
     d->label->setFixedWidth( QMIN( natural, widest ) );
+    d->label->setMinimumHeight( 0 );
+    d->label->setMaximumHeight( QWIDGETSIZE_MAX );
     d->label->setSizePolicy( QSizePolicy( QSizePolicy::Fixed, QSizePolicy::Minimum, true ) );
     // the buttons
     if ( d->buttonsDirty ) {
@@ -766,13 +868,27 @@ void KBalloon::updateContents()
             button->show();
         }
     }
-    QLayout* layout = d->content->layout();
-    layout->invalidate();
-    layout->activate();
-    QSize size = layout->totalSizeHint();
-    if ( layout->hasHeightForWidth() )
-        size.setHeight( layout->totalHeightForWidth( size.width() ) );
-    size = size.expandedTo( layout->totalMinimumSize() );
+    for ( QPtrListIterator< QWidget > it( d->buttons ); it.current() != 0; ++it )
+        it.current()->setMaximumWidth( QWIDGETSIZE_MAX );
+    // no larger than the monitor (with the tail): the buttons narrower
+    // (their text cut), the text shorter (its end cut)
+    const QSize most( s.width() - TailSize - 2 * ContentInset, s.height() - TailSize - 2 * ContentInset );
+    QSize size = contentsSize( d->content->layout() );
+    if ( size.width() > most.width() && !d->buttons.isEmpty() ) {
+        const int n = d->buttons.count();
+        const int room = most.width() - 2 * QMAX( 0, KDialog::marginHint() - ContentInset )
+                         - ( n - 1 ) * KDialog::spacingHint();
+        for ( QPtrListIterator< QWidget > it( d->buttons ); it.current() != 0; ++it )
+            it.current()->setMaximumWidth( QMAX( 20, room / n ) );
+        size = contentsSize( d->content->layout() );
+    }
+    if ( size.height() > most.height() ) {
+        const int text = d->label->heightForWidth( d->label->width() );
+        d->label->setFixedHeight( QMAX( d->label->fontMetrics().lineSpacing(),
+                                        text - ( size.height() - most.height() ) ) );
+        size = contentsSize( d->content->layout() );
+    }
+    size = size.boundedTo( most );
     d->bodySize = QSize( size.width() + 2 * ContentInset, size.height() + 2 * ContentInset )
                   .expandedTo( QSize( 2 * ( Radius + TailBase ) + 8, 2 * ( Radius + TailBase ) + 8 ) );
     if ( isVisible() || d->queued )
@@ -831,7 +947,7 @@ bool KBalloon::place()
         }
     } else {
         screen = screenOf( QCursor::pos() );
-        area = desktop->availableGeometry( screen ) & desktop->screenGeometry( screen );
+        area = workArea( screen );
         geom = QRect( area.right() - CornerMargin - body.width() + 1, area.bottom() - CornerMargin - body.height() + 1,
                       body.width(), body.height() );
     }
@@ -881,8 +997,25 @@ bool KBalloon::place()
 // shown where there is room now
 void KBalloon::relayoutAll()
 {
-    for ( QPtrListIterator< KBalloon > it( shownBalloons() ); it.current() != 0; ++it )
-        it.current()->place();
+    // (one that no longer fits, the ones before it larger or its anchor
+    // moved: waits again, first on its monitor)
+    QPtrList< KBalloon > shown = shownBalloons();
+    QPtrList< KBalloon > requeued;
+    for ( QPtrListIterator< KBalloon > it( shown ); it.current() != 0; ++it ) {
+        KBalloon* b = it.current();
+        if ( b->place() )
+            continue;
+        shownBalloons().removeRef( b );
+        b->d->timer.stop();
+        b->d->paused = false;
+        b->d->requeueing = true;
+        b->QWidget::hide();
+        b->d->requeueing = false;
+        b->d->queued = true;
+        requeued.append( b );
+    }
+    for ( QPtrListIterator< KBalloon > it( requeued ); it.current() != 0; ++it )
+        queuedBalloons().insert( requeued.findRef( it.current() ), it.current() );
     // (in order on each monitor: none before one that still waits there)
     QPtrList< KBalloon > queue = queuedBalloons();
     QValueList< int > waiting;
@@ -943,18 +1076,35 @@ void KBalloon::showNow()
 void KBalloon::hide()
 {
     if ( d->queued ) {
-        queuedBalloons().removeRef( this );
-        d->queued = false;
-        if ( d->autoDelete )
-            deleteLater();
+        cancel();
         return;
     }
     QWidget::hide();
 }
 
+// a queued one leaves the queue (the next ones may fit now)
+void KBalloon::cancel()
+{
+    queuedBalloons().removeRef( this );
+    d->queued = false;
+    relayoutAll();
+    if ( d->autoDelete )
+        deleteLater();
+}
+
+void KBalloon::closeEvent( QCloseEvent* e )
+{
+    // (QWidget::close() hides only shown widgets: a queued one is not)
+    if ( d->queued )
+        cancel();
+    e->accept();
+}
+
 void KBalloon::hideEvent( QHideEvent* e )
 {
     QWidget::hideEvent( e );
+    if ( d->requeueing )
+        return;
     d->timer.stop();
     d->paused = false;
     if ( shownBalloons().removeRef( this ) )
@@ -1064,7 +1214,6 @@ void KBalloon::mouseReleaseEvent( QMouseEvent* e )
  it still is is looked at every HoverPoll ms while paused: a balloon that
  moves (one before it went) leaves the pointer without a leave event.
 */
-static const int HoverPoll = 250;
 
 void KBalloon::enterEvent( QEvent* )
 {

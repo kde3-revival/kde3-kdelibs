@@ -278,6 +278,7 @@ protected:
     virtual void enterEvent( QEvent* e );
     virtual void leaveEvent( QEvent* e );
     virtual void hideEvent( QHideEvent* e );
+    virtual void closeEvent( QCloseEvent* e );
 
 private slots:
     void slotAction();
@@ -291,6 +292,7 @@ private:
     bool place();
     void showNow();
     void checkHover();
+    void cancel();
     static void relayoutAll();
 
     class Private;
