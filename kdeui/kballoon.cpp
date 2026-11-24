@@ -428,7 +428,7 @@ public:
     Private()
         : rich( false ), nextId( 1 ), timeoutMsec( 6000 ), autoDelete( true ), hasPoint( false ),
           created( false ), argb( false ), queued( false ), tail( NoTail ), content( 0 ), picture( 0 ),
-          label( 0 ), buttonRow( 0 ), buttonsDirty( true ), remaining( 0 ), paused( false ),
+          label( 0 ), buttonRows( 0 ), buttonsDirty( true ), remaining( 0 ), paused( false ),
           cache( None ), cacheTail( -1 ), cacheFill( 0 ), cacheBorder( 0 ), requeueing( false )
     {
     }
@@ -456,7 +456,10 @@ public:
     QWidget* content;
     QLabel* picture;
     QLabel* label;
-    QHBoxLayout* buttonRow;
+    QVBoxLayout* buttonRows; // rows of buttons, as many as the monitor's width needs
+    QPtrList< QLayout > rows;
+    QString html; // the label's text
+    QRect fitArea; // the area the contents were fitted to (fitContents())
     QPtrList< QWidget > buttons;
     QMap< const QObject*, int > buttonIds;
     bool buttonsDirty;
@@ -806,8 +809,7 @@ void KBalloon::buildContents()
     d->label->setAlignment( AlignTop | AlignLeft | WordBreak );
     row->addWidget( d->label );
     row->addStretch( 1 ); // (room the buttons make)
-    d->buttonRow = new QHBoxLayout( top, KDialog::spacingHint() );
-    d->buttonRow->addStretch( 1 );
+    d->buttonRows = new QVBoxLayout( top, KDialog::spacingHint() );
     d->buttonsDirty = true;
 }
 
@@ -841,17 +843,7 @@ void KBalloon::updateContents()
             html += plainToRich( d->text );
     }
     d->label->setText( html );
-    // as wide as the text needs, at most about 50 characters (a third of
-    // the monitor): wrapped beyond
-    const QRect s = d->area( d->screen() );
-    const int widest = QMAX( 120, QMIN( d->label->fontMetrics().width( 'x' ) * 50, s.width() / 3 ) );
-    QSimpleRichText measure( html, d->label->font() );
-    measure.setWidth( 32767 );
-    const int natural = measure.widthUsed() + 2;
-    d->label->setFixedWidth( QMIN( natural, widest ) );
-    d->label->setMinimumHeight( 0 );
-    d->label->setMaximumHeight( QWIDGETSIZE_MAX );
-    d->label->setSizePolicy( QSizePolicy( QSizePolicy::Fixed, QSizePolicy::Minimum, true ) );
+    d->html = html;
     // the buttons
     if ( d->buttonsDirty ) {
         d->buttonsDirty = false;
@@ -861,27 +853,70 @@ void KBalloon::updateContents()
         for ( QValueList< Action >::ConstIterator it = d->actions.begin(); it != d->actions.end(); ++it ) {
             KPushButton* button = new KPushButton( (*it).item, d->content );
             button->setFocusPolicy( NoFocus );
-            d->buttonRow->addWidget( button );
             d->buttons.append( button );
             d->buttonIds[ button ] = (*it).id;
             connect( button, SIGNAL( clicked() ), SLOT( slotAction() ) );
             button->show();
         }
     }
-    for ( QPtrListIterator< QWidget > it( d->buttons ); it.current() != 0; ++it )
-        it.current()->setMaximumWidth( QWIDGETSIZE_MAX );
-    // no larger than the monitor (with the tail): the buttons narrower
-    // (their text cut), the text shorter (its end cut)
-    const QSize most( s.width() - TailSize - 2 * ContentInset, s.height() - TailSize - 2 * ContentInset );
-    QSize size = contentsSize( d->content->layout() );
-    if ( size.width() > most.width() && !d->buttons.isEmpty() ) {
-        const int n = d->buttons.count();
-        const int room = most.width() - 2 * QMAX( 0, KDialog::marginHint() - ContentInset )
-                         - ( n - 1 ) * KDialog::spacingHint();
-        for ( QPtrListIterator< QWidget > it( d->buttons ); it.current() != 0; ++it )
-            it.current()->setMaximumWidth( QMAX( 20, room / n ) );
-        size = contentsSize( d->content->layout() );
+    fitContents();
+    if ( isVisible() || d->queued )
+        relayoutAll();
+}
+
+/*
+ The contents fitted to the area of the monitor the balloon goes onto
+ (again whenever that changes, see place()): the text as wide as it
+ needs, at most about 50 characters (a third of the monitor), wrapped
+ beyond; the buttons in as many rows as that width needs (one wider than
+ the monitor alone: narrower, its text cut); the text shorter (its end
+ cut) when it is all higher than the monitor.
+*/
+void KBalloon::fitContents()
+{
+    const QRect s = d->area( d->screen() );
+    d->fitArea = s;
+    const QSize most( QMAX( 40, s.width() - TailSize - 2 * ContentInset ),
+                      QMAX( 40, s.height() - TailSize - 2 * ContentInset ) );
+    const int margin = QMAX( 0, KDialog::marginHint() - ContentInset );
+    const int spacing = KDialog::spacingHint();
+    const int widest = QMAX( 120, QMIN( d->label->fontMetrics().width( 'x' ) * 50, s.width() / 3 ) );
+    QSimpleRichText measure( d->html, d->label->font() );
+    measure.setWidth( 32767 );
+    const int natural = measure.widthUsed() + 2;
+    d->label->setFixedWidth( QMAX( 20, QMIN( QMIN( natural, widest ),
+                                             most.width() - 2 * margin
+                                             - ( d->picture->isVisible() ? d->picture->sizeHint().width() + spacing
+                                                                         : 0 ) ) ) );
+    d->label->setMinimumHeight( 0 );
+    d->label->setMaximumHeight( QWIDGETSIZE_MAX );
+    d->label->setSizePolicy( QSizePolicy( QSizePolicy::Fixed, QSizePolicy::Minimum, true ) );
+    // the rows of buttons (each right aligned)
+    for ( QPtrListIterator< QLayout > it( d->rows ); it.current() != 0; ++it )
+        d->buttonRows->removeItem( it.current() ); // (its buttons are added again)
+    d->rows.setAutoDelete( true );
+    d->rows.clear();
+    const int room = most.width() - 2 * margin;
+    QHBoxLayout* row = 0;
+    int used = 0;
+    for ( QPtrListIterator< QWidget > it( d->buttons ); it.current() != 0; ++it ) {
+        QWidget* button = it.current();
+        button->setMaximumWidth( QWIDGETSIZE_MAX );
+        int w = button->sizeHint().expandedTo( button->minimumSizeHint() ).width();
+        if ( w > room ) {
+            button->setMaximumWidth( room );
+            w = room;
+        }
+        if ( row == 0 || used + spacing + w > room ) {
+            row = new QHBoxLayout( d->buttonRows, spacing );
+            row->addStretch( 1 );
+            d->rows.append( row );
+            used = w;
+        } else
+            used += spacing + w;
+        row->addWidget( button );
     }
+    QSize size = contentsSize( d->content->layout() );
     if ( size.height() > most.height() ) {
         const int text = d->label->heightForWidth( d->label->width() );
         d->label->setFixedHeight( QMAX( d->label->fontMetrics().lineSpacing(),
@@ -891,8 +926,6 @@ void KBalloon::updateContents()
     size = size.boundedTo( most );
     d->bodySize = QSize( size.width() + 2 * ContentInset, size.height() + 2 * ContentInset )
                   .expandedTo( QSize( 2 * ( Radius + TailBase ) + 8, 2 * ( Radius + TailBase ) + 8 ) );
-    if ( isVisible() || d->queued )
-        relayoutAll();
 }
 
 /*
@@ -904,8 +937,10 @@ void KBalloon::updateContents()
 */
 bool KBalloon::place()
 {
+    if ( d->area( d->screen() ) != d->fitArea )
+        fitContents(); // (another monitor, another work area)
     QDesktopWidget* desktop = QApplication::desktop();
-    const QSize body = d->bodySize;
+    QSize body = d->bodySize;
     int screen = 0;
     QPoint tip;
     QRect geom;
@@ -980,6 +1015,12 @@ bool KBalloon::place()
     }
     if ( moved && !area.contains( geom ) )
         return false;
+    if ( !area.contains( geom ) ) { // (larger than a tiny monitor: as much as there is)
+        geom &= area;
+        if ( tail != NoTail && geom.size() != body + QSize( TailSize, TailSize ) )
+            tail = NoTail;
+        body = geom.size() - ( tail != NoTail ? QSize( TailSize, TailSize ) : QSize( 0, 0 ) );
+    }
     d->tail = tail;
     const int left = ( tail == TailTopLeft || tail == TailBottomLeft ) ? TailSize : 0;
     const int top = ( tail == TailTopLeft || tail == TailTopRight ) ? TailSize : 0;
@@ -995,32 +1036,64 @@ bool KBalloon::place()
 
 // all balloons placed again (one went, one changed), then those waiting
 // shown where there is room now
+/*
+ Showing a balloon delivers events, whose handlers may show, hide or
+ delete balloons (which relayout again): a relayout asked for during one
+ is done after it, and each balloon is looked at only while it still
+ exists and is still where it was (shown, queued).
+*/
+static int relayoutDepth = 0;
+static bool relayoutAgain = false;
+
 void KBalloon::relayoutAll()
+{
+    if ( relayoutDepth > 0 ) {
+        relayoutAgain = true;
+        return;
+    }
+    ++relayoutDepth;
+    for ( int round = 0; round < 16; ++round ) {
+        relayoutAgain = false;
+        relayoutPass();
+        if ( !relayoutAgain )
+            break;
+    }
+    --relayoutDepth;
+}
+
+void KBalloon::relayoutPass()
 {
     // (one that no longer fits, the ones before it larger or its anchor
     // moved: waits again, first on its monitor)
-    QPtrList< KBalloon > shown = shownBalloons();
+    QValueList< QGuardedPtr< KBalloon > > shown;
+    for ( QPtrListIterator< KBalloon > it( shownBalloons() ); it.current() != 0; ++it )
+        shown.append( it.current() );
     QPtrList< KBalloon > requeued;
-    for ( QPtrListIterator< KBalloon > it( shown ); it.current() != 0; ++it ) {
-        KBalloon* b = it.current();
-        if ( b->place() )
+    for ( QValueList< QGuardedPtr< KBalloon > >::ConstIterator it = shown.begin(); it != shown.end(); ++it ) {
+        KBalloon* b = *it;
+        if ( b == 0 || shownBalloons().findRef( b ) < 0 || b->place() )
             continue;
         shownBalloons().removeRef( b );
         b->d->timer.stop();
         b->d->paused = false;
         b->d->requeueing = true;
+        b->d->queued = true;
+        requeued.append( b ); // (no events before it is queued below)
         b->QWidget::hide();
         b->d->requeueing = false;
-        b->d->queued = true;
-        requeued.append( b );
     }
+    int at = 0;
     for ( QPtrListIterator< KBalloon > it( requeued ); it.current() != 0; ++it )
-        queuedBalloons().insert( requeued.findRef( it.current() ), it.current() );
+        queuedBalloons().insert( at++, it.current() );
     // (in order on each monitor: none before one that still waits there)
-    QPtrList< KBalloon > queue = queuedBalloons();
+    QValueList< QGuardedPtr< KBalloon > > queue;
+    for ( QPtrListIterator< KBalloon > it( queuedBalloons() ); it.current() != 0; ++it )
+        queue.append( it.current() );
     QValueList< int > waiting;
-    for ( QPtrListIterator< KBalloon > it( queue ); it.current() != 0; ++it ) {
-        KBalloon* b = it.current();
+    for ( QValueList< QGuardedPtr< KBalloon > >::ConstIterator it = queue.begin(); it != queue.end(); ++it ) {
+        KBalloon* b = *it;
+        if ( b == 0 || queuedBalloons().findRef( b ) < 0 || !b->d->queued )
+            continue; // (gone, or left the queue meanwhile)
         const int screen = b->d->screen();
         if ( waiting.contains( screen ) )
             continue;
@@ -1030,7 +1103,8 @@ void KBalloon::relayoutAll()
         }
         queuedBalloons().removeRef( b );
         b->d->queued = false;
-        b->showNow();
+        if ( shownBalloons().findRef( b ) < 0 )
+            b->showNow();
     }
 }
 

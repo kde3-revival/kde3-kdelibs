@@ -288,12 +288,14 @@ private:
     void createWindow();
     void buildContents();
     void updateContents();
+    void fitContents();
     void updateShape();
     bool place();
     void showNow();
     void checkHover();
     void cancel();
     static void relayoutAll();
+    static void relayoutPass();
 
     class Private;
     Private* d;
