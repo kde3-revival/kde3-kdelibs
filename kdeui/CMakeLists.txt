@@ -406,3 +406,8 @@ install(FILES
 
 add_subdirectory(kdetrayproxy)
 add_subdirectory(about)
+
+option(KDE3_BUILD_KDEUI_TESTS "Build the test programs of kdeui (kdeui/tests)" OFF)
+if(KDE3_BUILD_KDEUI_TESTS)
+  add_subdirectory(tests)
+endif()
