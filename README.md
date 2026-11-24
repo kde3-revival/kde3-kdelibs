@@ -6,7 +6,9 @@ systems.
 
 Every KDE 3 program needs this package. It is built on
 [kde3-qt](https://github.com/kde3-revival/kde3-qt) and is in turn the base
-of [kde3-base](https://github.com/kde3-revival/kde3-base) (the desktop) and
+of [kde3-base](https://github.com/kde3-revival/kde3-base) (the desktop),
+[kde3-pim](https://github.com/kde3-revival/kde3-pim) (KMail, Kontact and
+the other PIM applications) and
 [kde3-apps](https://github.com/kde3-revival/kde3-apps) (applications).
 
 The first commit of this repository is the pristine kdelibs 3.5.10 release;
@@ -185,6 +187,8 @@ individual file. Contributions are accepted under the same terms.
   of everything
 - [kde3-base](https://github.com/kde3-revival/kde3-base): the desktop
   (KWin, Kicker, KDesktop, Konqueror, Konsole, KControl, ...)
+- [kde3-pim](https://github.com/kde3-revival/kde3-pim): KMail, KAddressBook,
+  KOrganizer, Kontact
 - [kde3-apps](https://github.com/kde3-revival/kde3-apps): applications
 - [kde3-packaging](https://github.com/kde3-revival/kde3-packaging): Fedora
   and Arch Linux packages
