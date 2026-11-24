@@ -99,6 +99,7 @@ kde3_add_library(kdeui SHARED
     kstdguiitem.cpp
     kstringvalidator.cpp
     kactivelabel.cpp
+    kballoon.cpp
     kwindowinfo.cpp
     ktextedit.cpp
     kwizard.cpp
@@ -135,6 +136,7 @@ kde3_add_library(kdeui SHARED
     kanimwidget.h
     karrowbutton.h
     kauthicon.h
+    kballoon.h
     kbugreport.h
     kbuttonbox.h
     kcharselect.h
@@ -239,8 +241,11 @@ kde3_add_library(kdeui SHARED
 target_include_directories(kdeui
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR};${CMAKE_CURRENT_BINARY_DIR}>"
   PRIVATE "${PROJECT_SOURCE_DIR}/interfaces")
-if(HAVE_MITSHM)
-  target_link_libraries(kdeui PRIVATE X11::Xext)
+# libXext: XShape (KBalloon), MIT-SHM (KPixmapIO)
+target_link_libraries(kdeui PRIVATE X11::Xext)
+# LIB_XRENDER: KBalloon's anti-aliased outline
+if(HAVE_XRENDER)
+  target_link_libraries(kdeui PRIVATE X11::Xrender)
 endif()
 
 # libkspell: compatibility library, everything is in libkdeui
@@ -303,6 +308,7 @@ install(FILES
   klineeditdlg.h
   kinputdialog.h
   kactivelabel.h
+  kballoon.h
   kcharselect.h
   kcolordrag.h
   qxembed.h
