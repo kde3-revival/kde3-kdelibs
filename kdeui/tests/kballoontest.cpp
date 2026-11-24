@@ -29,6 +29,13 @@
  text      long text (wrapped), markup in plain text (shown as it is),
            rich text, no title
  corner    a balloon without an anchor (the corner of the work area)
+ big       a balloon larger than the monitor (a long text, many actions):
+           made to fit
+ queue     ten balloons without timeout at one anchor on the second
+           monitor, then a step every 1.5 s: close() the first one waiting
+           (it never comes), make the first one taller (the last ones shown
+           wait again), hide() it (those waiting come), setTimeout( 800 ) on
+           balloon 2 (the pointer is over it: it stays)
 */
 
 #include "kballoontest.h"
@@ -42,6 +49,7 @@
 #include <qmap.h>
 #include <qpainter.h>
 #include <qpixmap.h>
+#include <qptrlist.h>
 #include <qtimer.h>
 
 #include <kaboutdata.h>
@@ -125,8 +133,43 @@ void Reporter::report()
 static Reporter* reporter = 0;
 static int counter = 0;
 static int timeoutMsec = 0;
+static QPtrList< KBalloon > sequence; // the balloons of the scenario "queue"
+static int stepNumber = 0;
 
 // an avatar: a coloured disc with initials
+void Reporter::step()
+{
+    ++stepNumber;
+    report();
+    KBalloon* first = sequence.first();
+    switch ( stepNumber ) {
+    case 1:
+        for ( QPtrListIterator< KBalloon > it( sequence ); it.current() != 0; ++it )
+            if ( it.current()->isQueued() ) {
+                printf( "step 1: close() \"%s\" (queued)\n", it.current()->title().latin1() );
+                it.current()->close();
+                break;
+            }
+        break;
+    case 2:
+        printf( "step 2: \"%s\" taller\n", first->title().latin1() );
+        first->setText( "Taller now.\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10" );
+        break;
+    case 3:
+        printf( "step 3: hide() \"%s\"\n", first->title().latin1() );
+        first->hide();
+        break;
+    case 4:
+        printf( "step 4: setTimeout( 800 ) on \"%s\"\n", sequence.at( 1 )->title().latin1() );
+        sequence.at( 1 )->setTimeout( 800 );
+        break;
+    default:
+        return;
+    }
+    fflush( stdout );
+    QTimer::singleShot( 1500, this, SLOT( step() ) );
+}
+
 static QPixmap avatar( const QColor& color, const QString& initials, int size = 40 )
 {
     QPixmap pm( size, size );
@@ -242,7 +285,7 @@ static void text()
     KBalloon* b = balloon( "A <b>title</b> & markup",
                            "Plain text with markup shown as it is: <b>not bold</b> <img src=\"/etc/passwd\"> "
                            "&amp; an ampersand. And a long line that has to be wrapped because it is much longer "
-                           "than fifty characters, the widest a balloon gets.\nA second line.",
+                           "than fifty characters, the widest a balloon gets.\nA second line:\ta tab, three   spaces.",
                            avatar( QColor( 200, 40, 90 ), "TX" ), 2 );
     b->setAnchor( QPoint( g.right() - 50, g.bottom() - 10 ) );
     b->show();
@@ -255,6 +298,31 @@ static void text()
     b->show();
 }
 
+static void big()
+{
+    QString text;
+    for ( int i = 0; i < 80; ++i )
+        text += QString( "Line %1 of a text far too long for any monitor.\n" ).arg( i + 1 );
+    KBalloon* b = balloon( "Too large", text, avatar( QColor( 90, 90, 160 ), "XL" ), 0 );
+    for ( int i = 0; i < 12; ++i )
+        b->insertAction( QString( "Action number %1" ).arg( i + 1 ) );
+    const QRect g = QApplication::desktop()->screenGeometry( 1 );
+    b->setAnchor( QPoint( g.right() - 30, g.bottom() - 10 ) );
+    b->show();
+}
+
+static void queue()
+{
+    const QRect g = QApplication::desktop()->screenGeometry( QApplication::desktop()->numScreens() - 1 );
+    for ( int i = 0; i < 10; ++i ) {
+        KBalloon* b = balloon( QString( "Queued %1" ).arg( i + 1 ), "No timeout.", QPixmap(), i == 0 ? 1 : 0 );
+        b->setAnchor( QPoint( g.right() - 30, g.bottom() - 10 ) );
+        b->show();
+        sequence.append( b );
+    }
+    QTimer::singleShot( 1500, reporter, SLOT( step() ) );
+}
+
 static void corner()
 {
     KBalloon* b = balloon( "No anchor", "In the corner of the work area, without a tail.",
@@ -264,7 +332,7 @@ static void corner()
 
 static KCmdLineOptions options[] =
 {
-    { "scenario <name>", "monitors, stack, widget, text or corner", "monitors" },
+    { "scenario <name>", "monitors, stack, widget, text, corner, big or queue", "monitors" },
     { "timeout <ms>", "Timeout of the balloons (0: none)", "0" },
     { "quit-after <ms>", "Quit after this long (0: never)", "0" },
     { "report-after <ms>", "Print where the balloons are after this long", "1000" },
@@ -294,6 +362,10 @@ int main( int argc, char** argv )
         text();
     else if ( scenario == "corner" )
         corner();
+    else if ( scenario == "big" )
+        big();
+    else if ( scenario == "queue" )
+        queue();
     else
         monitors();
     if ( reportAfter > 0 )

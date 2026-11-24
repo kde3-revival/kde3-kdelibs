@@ -33,6 +33,7 @@ public:
 
 public slots:
     void report();
+    void step(); // the next step of the scenario "queue"
 
 private slots:
     void clicked();
