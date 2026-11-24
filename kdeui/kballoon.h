@@ -283,6 +283,8 @@ protected:
 private slots:
     void slotAction();
     void slotTimeout();
+    void slotMenuAction( int id );
+    void slotRelayout();
 
 private:
     void createWindow();

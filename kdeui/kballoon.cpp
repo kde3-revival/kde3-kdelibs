@@ -51,6 +51,7 @@
 #include <qmap.h>
 #include <qpainter.h>
 #include <qpointarray.h>
+#include <qpopupmenu.h>
 #include <qptrlist.h>
 #include <qsimplerichtext.h>
 #include <qstylesheet.h>
@@ -61,6 +62,7 @@
 
 #include <kdialog.h>
 #include <kguiitem.h>
+#include <klocale.h>
 #include <kpushbutton.h>
 #include <kwin.h>
 
@@ -457,6 +459,8 @@ public:
     QLabel* picture;
     QLabel* label;
     QVBoxLayout* buttonRows; // rows of buttons, as many as the monitor's width needs
+    KPushButton* more; // the actions beyond the rows the monitor's height allows
+    QPopupMenu* moreMenu;
     QPtrList< QLayout > rows;
     QString html; // the label's text
     QRect fitArea; // the area the contents were fitted to (fitContents())
@@ -810,6 +814,12 @@ void KBalloon::buildContents()
     row->addWidget( d->label );
     row->addStretch( 1 ); // (room the buttons make)
     d->buttonRows = new QVBoxLayout( top, KDialog::spacingHint() );
+    d->more = new KPushButton( i18n( "more actions", "More" ), d->content, "more" );
+    d->more->setFocusPolicy( NoFocus );
+    d->moreMenu = new QPopupMenu( d->more, "moremenu" );
+    d->more->setPopup( d->moreMenu );
+    d->more->hide();
+    connect( d->moreMenu, SIGNAL( activated( int ) ), SLOT( slotMenuAction( int ) ) );
     d->buttonsDirty = true;
 }
 
@@ -896,26 +906,81 @@ void KBalloon::fitContents()
         d->buttonRows->removeItem( it.current() ); // (its buttons are added again)
     d->rows.setAutoDelete( true );
     d->rows.clear();
+    // as many rows as the height leaves beside some text (and the
+    // picture): the actions beyond in the menu of a button "More"
     const int room = most.width() - 2 * margin;
-    QHBoxLayout* row = 0;
-    int used = 0;
-    for ( QPtrListIterator< QWidget > it( d->buttons ); it.current() != 0; ++it ) {
-        QWidget* button = it.current();
-        button->setMaximumWidth( QWIDGETSIZE_MAX );
-        int w = button->sizeHint().expandedTo( button->minimumSizeHint() ).width();
-        if ( w > room ) {
-            button->setMaximumWidth( room );
-            w = room;
+    const int moreWidth = QMIN( room, d->more->sizeHint().expandedTo( d->more->minimumSizeHint() ).width() );
+    int rowHeight = d->more->sizeHint().height();
+    for ( QPtrListIterator< QWidget > it( d->buttons ); it.current() != 0; ++it )
+        rowHeight = QMAX( rowHeight, it.current()->sizeHint().height() );
+    // (up to three lines of the text kept)
+    const int lines = d->label->fontMetrics().lineSpacing();
+    const int top = QMAX( QMAX( lines, QMIN( 3 * lines, d->label->heightForWidth( d->label->width() ) ) ),
+                          d->picture->isVisible() ? d->picture->sizeHint().height() : 0 );
+    const int maxRows = QMAX( 1, ( most.height() - 2 * margin - top ) / ( rowHeight + spacing ) );
+    QValueList< int > widths;
+    int rowsNeeded = 0;
+    {
+        int used = 0;
+        for ( QPtrListIterator< QWidget > it( d->buttons ); it.current() != 0; ++it ) {
+            QWidget* button = it.current();
+            button->setMaximumWidth( QWIDGETSIZE_MAX );
+            const int w = QMIN( room, button->sizeHint().expandedTo( button->minimumSizeHint() ).width() );
+            if ( w == room )
+                button->setMaximumWidth( room );
+            widths.append( w );
+            if ( rowsNeeded == 0 || used + spacing + w > room ) {
+                ++rowsNeeded;
+                used = w;
+            } else
+                used += spacing + w;
         }
-        if ( row == 0 || used + spacing + w > room ) {
+    }
+    const bool overflow = rowsNeeded > maxRows;
+    d->moreMenu->clear();
+    QHBoxLayout* row = 0;
+    int rowCount = 0;
+    int used = 0;
+    bool full = false; // (the rest in the menu)
+    QValueList< int >::ConstIterator width = widths.begin();
+    QValueList< Action >::ConstIterator action = d->actions.begin();
+    for ( QPtrListIterator< QWidget > it( d->buttons ); it.current() != 0; ++it, ++width, ++action ) {
+        QWidget* button = it.current();
+        const int w = *width;
+        if ( !full && ( row == 0 || used + spacing + w > room ) ) {
+            if ( rowCount == maxRows )
+                full = true;
+            else {
+                row = new QHBoxLayout( d->buttonRows, spacing );
+                row->addStretch( 1 );
+                d->rows.append( row );
+                ++rowCount;
+                used = 0;
+            }
+        }
+        // (in the last row, room is kept for "More")
+        if ( !full && overflow && rowCount == maxRows
+             && ( used > 0 ? used + spacing : 0 ) + w + spacing + moreWidth > room )
+            full = true;
+        if ( full ) {
+            button->hide();
+            d->moreMenu->insertItem( (*action).item.text(), (*action).id );
+            continue;
+        }
+        used += ( used > 0 ? spacing : 0 ) + w;
+        row->addWidget( button );
+        button->show();
+    }
+    if ( d->moreMenu->count() > 0 ) {
+        if ( row == 0 ) {
             row = new QHBoxLayout( d->buttonRows, spacing );
             row->addStretch( 1 );
             d->rows.append( row );
-            used = w;
-        } else
-            used += spacing + w;
-        row->addWidget( button );
-    }
+        }
+        row->addWidget( d->more );
+        d->more->show();
+    } else
+        d->more->hide();
     QSize size = contentsSize( d->content->layout() );
     if ( size.height() > most.height() ) {
         const int text = d->label->heightForWidth( d->label->width() );
@@ -1059,6 +1124,13 @@ void KBalloon::relayoutAll()
             break;
     }
     --relayoutDepth;
+    if ( relayoutAgain ) { // (still asked for: later, from the event loop)
+        relayoutAgain = false;
+        KBalloon* any = !shownBalloons().isEmpty() ? shownBalloons().first()
+                        : !queuedBalloons().isEmpty() ? queuedBalloons().first() : 0;
+        if ( any != 0 ) // (none left: nothing to place; one deleted relayouts itself)
+            QTimer::singleShot( 0, any, SLOT( slotRelayout() ) );
+    }
 }
 
 void KBalloon::relayoutPass()
@@ -1068,7 +1140,9 @@ void KBalloon::relayoutPass()
     QValueList< QGuardedPtr< KBalloon > > shown;
     for ( QPtrListIterator< KBalloon > it( shownBalloons() ); it.current() != 0; ++it )
         shown.append( it.current() );
-    QPtrList< KBalloon > requeued;
+    // (queued before it is hidden: its events may delete or cancel it,
+    // which takes it out of the queue)
+    unsigned int at = 0;
     for ( QValueList< QGuardedPtr< KBalloon > >::ConstIterator it = shown.begin(); it != shown.end(); ++it ) {
         KBalloon* b = *it;
         if ( b == 0 || shownBalloons().findRef( b ) < 0 || b->place() )
@@ -1076,15 +1150,15 @@ void KBalloon::relayoutPass()
         shownBalloons().removeRef( b );
         b->d->timer.stop();
         b->d->paused = false;
-        b->d->requeueing = true;
         b->d->queued = true;
-        requeued.append( b ); // (no events before it is queued below)
+        queuedBalloons().insert( QMIN( at, queuedBalloons().count() ), b );
+        ++at;
+        QGuardedPtr< KBalloon > guard( b );
+        b->d->requeueing = true;
         b->QWidget::hide();
-        b->d->requeueing = false;
+        if ( !guard.isNull() )
+            guard->d->requeueing = false;
     }
-    int at = 0;
-    for ( QPtrListIterator< KBalloon > it( requeued ); it.current() != 0; ++it )
-        queuedBalloons().insert( at++, it.current() );
     // (in order on each monitor: none before one that still waits there)
     QValueList< QGuardedPtr< KBalloon > > queue;
     for ( QPtrListIterator< KBalloon > it( queuedBalloons() ); it.current() != 0; ++it )
@@ -1328,6 +1402,19 @@ void KBalloon::slotAction()
     emit actionActivated( id );
     if ( !self.isNull() )
         hide();
+}
+
+void KBalloon::slotMenuAction( int id )
+{
+    QGuardedPtr< KBalloon > self( this );
+    emit actionActivated( id );
+    if ( !self.isNull() )
+        hide();
+}
+
+void KBalloon::slotRelayout()
+{
+    relayoutAll();
 }
 
 void KBalloon::slotTimeout()
