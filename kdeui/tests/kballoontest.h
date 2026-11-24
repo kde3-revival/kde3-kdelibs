@@ -37,6 +37,8 @@ public slots:
     void step(); // the next step of the scenario "queue"
     void moveStep(); // the scenario "move"
     void reentrantStep(); // the scenario "reentrant"
+    void chainStep(); // the scenario "chain"
+    void menuStep(); // the scenario "actions"
 
 private slots:
     void clicked();

@@ -37,6 +37,10 @@
  reentrant at one anchor on the second monitor balloons that don't all fit;
            when the one waiting first is shown, its show event deletes the
            next one waiting, hides the one after and shows a new one
+ chain     balloons whose show events each queue a new balloon and hide
+           themselves: a chain of 40 (longer than one relayout's rounds)
+ actions   200 actions on the smaller monitor: rows, the rest in "More";
+           after 1.5 s the last action is chosen from the menu
  queue     ten balloons without timeout at one anchor on the second
            monitor, then a step every 1.5 s: close() the first one waiting
            (it never comes), make the first one taller (the last ones shown
@@ -56,6 +60,8 @@
 #include <qpainter.h>
 #include <qguardedptr.h>
 #include <qpixmap.h>
+#include <qpopupmenu.h>
+#include <qobjectlist.h>
 #include <qptrlist.h>
 #include <qtimer.h>
 
@@ -181,6 +187,22 @@ void Reporter::step()
     QTimer::singleShot( 1500, this, SLOT( step() ) );
 }
 
+static int chainLeft = 0;
+static QPtrList< KBalloon > chain; // (to hide after their show events)
+
+// a balloon of the chain: its show event queues the next one, hides it
+static KBalloon* chainBalloon( Reporter* r )
+{
+    const QRect g = QApplication::desktop()->screenGeometry( 0 );
+    KBalloon* b = new KBalloon;
+    b->setTitle( QString( "Chain %1" ).arg( 41 - chainLeft ) );
+    b->setText( "Shows the next one." );
+    r->watch( b, ++counter );
+    b->setAnchor( QPoint( g.right() - 30, g.bottom() - 10 ) );
+    b->installEventFilter( r );
+    return b;
+}
+
 static QGuardedPtr< KBalloon > target; // (scenarios move and reentrant)
 static QGuardedPtr< KBalloon > victimDeleted, victimHidden;
 
@@ -197,6 +219,18 @@ void Reporter::moveStep()
 
 bool Reporter::eventFilter( QObject* o, QEvent* e )
 {
+    if ( e->type() == QEvent::Show && o->inherits( "KBalloon" ) && chain.findRef( (KBalloon*) o ) < 0
+         && QString( static_cast< KBalloon* >( o )->title() ).startsWith( "Chain" ) ) {
+        KBalloon* shown = static_cast< KBalloon* >( o );
+        chain.append( shown );
+        if ( chainLeft > 0 ) {
+            --chainLeft;
+            KBalloon* next = chainBalloon( this );
+            next->show(); // (queued: the shown one is there)
+        }
+        shown->hide(); // (its place free: the next one comes)
+        return false;
+    }
     if ( e->type() == QEvent::Show && o == (KBalloon*) target ) {
         printf( "show event of \"%s\": delete the next one waiting, hide the one after, show a new one\n",
                 target->title().latin1() );
@@ -226,6 +260,35 @@ void Reporter::reentrantStep()
         }
     fflush( stdout );
     QTimer::singleShot( 1000, this, SLOT( report() ) );
+}
+
+void Reporter::chainStep()
+{
+    report();
+    printf( "chain: %d left to show\n", chainLeft );
+    fflush( stdout );
+}
+
+void Reporter::menuStep()
+{
+    if ( target.isNull() )
+        return;
+    QPopupMenu* menu = static_cast< QPopupMenu* >( target->child( "moremenu", "QPopupMenu" ) );
+    int shown = 0;
+    QObjectList* buttons = target->queryList( "KPushButton" );
+    for ( QObjectListIt it( *buttons ); it.current() != 0; ++it )
+        if ( static_cast< QWidget* >( it.current() )->isVisible() )
+            ++shown;
+    delete buttons;
+    printf( "actions: menu with %d items, buttons shown %d (with More)\n", menu != 0 ? (int) menu->count() : -1,
+            shown );
+    if ( menu != 0 && menu->count() > 0 ) {
+        const int id = menu->idAt( menu->count() - 1 );
+        printf( "actions: choose the last one of the menu, %d\n", id );
+        fflush( stdout );
+        menu->activateItemAt( menu->count() - 1 );
+    }
+    fflush( stdout );
 }
 
 static QPixmap avatar( const QColor& color, const QString& initials, int size = 40 )
@@ -425,6 +488,31 @@ static void reentrant()
     QTimer::singleShot( 1500, reporter, SLOT( reentrantStep() ) );
 }
 
+static void chainScenario()
+{
+    // as tall as the monitor: one at a time
+    QString text;
+    for ( int i = 0; i < 60; ++i )
+        text += "Tall.\n";
+    chainLeft = 39;
+    KBalloon* first = chainBalloon( reporter );
+    first->setText( text );
+    first->show();
+    QTimer::singleShot( 2000, reporter, SLOT( chainStep() ) );
+}
+
+static void actions()
+{
+    const QRect g = QApplication::desktop()->screenGeometry( 1 );
+    KBalloon* b = balloon( "200 actions", "Rows as many as fit, the rest in More.", QPixmap(), 0 );
+    for ( int i = 0; i < 200; ++i )
+        b->insertAction( QString( "Action %1" ).arg( i + 1 ), i + 1 );
+    b->setAnchor( QPoint( g.right() - 30, g.bottom() - 10 ) );
+    b->show();
+    target = b;
+    QTimer::singleShot( 1500, reporter, SLOT( menuStep() ) );
+}
+
 static void corner()
 {
     KBalloon* b = balloon( "No anchor", "In the corner of the work area, without a tail.",
@@ -434,7 +522,7 @@ static void corner()
 
 static KCmdLineOptions options[] =
 {
-    { "scenario <name>", "monitors, stack, widget, text, corner, big, queue, move or reentrant", "monitors" },
+    { "scenario <name>", "monitors, stack, widget, text, corner, big, queue, move, reentrant, chain or actions", "monitors" },
     { "timeout <ms>", "Timeout of the balloons (0: none)", "0" },
     { "quit-after <ms>", "Quit after this long (0: never)", "0" },
     { "report-after <ms>", "Print where the balloons are after this long", "1000" },
@@ -472,6 +560,10 @@ int main( int argc, char** argv )
         move();
     else if ( scenario == "reentrant" )
         reentrant();
+    else if ( scenario == "chain" )
+        chainScenario();
+    else if ( scenario == "actions" )
+        actions();
     else
         monitors();
     if ( reportAfter > 0 )
