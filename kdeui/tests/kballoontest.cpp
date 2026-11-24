@@ -41,6 +41,13 @@
            themselves: a chain of 40 (longer than one relayout's rounds)
  actions   200 actions on the smaller monitor: rows, the rest in "More";
            after 1.5 s the last action is chosen from the menu
+ menudelete as actions, the receiver of actionActivated() deletes the
+           balloon at once; the menu is popped up for a click on its last item
+ order     ten balloons at one anchor on the second monitor (nine fit); the
+           first one grows: the last ones shown wait again, the second of
+           them closes itself in its hide event; then all shown are hidden:
+           those waiting are shown in their order (the first one waiting
+           again, the third, ..., then the tenth)
  queue     ten balloons without timeout at one anchor on the second
            monitor, then a step every 1.5 s: close() the first one waiting
            (it never comes), make the first one taller (the last ones shown
@@ -187,6 +194,9 @@ void Reporter::step()
     QTimer::singleShot( 1500, this, SLOT( step() ) );
 }
 
+static int orderStage = 0; // (scenario order: 1 growing, 2 showing)
+static int orderHides = 0;
+static bool deleteOnAction = false;
 static int chainLeft = 0;
 static QPtrList< KBalloon > chain; // (to hide after their show events)
 
@@ -219,6 +229,20 @@ void Reporter::moveStep()
 
 bool Reporter::eventFilter( QObject* o, QEvent* e )
 {
+    if ( orderStage > 0 && o->inherits( "KBalloon" ) ) {
+        KBalloon* b = static_cast< KBalloon* >( o );
+        if ( orderStage == 1 && e->type() == QEvent::Hide ) {
+            ++orderHides;
+            printf( "order: \"%s\" waits again\n", b->title().latin1() );
+            if ( orderHides == 2 ) {
+                printf( "order: \"%s\" closes itself in its hide event\n", b->title().latin1() );
+                b->close();
+            }
+        } else if ( orderStage == 2 && e->type() == QEvent::Show )
+            printf( "order: shown \"%s\"\n", b->title().latin1() );
+        fflush( stdout );
+        return false;
+    }
     if ( e->type() == QEvent::Show && o->inherits( "KBalloon" ) && chain.findRef( (KBalloon*) o ) < 0
          && QString( static_cast< KBalloon* >( o )->title() ).startsWith( "Chain" ) ) {
         KBalloon* shown = static_cast< KBalloon* >( o );
@@ -282,13 +306,48 @@ void Reporter::menuStep()
     delete buttons;
     printf( "actions: menu with %d items, buttons shown %d (with More)\n", menu != 0 ? (int) menu->count() : -1,
             shown );
-    if ( menu != 0 && menu->count() > 0 ) {
+    if ( menu != 0 && menu->count() > 0 && deleteOnAction ) {
+        // (popped up at the button "More": a script clicks the last item)
+        QWidget* more = static_cast< QWidget* >( target->child( "more", "QWidget" ) );
+        menu->popup( more->mapToGlobal( QPoint( 0, more->height() ) ) );
+        const QRect r = menu->itemGeometry( menu->count() - 1 );
+        const QPoint p = menu->mapToGlobal( r.center() );
+        printf( "menudelete: last item %d at %d,%d\n", menu->idAt( menu->count() - 1 ), p.x(), p.y() );
+    } else if ( menu != 0 && menu->count() > 0 ) {
         const int id = menu->idAt( menu->count() - 1 );
         printf( "actions: choose the last one of the menu, %d\n", id );
         fflush( stdout );
         menu->activateItemAt( menu->count() - 1 );
     }
     fflush( stdout );
+}
+
+void Reporter::orderStep()
+{
+    if ( orderStage == 0 ) {
+        orderStage = 1;
+        printf( "order: \"%s\" grows\n", sequence.first()->title().latin1() );
+        fflush( stdout );
+        sequence.first()->setText( "Taller now.\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10" );
+        QTimer::singleShot( 1500, this, SLOT( orderStep() ) );
+        return;
+    }
+    orderStage = 2;
+    QPtrList< KBalloon > visible;
+    for ( QPtrListIterator< KBalloon > it( sequence ); it.current() != 0; ++it )
+        if ( it.current()->isVisible() )
+            visible.append( it.current() );
+    printf( "order: hide the %d shown\n", visible.count() );
+    fflush( stdout );
+    for ( QPtrListIterator< KBalloon > it( visible ); it.current() != 0; ++it )
+        it.current()->hide();
+}
+
+void Reporter::deleteSender()
+{
+    printf( "menudelete: the receiver deletes the balloon\n" );
+    fflush( stdout );
+    delete const_cast< QObject* >( sender() );
 }
 
 static QPixmap avatar( const QColor& color, const QString& initials, int size = 40 )
@@ -513,6 +572,26 @@ static void actions()
     QTimer::singleShot( 1500, reporter, SLOT( menuStep() ) );
 }
 
+static void menudelete()
+{
+    deleteOnAction = true;
+    actions();
+    QObject::connect( (KBalloon*) target, SIGNAL( actionActivated( int ) ), reporter, SLOT( deleteSender() ) );
+}
+
+static void order()
+{
+    const QRect g = QApplication::desktop()->screenGeometry( 1 );
+    for ( int i = 0; i < 10; ++i ) {
+        KBalloon* b = balloon( QString( "Order %1" ).arg( i + 1 ), "One line.", QPixmap(), 0 );
+        b->setAnchor( QPoint( g.right() - 30, g.bottom() - 10 ) );
+        b->installEventFilter( reporter );
+        b->show();
+        sequence.append( b );
+    }
+    QTimer::singleShot( 1500, reporter, SLOT( orderStep() ) );
+}
+
 static void corner()
 {
     KBalloon* b = balloon( "No anchor", "In the corner of the work area, without a tail.",
@@ -522,7 +601,7 @@ static void corner()
 
 static KCmdLineOptions options[] =
 {
-    { "scenario <name>", "monitors, stack, widget, text, corner, big, queue, move, reentrant, chain or actions", "monitors" },
+    { "scenario <name>", "monitors, stack, widget, text, corner, big, queue, move, reentrant, chain, actions, menudelete or order", "monitors" },
     { "timeout <ms>", "Timeout of the balloons (0: none)", "0" },
     { "quit-after <ms>", "Quit after this long (0: never)", "0" },
     { "report-after <ms>", "Print where the balloons are after this long", "1000" },
@@ -564,6 +643,10 @@ int main( int argc, char** argv )
         chainScenario();
     else if ( scenario == "actions" )
         actions();
+    else if ( scenario == "menudelete" )
+        menudelete();
+    else if ( scenario == "order" )
+        order();
     else
         monitors();
     if ( reportAfter > 0 )

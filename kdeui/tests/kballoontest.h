@@ -39,6 +39,8 @@ public slots:
     void reentrantStep(); // the scenario "reentrant"
     void chainStep(); // the scenario "chain"
     void menuStep(); // the scenario "actions"
+    void orderStep(); // the scenario "order"
+    void deleteSender(); // (the scenario "menudelete": deletes the balloon at once)
 
 private slots:
     void clicked();
