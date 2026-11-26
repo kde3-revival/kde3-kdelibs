@@ -28,6 +28,12 @@
            horizontal panel at the bottom, in a vertical one at the left
  text      long text (wrapped), markup in plain text (shown as it is),
            rich text, no title
+ longword  words wider than the balloon (a long title, a URL, Cyrillic
+           and Latin letters without a space): broken at its edge; one
+           KBalloon may not break anywhere (joined letters): as before;
+           20000 characters without width after a long word, marks and
+           selectors beyond the BMP (not broken before), words joined by
+           no-break spaces (one word)
  corner    a balloon without an anchor (the corner of the work area)
  big       a balloon larger than the monitor (a long text, many actions):
            made to fit
@@ -478,6 +484,47 @@ static void text()
     b->show();
 }
 
+// words wider than the balloon: broken at its edge
+static void longword()
+{
+    const QRect g = QApplication::desktop()->screenGeometry( 0 );
+    KBalloon* b = balloon( "Title_with_a_single_word_far_too_long_for_the_width_of_any_balloon",
+                           QString::fromUtf8( "See https://example.org/a/very/long/path/without/any/spaces/that/is/wider/than/the/balloon"
+                           "?query=value&more=values for details.\nShort words wrap as before, between words.\n"
+                           "\xd0\x94\xd0\xbb\xd0\xb8\xd0\xbd\xd0\xbd\xd0\xbe\xd0\xb5"
+                           "\xd1\x81\xd0\xbb\xd0\xbe\xd0\xb2\xd0\xbe" "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ),
+                           avatar( QColor( 40, 120, 90 ), "LW" ), 2 );
+    b->setAnchor( QPoint( g.right() - 50, g.bottom() - 10 ) );
+    b->show();
+    // nowhere KBalloon breaks (letters joined by zero width joiners):
+    // left to the rich text as before, quickly
+    QString joined;
+    for ( int i = 0; i < 20000; ++i )
+        joined += QString( "a" ) + QChar( 0x200d );
+    b = balloon( "Joined", joined, QPixmap(), 1 );
+    b->setAnchor( QPoint( g.left() + 50, g.top() + 10 ) );
+    b->show();
+    // characters without width after a long word (left-to-right marks),
+    // marks and selectors beyond the BMP (never broken before): quickly
+    QString marks = QString().fill( 'm', 60 );
+    for ( int i = 0; i < 20000; ++i )
+        marks += QChar( 0x200e );
+    QString astral;
+    for ( int i = 0; i < 40; ++i )
+        astral += QString( "e" ) + QChar( 0xdb40 ) + QChar( 0xdd00 ) // U+E0100
+                  + QString( "o" ) + QChar( 0xd834 ) + QChar( 0xdd65 ); // U+1D165
+    // words joined by no-break spaces: one word
+    QString nbsp;
+    for ( int i = 0; i < 30; ++i )
+        nbsp += QString( "abc" ) + QChar( 0xa0 ) + QString( "def" ) + QChar( 0xa0 );
+    b = balloon( "Marks", marks + "\n" + astral, QPixmap(), 1 );
+    b->setAnchor( QPoint( g.left() + 50, g.bottom() - 10 ) );
+    b->show();
+    b = balloon( "No-break", nbsp, QPixmap(), 1 );
+    b->setAnchor( QPoint( g.right() - 50, g.top() + 10 ) );
+    b->show();
+}
+
 static void big()
 {
     QString text;
@@ -601,7 +648,7 @@ static void corner()
 
 static KCmdLineOptions options[] =
 {
-    { "scenario <name>", "monitors, stack, widget, text, corner, big, queue, move, reentrant, chain, actions, menudelete or order", "monitors" },
+    { "scenario <name>", "monitors, stack, widget, text, longword, corner, big, queue, move, reentrant, chain, actions, menudelete or order", "monitors" },
     { "timeout <ms>", "Timeout of the balloons (0: none)", "0" },
     { "quit-after <ms>", "Quit after this long (0: never)", "0" },
     { "report-after <ms>", "Print where the balloons are after this long", "1000" },
@@ -629,6 +676,8 @@ int main( int argc, char** argv )
         widgets();
     else if ( scenario == "text" )
         text();
+    else if ( scenario == "longword" )
+        longword();
     else if ( scenario == "corner" )
         corner();
     else if ( scenario == "big" )
