@@ -44,6 +44,7 @@
 #include <qcursor.h>
 #include <qdatetime.h>
 #include <qdesktopwidget.h>
+#include <qfontmetrics.h>
 #include <qguardedptr.h>
 #include <qimage.h>
 #include <qlabel.h>
@@ -310,6 +311,118 @@ QString plainToRich( const QString& text )
         }
     }
     return result;
+}
+
+// Whether a word may be broken before its character @p i: not inside a
+// surrogate pair, not before a combining mark or a variation selector,
+// not next to a joiner, not before a character beyond the BMP (Qt 3 has
+// no properties for those: a mark or selector would look like a letter).
+bool canBreakBefore( const QString& word, unsigned int i )
+{
+    const ushort c = word[ i ].unicode();
+    const ushort before = word[ i - 1 ].unicode();
+    if ( ( c >= 0xd800 && c <= 0xdfff ) || c == 0x200d || before == 0x200d
+         || ( c >= 0xfe00 && c <= 0xfe0f ) )
+        return false;
+    const QChar::Category category = word[ i ].category();
+    return category != QChar::Mark_NonSpacing && category != QChar::Mark_SpacingCombining
+           && category != QChar::Mark_Enclosing;
+}
+
+// The end of the first line of @p word from @p start that is at most
+// @p width wide (in @p metrics) and ends where it may be broken (or at
+// the end); without such a place before the edge the first one after it
+// (that line is wider).  The widths of longer and longer pieces only:
+// about n log n for a line of n characters.
+unsigned int lineEnd( const QString& word, unsigned int start, const QFontMetrics& metrics, int width )
+{
+    const unsigned int rest = word.length() - start;
+    // a length that does not fit (or all), doubled from one
+    unsigned int fits = 0;
+    unsigned int over = 1;
+    while ( over < rest && metrics.width( word.mid( start, over ) ) <= width ) {
+        fits = over;
+        over = QMIN( rest, 2 * over );
+    }
+    if ( over >= rest && metrics.width( word.mid( start, rest ) ) <= width )
+        return word.length();
+    // the longest length that fits: between fits and over
+    while ( over - fits > 1 ) {
+        const unsigned int middle = fits + ( over - fits ) / 2;
+        if ( metrics.width( word.mid( start, middle ) ) <= width )
+            fits = middle;
+        else
+            over = middle;
+    }
+    unsigned int end = start + fits;
+    while ( end > start && !canBreakBefore( word, end ) )
+        --end;
+    if ( end > start )
+        return end;
+    for ( end = start + QMAX( 1u, fits ); end < word.length() && !canBreakBefore( word, end ); ++end )
+        ;
+    return end;
+}
+
+// Where rich text may wrap between words: white space, but the spaces
+// that do not break (no-break, figure, narrow no-break space).
+bool isWordSeparator( const QChar& c )
+{
+    const ushort u = c.unicode();
+    return c.isSpace() && u != 0xa0 && u != 0x2007 && u != 0x202f;
+}
+
+// @p text with each word wider than @p width (in @p metrics) broken into
+// lines no wider (between characters, @p lineBreak between): rich text
+// wraps only between words, a longer one would be cut off at the edge.
+// With @p escape the text is escaped for rich text.
+QString breakLongWords( const QString& text, const QFontMetrics& metrics, int width,
+                        const QString& lineBreak, bool escape )
+{
+    QString result;
+    unsigned int i = 0;
+    while ( i < text.length() ) {
+        unsigned int end = i;
+        while ( end < text.length() && !isWordSeparator( text[ end ] ) )
+            ++end;
+        const QString word = text.mid( i, end - i );
+        if ( metrics.width( word ) > width ) {
+            for ( unsigned int start = 0; start < word.length(); ) {
+                const unsigned int stop = lineEnd( word, start, metrics, width );
+                const QString line = word.mid( start, stop - start );
+                if ( start > 0 )
+                    result += lineBreak;
+                result += escape ? QStyleSheet::escape( line ) : line;
+                start = stop;
+            }
+        } else
+            result += escape ? QStyleSheet::escape( word ) : word;
+        for ( ; end < text.length() && isWordSeparator( text[ end ] ); ++end )
+            result += text[ end ];
+        i = end;
+    }
+    return result;
+}
+
+// the title (bold) and the text of a balloon in rich text, the words
+// wider than @p width broken (but those of rich text)
+QString balloonHtml( const QString& title, const QString& text, bool rich, const QFont& font, int width )
+{
+    QString html;
+    if ( !title.isEmpty() ) {
+        QFont bold( font );
+        bold.setBold( true );
+        html = "<b>" + breakLongWords( title, QFontMetrics( bold ), width, "<br>", true ) + "</b>";
+    }
+    if ( !text.isEmpty() ) {
+        if ( !html.isEmpty() )
+            html += "<br>";
+        if ( rich )
+            html += text;
+        else
+            html += plainToRich( breakLongWords( text, QFontMetrics( font ), width, "\n", false ) );
+    }
+    return html;
 }
 
 #ifdef HAVE_XRENDER
@@ -841,18 +954,9 @@ void KBalloon::updateContents()
         d->picture->setPixmap( pm );
         d->picture->show();
     }
-    // the text: the title escaped, plain text escaped
-    QString html;
-    if ( !d->title.isEmpty() )
-        html = "<b>" + QStyleSheet::escape( d->title ) + "</b>";
-    if ( !d->text.isEmpty() ) {
-        if ( !html.isEmpty() )
-            html += "<br>";
-        if ( d->rich )
-            html += d->text;
-        else
-            html += plainToRich( d->text );
-    }
+    // the text: the title escaped, plain text escaped (its long words
+    // breakable once the width is known, fitContents())
+    const QString html = balloonHtml( d->title, d->text, d->rich, d->label->font(), QWIDGETSIZE_MAX );
     d->label->setText( html );
     d->html = html;
     // the buttons
@@ -895,10 +999,16 @@ void KBalloon::fitContents()
     QSimpleRichText measure( d->html, d->label->font() );
     measure.setWidth( 32767 );
     const int natural = measure.widthUsed() + 2;
-    d->label->setFixedWidth( QMAX( 20, QMIN( QMIN( natural, widest ),
-                                             most.width() - 2 * margin
-                                             - ( d->picture->isVisible() ? d->picture->sizeHint().width() + spacing
-                                                                         : 0 ) ) ) );
+    const int labelWidth = QMAX( 20, QMIN( QMIN( natural, widest ),
+                                           most.width() - 2 * margin
+                                           - ( d->picture->isVisible() ? d->picture->sizeHint().width() + spacing
+                                                                       : 0 ) ) );
+    d->label->setFixedWidth( labelWidth );
+    // a word wider than that broken where it reaches the edge
+    const QString html = balloonHtml( d->title, d->text, d->rich, d->label->font(),
+                                      labelWidth - 2 * d->label->frameWidth() ); // (with the margin)
+    if ( html != d->label->text() )
+        d->label->setText( html );
     d->label->setMinimumHeight( 0 );
     d->label->setMaximumHeight( QWIDGETSIZE_MAX );
     d->label->setSizePolicy( QSizePolicy( QSizePolicy::Fixed, QSizePolicy::Minimum, true ) );
