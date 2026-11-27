@@ -404,10 +404,35 @@ QString breakLongWords( const QString& text, const QFontMetrics& metrics, int wi
     return result;
 }
 
-// the title (bold) and the text of a balloon in rich text, the words
-// wider than @p width broken (but those of rich text)
-QString balloonHtml( const QString& title, const QString& text, bool rich, const QFont& font, int width )
+// The rule between the paragraphs of setTextLines(): a thin line in the
+// colour of the text faded into the background, a little room above and
+// below (Qt's <hr> without its sunken shade, see QTextHorizontalLine).
+QString ruleHtml( const QColorGroup& cg )
 {
+    const QColor bg = cg.background();
+    const QColor fg = cg.foreground();
+    const QColor line( ( bg.red() * 3 + fg.red() ) / 4, ( bg.green() * 3 + fg.green() ) / 4,
+                       ( bg.blue() * 3 + fg.blue() ) / 4 );
+    return "<hr noshade color=\"" + line.name() + "\">";
+}
+
+// the title (bold) and the text of a balloon in rich text, the words
+// wider than @p width broken (but those of rich text); with @p lines
+// (setTextLines()) those paragraphs, @p rule between them
+QString balloonHtml( const QString& title, const QString& text, bool rich, const QFont& font, int width,
+                     const QStringList* lines = 0, const QString& rule = QString::null )
+{
+    if ( lines ) {
+        QString html = balloonHtml( title, QString::null, false, font, width );
+        for ( QStringList::ConstIterator it = lines->begin(); it != lines->end(); ++it ) {
+            if ( it != lines->begin() )
+                html += rule;
+            else if ( !html.isEmpty() )
+                html += "<br>";
+            html += plainToRich( breakLongWords( *it, QFontMetrics( font ), width, "\n", false ) );
+        }
+        return html;
+    }
     QString html;
     if ( !title.isEmpty() ) {
         QFont bold( font );
@@ -541,7 +566,7 @@ class KBalloon::Private
 {
 public:
     Private()
-        : rich( false ), nextId( 1 ), timeoutMsec( 6000 ), autoDelete( true ), hasPoint( false ),
+        : rich( false ), separated( false ), nextId( 1 ), timeoutMsec( 6000 ), autoDelete( true ), hasPoint( false ),
           created( false ), argb( false ), queued( false ), tail( NoTail ), content( 0 ), picture( 0 ),
           label( 0 ), buttonRows( 0 ), more( 0 ), moreMenu( 0 ), menuAction( -1 ), buttonsDirty( true ), remaining( 0 ), paused( false ),
           cache( None ), cacheTail( -1 ), cacheFill( 0 ), cacheBorder( 0 ), requeueing( false )
@@ -551,6 +576,8 @@ public:
     QString title;
     QString text;
     bool rich;
+    QStringList lines; // setTextLines()
+    bool separated;
     QPixmap pixmap;
     QValueList< Action > actions;
     int nextId;
@@ -694,6 +721,17 @@ void KBalloon::setText( const QString& text )
 {
     d->text = text;
     d->rich = false;
+    d->separated = false;
+    d->lines.clear();
+    updateContents();
+}
+
+void KBalloon::setTextLines( const QStringList& lines )
+{
+    d->lines = lines;
+    d->text = lines.join( "\n" );
+    d->rich = false;
+    d->separated = true;
     updateContents();
 }
 
@@ -701,6 +739,8 @@ void KBalloon::setRichText( const QString& text )
 {
     d->text = text;
     d->rich = true;
+    d->separated = false;
+    d->lines.clear();
     updateContents();
 }
 
@@ -956,9 +996,13 @@ void KBalloon::updateContents()
     }
     // the text: the title escaped, plain text escaped (its long words
     // breakable once the width is known, fitContents())
-    const QString html = balloonHtml( d->title, d->text, d->rich, d->label->font(), QWIDGETSIZE_MAX );
+    // (setTextLines(): the rules in the label, measured as line breaks:
+    // a rule is as wide as the label, it needs no width)
+    const QStringList* lines = d->separated ? &d->lines : 0;
+    const QString html = balloonHtml( d->title, d->text, d->rich, d->label->font(), QWIDGETSIZE_MAX,
+                                      lines, ruleHtml( d->label->colorGroup() ) );
     d->label->setText( html );
-    d->html = html;
+    d->html = balloonHtml( d->title, d->text, d->rich, d->label->font(), QWIDGETSIZE_MAX, lines, "<br>" );
     // the buttons
     if ( d->buttonsDirty ) {
         d->buttonsDirty = false;
@@ -1006,7 +1050,8 @@ void KBalloon::fitContents()
     d->label->setFixedWidth( labelWidth );
     // a word wider than that broken where it reaches the edge
     const QString html = balloonHtml( d->title, d->text, d->rich, d->label->font(),
-                                      labelWidth - 2 * d->label->frameWidth() ); // (with the margin)
+                                      labelWidth - 2 * d->label->frameWidth(), // (with the margin)
+                                      d->separated ? &d->lines : 0, ruleHtml( d->label->colorGroup() ) );
     if ( html != d->label->text() )
         d->label->setText( html );
     d->label->setMinimumHeight( 0 );

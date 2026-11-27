@@ -19,6 +19,7 @@
 #define KBALLOON_H
 
 #include <qwidget.h>
+#include <qstringlist.h>
 
 #include <kdelibs_export.h>
 
@@ -116,6 +117,17 @@ public:
      * @see setRichText()
      */
     void setText( const QString& text );
+
+    /**
+     * Sets the text from plain text in paragraphs, a thin line between
+     * each two of them (a list of messages, of events).  Each one is
+     * plain text as for setText(): shown as it is, its line breaks kept,
+     * its long lines wrapped.  text() is then the paragraphs joined by
+     * line breaks, isRichText() false; setText() or setRichText() replace
+     * them.
+     * @since 3.5.11
+     */
+    void setTextLines( const QStringList& lines );
 
     /**
      * Sets the text from rich text (Qt's subset of HTML, see QStyleSheet),

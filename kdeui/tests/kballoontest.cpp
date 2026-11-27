@@ -34,6 +34,10 @@
            20000 characters without width after a long word, marks and
            selectors beyond the BMP (not broken before), words joined by
            no-break spaces (one word)
+ separator paragraphs with a thin line between them (setTextLines()): a
+           list of messages with a picture and actions; a long word, markup
+           (shown as it is) and a line break in one of them; one paragraph
+           only (no line); no title
  corner    a balloon without an anchor (the corner of the work area)
  big       a balloon larger than the monitor (a long text, many actions):
            made to fit
@@ -639,6 +643,39 @@ static void order()
     QTimer::singleShot( 1500, reporter, SLOT( orderStep() ) );
 }
 
+// paragraphs with a line between them
+static void separator()
+{
+    const QRect g = QApplication::desktop()->screenGeometry( 0 );
+    QStringList lines;
+    lines << QString::fromUtf8( "J\xc3\xbcrgen M\xc3\xbcller: Gr\xc3\xbc\xc3\x9f" "e aus K\xc3\xb6ln" )
+          << QString::fromUtf8( "Fran\xc3\xa7ois: R\xc3\xa9union \xc3\xa0 10h" )
+          << "Alice Example: Lunch on Friday?"
+          << "and 2 more";
+    KBalloon* b = balloon( "5 new messages in qt", QString::null, avatar( QColor( 200, 120, 40 ), "SP" ), 2 );
+    b->setTextLines( lines );
+    b->setAnchor( QPoint( g.right() - 50, g.bottom() - 10 ) );
+    b->show();
+    lines.clear();
+    lines << "Subject: <b>not bold</b> & <i>not italic</i>"
+          << "A_single_word_far_too_long_for_the_width_of_any_balloon_at_all_really_so_it_is_broken"
+          << "Two lines\nin one paragraph";
+    b = balloon( "Markup, long word, line break", QString::null, QPixmap(), 1 );
+    b->setTextLines( lines );
+    b->setAnchor( QPoint( g.left() + 50, g.top() + 10 ) );
+    b->show();
+    b = balloon( "One paragraph", QString::null, QPixmap(), 0 );
+    b->setTextLines( QStringList( "No line below the title, none at the end." ) );
+    b->setAnchor( QPoint( g.right() - 50, g.top() + 10 ) );
+    b->show();
+    lines.clear();
+    lines << "No title: the first paragraph" << "the second one";
+    b = balloon( QString::null, QString::null, QPixmap(), 0 );
+    b->setTextLines( lines );
+    b->setAnchor( QPoint( g.left() + 50, g.bottom() - 10 ) );
+    b->show();
+}
+
 static void corner()
 {
     KBalloon* b = balloon( "No anchor", "In the corner of the work area, without a tail.",
@@ -648,7 +685,7 @@ static void corner()
 
 static KCmdLineOptions options[] =
 {
-    { "scenario <name>", "monitors, stack, widget, text, longword, corner, big, queue, move, reentrant, chain, actions, menudelete or order", "monitors" },
+    { "scenario <name>", "monitors, stack, widget, text, longword, separator, corner, big, queue, move, reentrant, chain, actions, menudelete or order", "monitors" },
     { "timeout <ms>", "Timeout of the balloons (0: none)", "0" },
     { "quit-after <ms>", "Quit after this long (0: never)", "0" },
     { "report-after <ms>", "Print where the balloons are after this long", "1000" },
@@ -678,6 +715,8 @@ int main( int argc, char** argv )
         text();
     else if ( scenario == "longword" )
         longword();
+    else if ( scenario == "separator" )
+        separator();
     else if ( scenario == "corner" )
         corner();
     else if ( scenario == "big" )
