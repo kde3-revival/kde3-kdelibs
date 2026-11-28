@@ -79,9 +79,17 @@ int main()
     if( getenv( "KDEHOME" ))
         strlcpy( kdehome, getenv( "KDEHOME" ), 1024 );
     else if( getenv( "HOME" ))
-        {
-        strlcpy( kdehome, getenv( "HOME" ), 1024 );
-        strlcat( kdehome, "/.kde", 1024  );
+        { // ~/.kde3, or the ~/.kde of an older installation without ~/.kde3
+        struct stat st;
+        if( strlcpy( kdehome, getenv( "HOME" ), 1024 ) >= 1000 )
+            return 1;
+        strlcat( kdehome, "/.kde3", 1024  );
+        if( stat( kdehome, &st ) != 0 )
+            {
+            kdehome[ strlen( kdehome ) - 1 ] = '\0';
+            if( stat( kdehome, &st ) != 0 || !S_ISDIR( st.st_mode ))
+                strlcat( kdehome, "3", 1024 );
+            }
         }
     else
         return 1;

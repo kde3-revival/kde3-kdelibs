@@ -36,6 +36,8 @@
 #include "kcrash.h"
 
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <limits.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
@@ -468,6 +470,27 @@ static int read_socket(int sock, char *buffer, int len)
   return 0;
 }
 
+/* The default of KDEHOME: ~/.kde3, or the ~/.kde of an older
+ * installation as long as there is no ~/.kde3 (as KStandardDirs and
+ * kdeinit's wrapper decide).  Only async-signal-safe calls. */
+static const char *defaultKdeHome(const char *home_dir)
+{
+  char path[PATH_MAX + 1];
+  struct stat st;
+  size_t n;
+
+  if (!home_dir || !home_dir[0] || (n = strlen(home_dir)) > PATH_MAX - 10)
+     return "~/.kde3/";
+  strcpy(path, home_dir);
+  strcpy(path + n, "/.kde3");
+  if (stat(path, &st) == 0)
+     return "~/.kde3/";
+  strcpy(path + n, "/.kde");
+  if (stat(path, &st) == 0 && S_ISDIR(st.st_mode))
+     return "~/.kde/";
+  return "~/.kde3/";
+}
+
 static int openSocket()
 {
   kde_socklen_t socklen;
@@ -483,7 +506,7 @@ static int openSocket()
 
   if (!kde_home || !kde_home[0])
   {
-     kde_home = "~/.kde/";
+     kde_home = defaultKdeHome(home_dir);
   }
 
   if (kde_home[0] == '~')

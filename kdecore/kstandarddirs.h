@@ -116,10 +116,11 @@ class KStandardDirsPrivate;
  *          ignored.
  * @li KDEHOME: The directory where changes are saved to. This directory is
  *          used to search for resources first. If KDEHOME is not
- *          specified it defaults to "$HOME/.kde"
+ *          specified it defaults to "$HOME/.kde3", or to the "$HOME/.kde"
+ *          of an older installation as long as there is no "$HOME/.kde3"
  * @li KDEROOTHOME: Like KDEHOME, but used for the root user.
- *          If KDEROOTHOME is not set it defaults to the .kde directory in the
- *          home directory of root, usually "/root/.kde".
+ *          If KDEROOTHOME is not set it defaults to the .kde3 (or .kde)
+ *          directory in the home directory of root, usually "/root/.kde3".
  *          Note that the setting of $HOME is ignored in this case.
  *
  * @see KGlobalSettings

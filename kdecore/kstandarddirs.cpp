@@ -1317,7 +1317,13 @@ void KStandardDirs::addKDEDefaults()
     }
     else
     {
-       localKdeDir =  QDir::homeDirPath() + "/.kde/";
+       // ~/.kde3, or the ~/.kde of an older installation as long as
+       // there is no ~/.kde3 (startkde and kdeinit decide the same way)
+       // (probed without a trailing '/', as stat() does)
+       localKdeDir = QDir::homeDirPath() + "/.kde3/";
+       if ( !QFileInfo( QDir::homeDirPath() + "/.kde3" ).exists()
+            && QFileInfo( QDir::homeDirPath() + "/.kde" ).isDir() )
+          localKdeDir = QDir::homeDirPath() + "/.kde/";
     }
 
     if (localKdeDir != "-/")

@@ -37,6 +37,27 @@
 #include <limits.h>
 #endif
 
+/* The default of KDEHOME: ~/.kde3, or the ~/.kde of an older
+ * installation as long as there is no ~/.kde3 (kstandarddirs.cpp,
+ * startkde and the other helpers of kinit decide the same way). */
+static const char *default_kde_home(const char *home_dir)
+{
+  char path[PATH_MAX + 1];
+  struct stat st;
+  size_t n;
+
+  if (!home_dir || !home_dir[0] || (n = strlen(home_dir)) > PATH_MAX - 10)
+     return "~/.kde3/";
+  strcpy(path, home_dir);
+  strcpy(path + n, "/.kde3");
+  if (stat(path, &st) == 0)
+     return "~/.kde3/";
+  strcpy(path + n, "/.kde");
+  if (stat(path, &st) == 0 && S_ISDIR(st.st_mode))
+     return "~/.kde/";
+  return "~/.kde3/";
+}
+
 int check_tmp_dir(const char *tmp_dir);
 int create_link(const char *file, const char *tmp_dir);
 int create_random_link(const char *file, char *tmp_dir);
@@ -145,7 +166,7 @@ int build_link(const char *tmp_prefix, const char *kde_prefix)
 
   if (!kde_home || !kde_home[0])
   {
-     kde_home = "~/.kde/";
+     kde_home = default_kde_home(uid == 0 ? (pw_ent->pw_dir ? pw_ent->pw_dir : "/root") : home_dir);
   }
 
   if (kde_home[0] == '~')
